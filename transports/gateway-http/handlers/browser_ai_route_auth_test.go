@@ -8,6 +8,8 @@ func TestGuardSetupDownloadsNeedGuardKeyOrSession(t *testing.T) {
 		"/api/browser-ai/setup/download.zip",
 		"/api/browser-ai/setup/download-windows.zip",
 		"/api/browser-ai/setup/download-mac.zip",
+		"/api/browser-ai/setup/download-extension.zip",
+		"/api/browser-ai/setup/yp-raksha.crx",
 	} {
 		for _, method := range []string{"GET", "HEAD"} {
 			if isPublicBrowserAIRoute(method, path) {

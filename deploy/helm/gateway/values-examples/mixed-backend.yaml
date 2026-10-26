@@ -20,7 +20,7 @@ postgresql:
   enabled: true
   auth:
     username: gateway
-    password: gateway_password
+    password: 
     database: gateway
   primary:
     persistence:

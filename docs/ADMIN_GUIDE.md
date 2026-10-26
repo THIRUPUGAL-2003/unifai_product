@@ -32,7 +32,7 @@ already has it.
    (Governance → Users), then keep the bootstrap account for emergencies only.
 3. **Configure SMTP** (`/api/smtp-config` → Settings) so password reset, registration codes and
    Guard warning e-mails work.
-4. **Verify secrets** are long and random: `UNIFAI_ENCRYPTION_KEY`, `UNIFAI_GUARD_SECRET`,
+4. **Verify secrets** are long and random: `UNIFAI_ENCRYPTION_KEY`, `GATEWAY_GUARD_SECRET`,
    `PASSWORD_RESET_SECRET`, `CLUSTER_REPLICATE_SECRET`.
 5. **Set branding** (`UNIFAI_COMPANY_NAME`, `UNIFAI_COMPANY_LOGO`).
 6. **Add providers and keys** (Models → Model Providers) and confirm the model catalog populated.
@@ -383,10 +383,10 @@ Use folders and per-user `allowed_prompt_repos` to limit who sees which prompts.
 3. Review LLM Logs for that key's recent usage and report per policy.
 
 ### 12.5 Rotate the Guard fleet secret
-1. Generate a new `UNIFAI_GUARD_SECRET` (`openssl rand -base64 32`) and set it in `.env`.
+1. Generate a new `GATEWAY_GUARD_SECRET` (`openssl rand -base64 32`) and set it in `.env`.
 2. Run `python apps/browser-guard/scripts/sync_config_from_env.py` to regenerate Guard config and docs.
 3. Rebuild the Guard installers (or Rebuild & Publish) so new/updated agents carry the new secret.
-4. Redeploy the backend with `UNIFAI_GUARD_REQUIRE_SECRET=1`.
+4. Redeploy the backend with `GATEWAY_GUARD_SECRET is required for Guard agent requests`.
 5. Watch Guard Agents — agents on the old secret will fail to report until updated; plan a maintenance
    window and communicate it.
 
@@ -434,7 +434,7 @@ Use folders and per-user `allowed_prompt_repos` to limit who sees which prompts.
 - [ ] Plugin/feature-flag review, log retention and disk check
 
 **Quarterly / on change**
-- [ ] Rotate `UNIFAI_GUARD_SECRET`, `PASSWORD_RESET_SECRET` and `UNIFAI_ENCRYPTION_KEY` per policy
+- [ ] Rotate `GATEWAY_GUARD_SECRET`, `PASSWORD_RESET_SECRET` and `UNIFAI_ENCRYPTION_KEY` per policy
 - [ ] Re-review Guard Rules against current company policy and regulations
 - [ ] Patch the container image, Postgres and the host
 

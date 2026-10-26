@@ -163,7 +163,7 @@ React UI (embedded, served by the Go binary)
 * `apps/browser-guard/config/unifai_guard_config.json` currently contains a **live-looking `guard_secret`**.
   The file itself carries a `_secret_note` stating it must never be committed. Rotate it and keep
   real secrets only in `.env` (git-ignored).
-* Secrets (`UNIFAI_ENCRYPTION_KEY`, `UNIFAI_GUARD_SECRET`, `PASSWORD_RESET_SECRET`,
+* Secrets (`UNIFAI_ENCRYPTION_KEY`, `GATEWAY_GUARD_SECRET`, `PASSWORD_RESET_SECRET`,
   `CLUSTER_REPLICATE_SECRET`) are **required** in production; the code fails closed — for example
   password reset returns HTTP 500 when `PASSWORD_RESET_SECRET` is missing or shorter than 32 chars.
 * Guard EXE/.app and the Docker **network proxy** must not both MITM the same browser session

@@ -14,7 +14,7 @@ postgresql:
   enabled: true
   auth:
     username: gateway
-    password: gateway_password
+    password: 
     database: gateway
   primary:
     persistence:
@@ -36,7 +36,7 @@ vectorStore:
     enabled: true
     auth:
       enabled: true
-      password: "redis_password"
+      password: ""
     master:
       persistence:
         enabled: true

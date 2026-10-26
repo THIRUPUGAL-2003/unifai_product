@@ -449,8 +449,8 @@ The gateway binary exposes two distinct operational planes: the `/v1/*` data pla
 | :--- | :--- | :--- |
 | **Inference Data Plane** | `POST /v1/chat/completions`<br/>`POST /v1/completions`<br/>`POST /v1/embeddings`<br/>`POST /v1/rerank`<br/>`POST /v1/ocr`<br/>`POST /v1/audio/transcriptions`<br/>`POST /v1/realtime` | Authenticated via Virtual Key or Master Provider Key (`Authorization: Bearer <key>` or `x-api-key: <key>`). Enforces FinOps budget quotas and rate limits. |
 | **Provider Pass-Through** | `POST /openai/*`<br/>`POST /anthropic/*`<br/>`POST /genai/*`<br/>`POST /bedrock/*`<br/>`POST /cohere/*`<br/>`POST /cursor/*` | Direct native provider pass-through preserving vendor-specific headers and payload extensions while enforcing inline DLP. |
-| **Browser AI Control** | `GET /api/browser-ai/logs`<br/>`GET /api/browser-ai/search-logs`<br/>`GET/POST /api/browser-ai/rules`<br/>`GET/PUT /api/browser-ai/controls`<br/>`GET /api/browser-ai/targets`<br/>`GET /api/browser-ai/agents` | Gated by RBAC resource `Logs: View/Update` or section grant `browser-ai`. Intercept events authenticated via `UNIFAI_GUARD_SECRET`. |
-| **Guard Fleet Ingest** | `POST /api/browser-ai/intercept`<br/>`POST /api/browser-ai/intercept-file`<br/>`POST /api/browser-ai/agents/heartbeat`<br/>`GET /api/browser-ai/proxy.pac` | Secret-validated agent endpoints (`UNIFAI_GUARD_SECRET`). Fails closed if secret is missing or invalid (`UNIFAI_GUARD_REQUIRE_SECRET=1`). |
+| **Browser AI Control** | `GET /api/browser-ai/logs`<br/>`GET /api/browser-ai/search-logs`<br/>`GET/POST /api/browser-ai/rules`<br/>`GET/PUT /api/browser-ai/controls`<br/>`GET /api/browser-ai/targets`<br/>`GET /api/browser-ai/agents` | Gated by RBAC resource `Logs: View/Update` or section grant `browser-ai`. Intercept events authenticated via `GATEWAY_GUARD_SECRET`. |
+| **Guard Fleet Ingest** | `POST /api/browser-ai/intercept`<br/>`POST /api/browser-ai/intercept-file`<br/>`POST /api/browser-ai/agents/heartbeat`<br/>`GET /api/browser-ai/proxy.pac` | Secret-validated agent endpoints (`GATEWAY_GUARD_SECRET`). Fails closed if secret is missing or invalid (`GATEWAY_GUARD_SECRET is required for Guard agent requests`). |
 | **Governance & FinOps** | `GET/POST /api/governance/virtual-keys`<br/>`GET/POST /api/governance/teams`<br/>`GET/POST /api/governance/business-units`<br/>`GET/POST /api/governance/routing-rules` | Administrative session cookie or API key. Enforces fine-grained Resource × Operation RBAC. |
 | **Workspace & Users** | `GET/POST /api/users`<br/>`GET/PUT /api/roles`<br/>`GET /api/permissions`<br/>`GET/POST /api/access-profiles` | Admin-only privileged routes. Audited automatically by `WorkspaceAuditMiddleware`. |
 | **Model Context Protocol**| `GET /api/mcp/clients`<br/>`GET /api/mcp/library`<br/>`GET/POST /api/mcp/tool-groups`<br/>`POST /api/mcp/inference` | Gated by `MCPGateway: View/Create/Update` permissions and per-user credential vault. |
@@ -515,7 +515,7 @@ YP-Raksha enforces a multi-tier defense-in-depth security model designed to sati
 | **WebSocket Security** | WebSockets reject URL query token authentication to eliminate token leaks in logs; short-lived tickets are issued via authenticated `POST /api/session/ws-ticket`. |
 | **Brute-Force Lockout** | Per-IP rate limiting (maximum 30 failed login attempts per 15-minute sliding window) combined with per-username database lockouts. |
 | **Password Reset Security** | HMAC-SHA256 signed tokens using `PASSWORD_RESET_SECRET` (minimum 32 characters) with 10-minute validity, strict 5 requests/hour limits, and 2-minute cooldowns. |
-| **Fleet Mutual Trust** | Workstation agents authenticate to backend APIs using `UNIFAI_GUARD_SECRET`. When `UNIFAI_GUARD_REQUIRE_SECRET=1`, all unauthenticated agent requests fail closed. |
+| **Fleet Mutual Trust** | Workstation agents authenticate to backend APIs using `GATEWAY_GUARD_SECRET`. When `GATEWAY_GUARD_SECRET is required for Guard agent requests`, all unauthenticated agent requests fail closed. |
 | **PAC Anti-Hijack** | By default, `UNIFAI_PAC_ALLOW_QUERY_PROXY=0` forces the PAC script to serve only administrator-approved proxy IP addresses, completely preventing PAC-redirection attacks. |
 | **Anti-Tamper Uninstallation**| Workstation agent uninstallation requires a 32-character enterprise uninstallation key verified against a salt-hashed SHA-256 digest in the central database. |
 
@@ -531,7 +531,7 @@ YP-Raksha enforces a multi-tier defense-in-depth security model designed to sati
 | `UNIFAI_DB_TYPE` | String (`postgres`) | Persistence engine selection: `postgres`, `mysql`, or `sqlite`. |
 | `UNIFAI_DB_DSN` | Connection String | Database Data Source Name (e.g. `postgresql://user:pass@host:5432/raksha_db?sslmode=verify-full`). |
 | `UNIFAI_ENCRYPTION_KEY` | Hex String (64 chars) | 256-bit AES cryptographic master key used to encrypt database secrets at rest. |
-| `UNIFAI_GUARD_SECRET` | String (Alphanumeric) | Shared secret used to authenticate workstation Guard agents to the `/api/browser-ai/*` backend. |
+| `GATEWAY_GUARD_SECRET` | String (Alphanumeric) | Shared secret used to authenticate workstation Guard agents to the `/api/browser-ai/*` backend. |
 | `UNIFAI_GUARD_REQUIRE_SECRET`| Boolean (`1`) | When set to `1`, forces all agent ingest endpoints to fail closed if the secret is missing or invalid. |
 | `UNIFAI_PAC_ALLOW_QUERY_PROXY`| Boolean (`0`) | When set to `0`, prevents clients from overriding the PAC proxy IP via URL query parameters. |
 | `SERVER_DOMAIN` | String (FQDN) | Fully qualified domain name used to configure CORS allowed origins and generate PAC URLs. |

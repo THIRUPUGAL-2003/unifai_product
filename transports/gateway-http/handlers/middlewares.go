@@ -1405,6 +1405,8 @@ func isGuardKeyBrowserAIRoute(method, path string) bool {
 	case "/api/browser-ai/setup/download.zip",
 		"/api/browser-ai/setup/download-windows.zip",
 		"/api/browser-ai/setup/download-mac.zip",
+		"/api/browser-ai/setup/download-extension.zip",
+		"/api/browser-ai/setup/yp-raksha.crx",
 		"/api/browser-ai/setup/Gateway_Guard_Setup.exe",
 		"/api/browser-ai/setup/Raksha_Guard_Setup.exe":
 		return method == fasthttp.MethodGet || method == fasthttp.MethodHead

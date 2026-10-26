@@ -443,7 +443,7 @@ call the backend **without a dashboard session cookie**:
   `agents/uninstall-status`.
 * **Guard-key:** `targets`, `rules`, `controls`, `fleet-config` (GET), `setup/download*.zip`,
   `setup/proxy-bundle.json`, `setup/proxy-bundle.zip`.
-* The fleet secret is `UNIFAI_GUARD_SECRET`. With `UNIFAI_GUARD_REQUIRE_SECRET=1` (production default
+* The fleet secret is `GATEWAY_GUARD_SECRET`. With `GATEWAY_GUARD_SECRET is required for Guard agent requests` (production default
   in `.env.example` and compose) agent APIs **fail closed** when the secret is missing or wrong
   (`browser_ai_guard_security.go`).
 * `UNIFAI_PAC_ALLOW_QUERY_PROXY=0` (default) makes the PAC ignore a client-supplied `?proxy=` and use
@@ -502,7 +502,7 @@ Editing any part requires rebuilding the Guard (`installer/build_installer.bat` 
   `apps/browser-guard/README.md`. Without `make`, run `installer\build_installer.bat`.
 * Config sync: `python apps/browser-guard/scripts/sync_config_from_env.py` regenerates
   `config/unifai_guard_config.json` and the docs from `.env` (`SERVER_DOMAIN`, `UNIFAI_PROXY_ADDR`,
-  `PAC_HTTP_PORT`, `UNIFAI_GUARD_SECRET`).
+  `PAC_HTTP_PORT`, `GATEWAY_GUARD_SECRET`).
 * Server-side artifacts live in `apps/browser-guard/release/` and are copied into the image
   (`/app/release`), so **Browser AI → Setup → Download Setup ZIP** serves them.
 * `Browser AI → Setup → Rebuild & Publish` re-publishes the proxy/agent Python sources as a bundle
@@ -586,7 +586,7 @@ Types as implemented: `GuardRuleAction = "BLOCK" | "REDACT" | "WARN"`,
 | Registration | Self-signup with e-mailed code (`email_unverified`) → admin approval (`pending` → `approved`) or `rejected`; SCIM can set `disabled` |
 | Authorization | Two RBAC layers (resource×operation, section grants) + audit middleware recording mutating `/api/*` actions |
 | Secrets at rest | `framework/encrypt` encryption for DB-stored secrets when `UNIFAI_ENCRYPTION_KEY` is set (provider keys, alert channels, uninstall keys) |
-| Guard fleet | Shared `UNIFAI_GUARD_SECRET`, fail-closed with `UNIFAI_GUARD_REQUIRE_SECRET=1`; PAC hijack protection via `UNIFAI_PAC_ALLOW_QUERY_PROXY=0` |
+| Guard fleet | Shared `GATEWAY_GUARD_SECRET`, fail-closed with `GATEWAY_GUARD_SECRET is required for Guard agent requests`; PAC hijack protection via `UNIFAI_PAC_ALLOW_QUERY_PROXY=0` |
 | Guard uninstall | Company and per-agent uninstall keys, stored hashed + encrypted, rotatable, with an audit trail and remote-uninstall flow |
 | Transport | TLS terminated at the edge/reverse proxy; `TRUST_PROXY_HEADERS=1` honours `X-Forwarded-Proto`/`X-Forwarded-For` **only** from trusted peers (`TRUSTED_PROXIES` required for public edges) |
 | CORS | `client.allowed_origins` (from `SERVER_DOMAIN`); optional `ALLOW_LOCALHOST_CORS=1` for a local UI against a remote API |

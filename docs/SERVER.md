@@ -80,7 +80,7 @@ place live secrets exist.
 |---|---|---|
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | yes | Bootstrap admin (change immediately after first login) |
 | `UNIFAI_ENCRYPTION_KEY` | production | Long random secret; encrypts secrets stored in the DB |
-| `UNIFAI_GUARD_SECRET` | production | Fleet secret shared by Guard agents (`openssl rand -base64 32`) |
+| `GATEWAY_GUARD_SECRET` | production | Fleet secret shared by Guard agents (`openssl rand -base64 32`) |
 | `UNIFAI_GUARD_REQUIRE_SECRET` | production (`1`) | Fail-closed when the Guard secret is missing/wrong |
 | `UNIFAI_PAC_ALLOW_QUERY_PROXY` | no (`0`) | `0` = PAC ignores a client `?proxy=` (anti hijack) |
 | `PASSWORD_RESET_SECRET` | yes | ≥ 32 chars (`openssl rand -base64 48`); without it password reset returns HTTP 500 |
@@ -157,7 +157,7 @@ Also under `configs/`: `mcp-library.json` (MCP catalog seed), `model-parameters.
 git clone <repo> && cd unifai_project
 cp .env.example .env
 # edit .env: SERVER_DOMAIN, DB_*, ADMIN_*, UNIFAI_ENCRYPTION_KEY,
-#            UNIFAI_GUARD_SECRET, PASSWORD_RESET_SECRET
+#            GATEWAY_GUARD_SECRET, PASSWORD_RESET_SECRET
 ```
 
 ### 5.2 Build and start
@@ -190,7 +190,7 @@ docker compose --profile network-proxy up -d gateway_browser_ai_proxy
 ```
 This runs `mitmproxy/mitmproxy:latest` with `mitmdump -s /app/proxy/browser_ai_proxy.py -p $PROXY_PORT`
 and environment `UNIFAI_BACKEND_URL=http://gateway_tech:$APP_PORT`, `UNIFAI_SERVER_MODE=1`,
-`UNIFAI_AGENT_TYPE=network`, `UNIFAI_FAIL_OPEN=0`, `UNIFAI_GUARD_SECRET=…`.
+`UNIFAI_AGENT_TYPE=network`, `UNIFAI_FAIL_OPEN=0`, `GATEWAY_GUARD_SECRET=…`.
 Point office PAC/GPO to:
 ```
 https://<SERVER_DOMAIN>/api/browser-ai/pac?proxy=<proxy-host>:18182
@@ -389,7 +389,7 @@ minutes on first build. Docker layer cache makes subsequent builds much faster.
 * **Uninstall key**: `GET|PUT /api/browser-ai/agents/uninstall-key` (company) or per-agent rotate.
 * **Remote uninstall**: `POST /api/browser-ai/agents/{id}/remote-uninstall`.
 * **Fleet config**: `GET|PUT /api/browser-ai/fleet-config` — agents pull it on heartbeat.
-* When you rotate `UNIFAI_GUARD_SECRET`, re-sync Guard config and re-publish packages; existing agents
+* When you rotate `GATEWAY_GUARD_SECRET`, re-sync Guard config and re-publish packages; existing agents
   keep working only if their config is updated.
 
 ---
@@ -402,7 +402,7 @@ minutes on first build. Docker layer cache makes subsequent builds much faster.
 | `Error: /app/data/config.json is not writable` | `config.json` mounted as a single file | Mount only `./data:/app/data` |
 | `/api/browser-ai/*` returns the login page HTML | Image lacks Browser AI routes, or an edge rule intercepts the path | Deploy the current backend; exclude `/api/browser-ai/*` from SSO redirects and SPA fallback |
 | `/health` returns 503 `config store not available` | Wrong DB credentials/host, DB down, TLS mismatch | Check `DB_*`, `DB_SSL_MODE`, and DB reachability from the container |
-| Agents never appear under Guard Agents | Wrong backend URL in Guard config, missing/mismatched `UNIFAI_GUARD_SECRET`, egress blocked | Re-run `sync_config_from_env.py`, verify `/api/browser-ai/agents/heartbeat` returns JSON, check firewall/proxy |
+| Agents never appear under Guard Agents | Wrong backend URL in Guard config, missing/mismatched `GATEWAY_GUARD_SECRET`, egress blocked | Re-run `sync_config_from_env.py`, verify `/api/browser-ai/agents/heartbeat` returns JSON, check firewall/proxy |
 | Browsers show certificate warnings on AI sites | MITM CA not trusted on the endpoint | Check `ca_install_status.txt`; re-trust the CA; verify GPO/MDM distribution |
 | Prompts are not appearing in Prompt Logs | Target domain not monitored, PAC not applied, agent not running | Add/verify the Target Website, confirm PAC is applied, check `unifai_guard.log` |
 | Rules do not take effect immediately | Rule cache (~2 s) + PAC sync interval (default 3 s) | Wait a few seconds or lower `UNIFAI_PAC_SYNC_SECONDS` (min 2) |
@@ -419,10 +419,10 @@ minutes on first build. Docker layer cache makes subsequent builds much faster.
 
 ## 11. Security hardening checklist
 
-- [ ] Long random `UNIFAI_ENCRYPTION_KEY`, `UNIFAI_GUARD_SECRET`, `PASSWORD_RESET_SECRET`,
+- [ ] Long random `UNIFAI_ENCRYPTION_KEY`, `GATEWAY_GUARD_SECRET`, `PASSWORD_RESET_SECRET`,
       `CLUSTER_REPLICATE_SECRET` — generated with `openssl rand -base64 32|48`, stored in a secret manager.
 - [ ] `ADMIN_PASSWORD` changed after first login; bootstrap admin replaced by a named admin account.
-- [ ] `UNIFAI_GUARD_REQUIRE_SECRET=1` and `UNIFAI_PAC_ALLOW_QUERY_PROXY=0`.
+- [ ] `GATEWAY_GUARD_SECRET is required for Guard agent requests` and `UNIFAI_PAC_ALLOW_QUERY_PROXY=0`.
 - [ ] `DB_SSL_MODE=require`/`verify-full`; database not publicly exposed; least-privilege DB user.
 - [ ] TLS at the edge, HSTS, HTTP→HTTPS redirect; `TRUST_PROXY_HEADERS=1` with an explicit
       `TRUSTED_PROXIES` list.
@@ -439,7 +439,7 @@ minutes on first build. Docker layer cache makes subsequent builds much faster.
 - [ ] Guard CA distribution via GPO/MDM; macOS MDM profile
       `apps/browser-guard/installer/mdm/disable_private_relay.mobileconfig` applied.
 - [ ] Guard agent heartbeats monitored; investigate agents missing for more than 7 days.
-- [ ] Rotate `UNIFAI_GUARD_SECRET` and uninstall keys on staff/IT changes.
+- [ ] Rotate `GATEWAY_GUARD_SECRET` and uninstall keys on staff/IT changes.
 - [ ] Keep the container image, Postgres and the host patched; review `Dockerfile` base-image digests.
 
 ---
