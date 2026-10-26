@@ -2,7 +2,18 @@
  * Full In-Browser DLP: Prompt Interception, All File Types, Images, Fast-Path Regex & Cloud AI
  */
 (function () {
-  "use strict";
+  function isProductHost(host) {
+    if (!host) return false;
+    var h = String(host || "").toLowerCase().trim();
+    if (h.indexOf("://") >= 0) { try { h = new URL(h).hostname; } catch (e) { return false; } }
+    else { h = h.split("/", 1)[0].split("?", 1)[0].split("#", 1)[0]; if ((h.match(/:/g) || []).length === 1 && /:\d+$/.test(h)) h = h.replace(/:\d+$/, ""); }
+    if (h.charAt(0) === "[" && h.indexOf("]") >= 0) h = h.slice(1, h.indexOf("]"));
+    h = h.replace(/^www\./, "").replace(/\.$/, "");
+    return h === "localhost" || h === "127.0.0.1" || h === "0.0.0.0" || h === "::1" || h === "unifai.yespanchi.com" || h.endsWith(".unifai.yespanchi.com");
+  }
+  if (isProductHost(location.hostname)) {
+    return;
+  }
 
   var armed = false; // Armed only when confirmed by extension for monitored AI domains
   var curScript = document.currentScript;

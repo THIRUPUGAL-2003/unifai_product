@@ -7,8 +7,8 @@ Company server: (set SERVER_DOMAIN in .env — run sync_config_from_env.py)
 1. Extract the ZIP completely: Right-click YP_Raksha_Windows.zip and choose "Extract All..."
    (Do NOT run Setup directly from inside the ZIP file)
 2. In the extracted folder, run YP_Raksha_Setup.exe
-3. Keep "Start automatically at Windows login" checked
-4. Finish — Raksha starts in background (no black terminal)
+3. Leave "Launch YP Raksha" checked to start protection immediately
+4. Finish — Raksha starts in the background and configures startup at login
 5. Open ChatGPT / monitored AI sites as usual
 6. If sites show certificate warnings, tell IT — CA trust must succeed
    (status file: %LOCALAPPDATA%\YP\Raksha\ca_install_status.txt)

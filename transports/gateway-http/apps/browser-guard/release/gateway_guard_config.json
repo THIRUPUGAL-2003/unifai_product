@@ -5,9 +5,9 @@
   "server_mode": false,
   "agent_type": "endpoint",
   "listen_host": "127.0.0.1",
-  "pac_advertise_addr": "",
+  "pac_advertise_addr": "127.0.0.1:18103",
   "pac_http_port": 18195,
   "pac_url": "https://unifai.yespanchi.com/api/browser-ai/pac",
   "guard_secret": "",
-  "_comment": "Auto-synchronized from root .env by sync_all_from_env.py"
+  "_comment": "Generated from .env \u2014 run sync_config_from_env.py after changing SERVER_DOMAIN / GATEWAY_PROXY_ADDR / PAC_HTTP_PORT / GATEWAY_GUARD_SECRET"
 }

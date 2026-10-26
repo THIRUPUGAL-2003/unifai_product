@@ -510,99 +510,99 @@ func (k *TableKey) AfterFind(tx *gorm.DB) error {
 	switch k.EncryptionStatus {
 	case EncryptionStatusEncrypted:
 		if err := decryptSecretVar(&k.Value); err != nil {
-			return fmt.Errorf("failed to decrypt key value: %w", err)
+			k.Value = *schemas.NewSecretVar("")
 		}
 		// Azure
 		if err := decryptSecretVarPtr(&k.AzureEndpoint); err != nil {
-			return fmt.Errorf("failed to decrypt azure endpoint: %w", err)
+			k.AzureEndpoint = nil
 		}
 		if err := decryptSecretVarPtr(&k.AzureClientID); err != nil {
-			return fmt.Errorf("failed to decrypt azure client id: %w", err)
+			k.AzureClientID = nil
 		}
 		if err := decryptSecretVarPtr(&k.AzureClientSecret); err != nil {
-			return fmt.Errorf("failed to decrypt azure client secret: %w", err)
+			k.AzureClientSecret = nil
 		}
 		if err := decryptSecretVarPtr(&k.AzureTenantID); err != nil {
-			return fmt.Errorf("failed to decrypt azure tenant id: %w", err)
+			k.AzureTenantID = nil
 		}
 		// Vertex
 		if err := decryptSecretVarPtr(&k.VertexProjectID); err != nil {
-			return fmt.Errorf("failed to decrypt vertex project id: %w", err)
+			k.VertexProjectID = nil
 		}
 		if err := decryptSecretVarPtr(&k.VertexProjectNumber); err != nil {
-			return fmt.Errorf("failed to decrypt vertex project number: %w", err)
+			k.VertexProjectNumber = nil
 		}
 		if err := decryptSecretVarPtr(&k.VertexRegion); err != nil {
-			return fmt.Errorf("failed to decrypt vertex region: %w", err)
+			k.VertexRegion = nil
 		}
 		if err := decryptSecretVarPtr(&k.VertexAuthCredentials); err != nil {
-			return fmt.Errorf("failed to decrypt vertex auth credentials: %w", err)
+			k.VertexAuthCredentials = nil
 		}
 		// Bedrock
 		if err := decryptSecretVarPtr(&k.BedrockAccessKey); err != nil {
-			return fmt.Errorf("failed to decrypt bedrock access key: %w", err)
+			k.BedrockAccessKey = nil
 		}
 		if err := decryptSecretVarPtr(&k.BedrockSecretKey); err != nil {
-			return fmt.Errorf("failed to decrypt bedrock secret key: %w", err)
+			k.BedrockSecretKey = nil
 		}
 		if err := decryptSecretVarPtr(&k.BedrockSessionToken); err != nil {
-			return fmt.Errorf("failed to decrypt bedrock session token: %w", err)
+			k.BedrockSessionToken = nil
 		}
 		if err := decryptSecretVarPtr(&k.BedrockRegion); err != nil {
-			return fmt.Errorf("failed to decrypt bedrock region: %w", err)
+			k.BedrockRegion = nil
 		}
 		if err := decryptSecretVarPtr(&k.BedrockARN); err != nil {
-			return fmt.Errorf("failed to decrypt bedrock arn: %w", err)
+			k.BedrockARN = nil
 		}
 		if err := decryptSecretVarPtr(&k.BedrockRoleARN); err != nil {
-			return fmt.Errorf("failed to decrypt bedrock role arn: %w", err)
+			k.BedrockRoleARN = nil
 		}
 		if err := decryptSecretVarPtr(&k.BedrockExternalID); err != nil {
-			return fmt.Errorf("failed to decrypt bedrock external id: %w", err)
+			k.BedrockExternalID = nil
 		}
 		if err := decryptSecretVarPtr(&k.BedrockRoleSessionName); err != nil {
-			return fmt.Errorf("failed to decrypt bedrock role session name: %w", err)
+			k.BedrockRoleSessionName = nil
 		}
 		if err := decryptString(k.BedrockBatchS3ConfigJSON); err != nil {
-			return fmt.Errorf("failed to decrypt bedrock batch s3 config: %w", err)
+			k.BedrockBatchS3ConfigJSON = nil
 		}
 		// Bedrock Mantle
 		if err := decryptSecretVarPtr(&k.BedrockMantleAccessKey); err != nil {
-			return fmt.Errorf("failed to decrypt bedrock mantle access key: %w", err)
+			k.BedrockMantleAccessKey = nil
 		}
 		if err := decryptSecretVarPtr(&k.BedrockMantleSecretKey); err != nil {
-			return fmt.Errorf("failed to decrypt bedrock mantle secret key: %w", err)
+			k.BedrockMantleSecretKey = nil
 		}
 		if err := decryptSecretVarPtr(&k.BedrockMantleSessionToken); err != nil {
-			return fmt.Errorf("failed to decrypt bedrock mantle session token: %w", err)
+			k.BedrockMantleSessionToken = nil
 		}
 		if err := decryptSecretVarPtr(&k.BedrockMantleRegion); err != nil {
-			return fmt.Errorf("failed to decrypt bedrock mantle region: %w", err)
+			k.BedrockMantleRegion = nil
 		}
 		if err := decryptSecretVarPtr(&k.BedrockMantleRoleARN); err != nil {
-			return fmt.Errorf("failed to decrypt bedrock mantle role arn: %w", err)
+			k.BedrockMantleRoleARN = nil
 		}
 		if err := decryptSecretVarPtr(&k.BedrockMantleExternalID); err != nil {
-			return fmt.Errorf("failed to decrypt bedrock mantle external id: %w", err)
+			k.BedrockMantleExternalID = nil
 		}
 		if err := decryptSecretVarPtr(&k.BedrockMantleRoleSessionName); err != nil {
-			return fmt.Errorf("failed to decrypt bedrock mantle role session name: %w", err)
+			k.BedrockMantleRoleSessionName = nil
 		}
 		// Aliases
 		if err := decryptString(k.AliasesJSON); err != nil {
-			return fmt.Errorf("failed to decrypt aliases: %w", err)
+			k.AliasesJSON = nil
 		}
 		// VLLM
 		if err := decryptSecretVarPtr(&k.VLLMUrl); err != nil {
-			return fmt.Errorf("failed to decrypt vllm url: %w", err)
+			k.VLLMUrl = nil
 		}
 		// Ollama
 		if err := decryptSecretVarPtr(&k.OllamaUrl); err != nil {
-			return fmt.Errorf("failed to decrypt ollama url: %w", err)
+			k.OllamaUrl = nil
 		}
 		// SGL
 		if err := decryptSecretVarPtr(&k.SGLUrl); err != nil {
-			return fmt.Errorf("failed to decrypt sgl url: %w", err)
+			k.SGLUrl = nil
 		}
 	}
 

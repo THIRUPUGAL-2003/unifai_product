@@ -4,6 +4,18 @@ title Build Gateway Guard Enterprise Installer 1.1
 
 cd /d "%~dp0.."
 
+set "ISCC=%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe"
+if not exist "%ISCC%" set "ISCC=C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+if not exist "%ISCC%" set "ISCC=C:\Program Files\Inno Setup 6\ISCC.exe"
+if not exist "%ISCC%" (
+  echo ERROR: Inno Setup 6 compiler not found. Install Inno Setup 6, then rerun this script.
+  exit /b 1
+)
+if not exist installer\YP_Raksha.iss (
+  echo ERROR: installer\YP_Raksha.iss is missing.
+  exit /b 1
+)
+
 echo ============================================================
 echo  Preflight: config + sources
 echo ============================================================
@@ -30,7 +42,15 @@ if errorlevel 1 (
   exit /b 1
 )
 python scripts\pack_all_extensions.py
+if errorlevel 1 (
+  echo ERROR: browser extension packaging failed.
+  exit /b 1
+)
 python installer\encrypt_proxy_bundle.py
+if errorlevel 1 (
+  echo ERROR: proxy bundle encryption failed.
+  exit /b 1
+)
 
 echo.
 echo ============================================================
@@ -49,12 +69,14 @@ echo ============================================================
 if not exist installer\staging mkdir installer\staging
 if not exist release mkdir release
 
-if exist build\exe\YP_Raksha.exe (
-  copy /Y build\exe\YP_Raksha.exe installer\staging\YP_Raksha.exe >nul
-) else if exist dist\YP_Raksha.exe (
-  copy /Y dist\YP_Raksha.exe installer\staging\YP_Raksha.exe >nul
-) else if exist release\YP_Raksha.exe (
-  copy /Y release\YP_Raksha.exe installer\staging\YP_Raksha.exe >nul
+if not exist build\exe\YP_Raksha.exe (
+  echo ERROR: fresh build\exe\YP_Raksha.exe was not produced.
+  exit /b 1
+)
+copy /Y build\exe\YP_Raksha.exe installer\staging\YP_Raksha.exe >nul
+if errorlevel 1 (
+  echo ERROR: could not stage the freshly built YP_Raksha.exe.
+  exit /b 1
 )
 if exist build\exe\Gateway_Guard.exe (
   copy /Y build\exe\Gateway_Guard.exe installer\staging\Gateway_Guard.exe >nul
@@ -71,7 +93,11 @@ if exist gateway_guard.ico (
   copy /Y gateway_guard.ico installer\gateway_guard.ico >nul
 )
 if exist installer\EMPLOYEE_README.txt copy /Y installer\EMPLOYEE_README.txt installer\staging\EMPLOYEE_README.txt >nul
-if exist release\Uninstall_YP_Raksha.bat copy /Y release\Uninstall_YP_Raksha.bat installer\staging\Uninstall_YP_Raksha.bat >nul
+copy /Y installer\Uninstall_YP_Raksha.bat installer\staging\Uninstall_YP_Raksha.bat >nul
+if errorlevel 1 (
+  echo ERROR: could not stage the secure uninstaller.
+  exit /b 1
+)
 if exist release\INSTALL_WINDOWS.txt copy /Y release\INSTALL_WINDOWS.txt installer\staging\INSTALL_WINDOWS.txt >nul
 if exist release\VERSION.txt copy /Y release\VERSION.txt installer\staging\VERSION.txt >nul
 if exist installer\staging\extension rmdir /S /Q installer\staging\extension >nul 2>&1
@@ -80,34 +106,23 @@ echo.
 echo ============================================================
 echo  3) Compiling Setup EXE (Inno Setup)
 echo ============================================================
-set ISCC="%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe"
-if not exist %ISCC% set ISCC="C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-if not exist %ISCC% set ISCC="C:\Program Files\Inno Setup 6\ISCC.exe"
-if not exist %ISCC% set ISCC="%LocalAppData%\Programs\Inno Setup 6\ISCC.exe"
-if not exist %ISCC% (
-  echo Inno Setup 6 not found. Staging folder is ready at installer\staging
-  echo Install Inno Setup, then re-run this script.
-  echo Raw EXE: dist\Gateway_Guard.exe
-  exit /b 1
-)
-
-if exist installer\YP_Raksha.iss (
-  %ISCC% installer\YP_Raksha.iss
-) else (
-  %ISCC% installer\Gateway_Guard.iss
-)
+if not exist installer\output mkdir installer\output
+if exist installer\output\YP_Raksha_Setup.exe del /F /Q installer\output\YP_Raksha_Setup.exe
+"%ISCC%" installer\YP_Raksha.iss
 if errorlevel 1 (
   echo Inno compile failed.
   exit /b 1
 )
-if exist installer\output\YP_Raksha_Setup.exe (
-  copy /Y installer\output\YP_Raksha_Setup.exe release\YP_Raksha_Setup.exe >nul
-  copy /Y installer\output\YP_Raksha_Setup.exe release\Gateway_Guard_Setup.exe >nul
+if not exist installer\output\YP_Raksha_Setup.exe (
+  echo ERROR: Inno Setup reported success but produced no YP_Raksha_Setup.exe.
+  exit /b 1
 )
-if exist installer\output\Gateway_Guard_Setup.exe (
-  copy /Y installer\output\Gateway_Guard_Setup.exe release\Gateway_Guard_Setup.exe >nul
-  copy /Y installer\output\Gateway_Guard_Setup.exe release\YP_Raksha_Setup.exe >nul
+copy /Y installer\output\YP_Raksha_Setup.exe release\YP_Raksha_Setup.exe >nul
+if errorlevel 1 (
+  echo ERROR: could not publish release\YP_Raksha_Setup.exe.
+  exit /b 1
 )
+if exist release\Gateway_Guard_Setup.exe del /F /Q release\Gateway_Guard_Setup.exe
 
 echo.
 echo ============================================================
@@ -122,8 +137,6 @@ if exist "%ZIP_STAGE%" rmdir /S /Q "%ZIP_STAGE%"
 mkdir "%ZIP_STAGE%"
 
 if exist release\YP_Raksha_Setup.exe copy /Y release\YP_Raksha_Setup.exe "%ZIP_STAGE%\YP_Raksha_Setup.exe" >nul
-if exist release\Gateway_Guard_Setup.exe copy /Y release\Gateway_Guard_Setup.exe "%ZIP_STAGE%\Gateway_Guard_Setup.exe" >nul
-
 if not exist "%ZIP_STAGE%\portable" mkdir "%ZIP_STAGE%\portable"
 if exist build\exe\YP_Raksha.exe (
   copy /Y build\exe\YP_Raksha.exe "%ZIP_STAGE%\portable\YP_Raksha.exe" >nul
