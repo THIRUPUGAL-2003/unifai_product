@@ -65,8 +65,6 @@ def build_windows() -> Path:
     RELEASE.mkdir(parents=True, exist_ok=True)
     _replace_copy(exe, DIST / "YP_Raksha.exe")
     _replace_copy(exe, RELEASE / "YP_Raksha.exe")
-    _replace_copy(exe, DIST / "Gateway_Guard.exe")
-    _replace_copy(exe, RELEASE / "Gateway_Guard.exe")
     shutil.copy2(CONFIG, RELEASE / "gateway_guard_config.json")
     return exe
 

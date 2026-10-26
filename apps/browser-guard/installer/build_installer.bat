@@ -79,11 +79,6 @@ if errorlevel 1 (
   echo ERROR: could not stage the freshly built YP_Raksha.exe.
   exit /b 1
 )
-if exist build\exe\Gateway_Guard.exe (
-  copy /Y build\exe\Gateway_Guard.exe installer\staging\Gateway_Guard.exe >nul
-) else if exist dist\Gateway_Guard.exe (
-  copy /Y dist\Gateway_Guard.exe installer\staging\Gateway_Guard.exe >nul
-)
 copy /Y release\gateway_guard_config.json installer\staging\gateway_guard_config.json >nul
 if exist yp_raksha.ico (
   copy /Y yp_raksha.ico installer\staging\yp_raksha.ico >nul
