@@ -630,7 +630,7 @@ def _post_intercept_file(
         print(f"[agent_extension] Skipping duplicate file post for {file_name}")
         return True
     try:
-        from agent_http import _guard_headers
+        from agent_http import _DIRECT_OPENER, _guard_headers
         boundary = f"----Gateway{int(time.time() * 1000)}"
         parts: list[bytes] = []
 
@@ -673,7 +673,7 @@ def _post_intercept_file(
                     method="POST",
                 )
                 timeout = 10 if file_payload else 4
-                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                with _DIRECT_OPENER.open(req, timeout=timeout) as resp:
                     if 200 <= getattr(resp, "status", 200) < 300:
                         return True
             except Exception as e:

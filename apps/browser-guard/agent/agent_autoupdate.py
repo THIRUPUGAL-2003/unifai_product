@@ -22,6 +22,7 @@ import urllib.error
 from typing import Optional
 
 from agent_config import AGENT_VERSION, GATEWAY_BACKEND_URL, GATEWAY_GUARD_SECRET
+from agent_http import _DIRECT_OPENER
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 _WIN_DL_URL = "{backend}/api/browser-ai/setup/download-windows.zip"
@@ -58,7 +59,7 @@ def _get_server_version() -> Optional[str]:
         req = urllib.request.Request(url, method="HEAD")
         for k, v in _auth_headers().items():
             req.add_header(k, v)
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with _DIRECT_OPENER.open(req, timeout=10) as resp:
             version = resp.headers.get("X-Gateway-Guard-Version", "").strip()
             if version:
                 return version
@@ -70,7 +71,7 @@ def _get_server_version() -> Optional[str]:
         for k, v in _auth_headers().items():
             req.add_header(k, v)
         req.add_header("Range", "bytes=0-0")
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with _DIRECT_OPENER.open(req, timeout=10) as resp:
             version = resp.headers.get("X-Gateway-Guard-Version", "").strip()
             return version if version else None
     except Exception as e:
@@ -92,7 +93,7 @@ def _download_file(url: str, dest: str) -> None:
     req = urllib.request.Request(url, method="GET")
     for k, v in _auth_headers().items():
         req.add_header(k, v)
-    with urllib.request.urlopen(req, timeout=_DOWNLOAD_TIMEOUT) as resp, open(dest, "wb") as out:
+    with _DIRECT_OPENER.open(req, timeout=_DOWNLOAD_TIMEOUT) as resp, open(dest, "wb") as out:
         while True:
             chunk = resp.read(1024 * 256)
             if not chunk:

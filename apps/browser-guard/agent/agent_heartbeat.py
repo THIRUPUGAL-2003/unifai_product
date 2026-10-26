@@ -180,33 +180,36 @@ def apply_admin_uninstall(agent_id: str) -> None:
 def heartbeat_loop(agent_id: str, stop_event: threading.Event) -> None:
     ticks = 0
     while not stop_event.is_set():
-        current_status = "paused" if is_guard_paused() else "active"
-        data = send_heartbeat(agent_id, status=current_status)
-        if heartbeat_wants_uninstall(data):
-            apply_admin_uninstall(agent_id)
-            return
+        try:
+            current_status = "paused" if is_guard_paused() else "active"
+            data = send_heartbeat(agent_id, status=current_status)
+            if heartbeat_wants_uninstall(data):
+                apply_admin_uninstall(agent_id)
+                return
 
-        cmd = str((data or {}).get("command") or "").strip().lower()
-        agent_obj = (data or {}).get("agent") if isinstance((data or {}).get("agent"), dict) else {}
-        server_status = str(agent_obj.get("status") or "").strip().lower()
+            cmd = str((data or {}).get("command") or "").strip().lower()
+            agent_obj = (data or {}).get("agent") if isinstance((data or {}).get("agent"), dict) else {}
+            server_status = str(agent_obj.get("status") or "").strip().lower()
 
-        if cmd == "pause" or server_status == "paused":
-            pause_guard(agent_id)
-        elif cmd in ("resume", "active") or server_status == "active":
-            if is_guard_paused():
-                resume_guard(agent_id)
+            if cmd == "pause" or server_status == "paused":
+                pause_guard(agent_id)
+            elif cmd in ("resume", "active") or server_status == "active":
+                if is_guard_paused():
+                    resume_guard(agent_id)
 
-        ticks += 1
-        if not is_guard_paused():
-            if data is not None and ticks >= 2:
-                confirm_bundle_healthy()
-            # Re-assert PAC only every ~2 min — every-30s registry poke can drop tunnels on Windows.
-            if ticks % 4 == 1:
-                ensure_pac_still_on(silent=True)
-            set_browser_quic(enable_quic=False)
+            ticks += 1
+            if not is_guard_paused():
+                if data is not None and ticks >= 2:
+                    confirm_bundle_healthy()
+                # Re-assert PAC only every ~2 min — every-30s registry poke can drop tunnels on Windows.
+                if ticks % 4 == 1:
+                    ensure_pac_still_on(silent=True)
+                set_browser_quic(enable_quic=False)
 
-        # Auto-update check every hour (rate-limited inside check_and_update_if_needed)
-        check_and_update_if_needed()
+            # Auto-update check every hour (rate-limited inside check_and_update_if_needed)
+            check_and_update_if_needed()
+        except Exception as e:
+            print(f"[Gateway Guard WARNING] Unexpected error in heartbeat loop: {e}")
         stop_event.wait(HEARTBEAT_SECONDS)
 
 

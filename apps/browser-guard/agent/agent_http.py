@@ -29,6 +29,9 @@ def _guard_headers(extra: dict | None = None) -> dict:
     return headers
 
 
+_DIRECT_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
 def _http_json(method: str, url: str, payload: dict | None = None, timeout: int = 12) -> tuple[int, dict | None]:
     data = None
     headers = _guard_headers()
@@ -37,7 +40,7 @@ def _http_json(method: str, url: str, payload: dict | None = None, timeout: int 
         headers["Content-Type"] = "application/json"
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with _DIRECT_OPENER.open(req, timeout=timeout) as resp:
             body = resp.read().decode("utf-8", errors="replace")
             try:
                 return resp.status, json.loads(body) if body else {}
@@ -58,7 +61,7 @@ def _http_json(method: str, url: str, payload: dict | None = None, timeout: int 
 def _http_get_text(url: str, accept: str, timeout: int = 10) -> str | None:
     try:
         req = urllib.request.Request(url, headers=_guard_headers({"Accept": accept}))
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with _DIRECT_OPENER.open(req, timeout=timeout) as resp:
             body = resp.read().decode("utf-8", errors="replace")
             low = body.lstrip().lower()
             if low.startswith("<!doctype") or low.startswith("<html"):
