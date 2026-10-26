@@ -585,10 +585,11 @@ func (h *BrowserAIHandler) downloadSetupPackage(ctx *fasthttp.RequestCtx) {
 		// Always ship BOTH when present: Setup (Inno install) + portable EXE.
 		// INSTALL_WINDOWS.txt tells employees to prefer newer EXE if Setup is older.
 		var winAssets []zipAsset
+		if setupOK {
+			winAssets = append(winAssets, zipAsset{name: "YP_Raksha_Setup.exe", path: setupPath})
+		}
 		if exeOK {
 			winAssets = append(winAssets, zipAsset{name: "YP_Raksha.exe", path: exePath})
-		} else if setupOK {
-			winAssets = append(winAssets, zipAsset{name: "YP_Raksha_Setup.exe", path: setupPath})
 		}
 		cfg, cfgOK := guardConfigForDownload(ctx)
 		if !cfgOK {
@@ -629,7 +630,8 @@ func (h *BrowserAIHandler) downloadSetupPackage(ctx *fasthttp.RequestCtx) {
 	var assets []zipAsset
 	if setupOK {
 		assets = append(assets, zipAsset{name: "YP_Raksha_Setup.exe", path: setupPath})
-	} else if exeOK {
+	}
+	if exeOK {
 		assets = append(assets, zipAsset{name: "YP_Raksha.exe", path: exePath})
 	}
 	if macZipOK {
@@ -933,7 +935,18 @@ func (h *BrowserAIHandler) rebuildSetupPackages(ctx *fasthttp.RequestCtx) {
 }
 
 func (h *BrowserAIHandler) downloadSetupExe(ctx *fasthttp.RequestCtx) {
-	setupPath, setupOK := findFirstExisting(browserAISetupCandidates()["Gateway_Guard_Setup.exe"])
+	reqPath := string(ctx.Path())
+	targetName := "YP_Raksha_Setup.exe"
+	candidateKey := "Gateway_Guard_Setup.exe"
+	if strings.HasSuffix(reqPath, "YP_Raksha.exe") || strings.HasSuffix(reqPath, "Gateway_Guard.exe") {
+		targetName = "YP_Raksha.exe"
+		candidateKey = "Gateway_Guard.exe"
+	}
+
+	setupPath, setupOK := findFirstExisting(browserAISetupCandidates()[candidateKey])
+	if !setupOK {
+		setupPath, setupOK = findFirstExisting(browserAISetupCandidates()["Gateway_Guard_Setup.exe"])
+	}
 	if !setupOK {
 		setupPath, setupOK = findFirstExisting(browserAISetupCandidates()["Gateway_Guard.exe"])
 	}
@@ -941,6 +954,6 @@ func (h *BrowserAIHandler) downloadSetupExe(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusNotFound, "Windows Guard installer (.exe) not found on server")
 		return
 	}
-	ctx.Response.Header.Set("Content-Disposition", `attachment; filename="YP_Raksha_Setup.exe"`)
+	ctx.Response.Header.Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, targetName))
 	ctx.SendFile(setupPath)
 }

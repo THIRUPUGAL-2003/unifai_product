@@ -14,6 +14,9 @@ const (
 	guardEventRebuild   = "rebuild"
 	guardEventPause     = "pause"
 	guardEventResume    = "resume"
+	// guardEventPolicy tells every Guard that Target Websites, rules, or data
+	// governance controls changed, so it re-pulls them instead of waiting for its poll.
+	guardEventPolicy = "policy"
 
 	// guardCommandWait stays under common reverse-proxy read timeouts (60s).
 	guardCommandWait = 25 * time.Second
@@ -71,6 +74,17 @@ func (g *guardEventHub) broadcast(event string) {
 			case ch <- event:
 			default:
 			}
+		}
+	}
+}
+
+// withPolicyBroadcast wraps an admin write handler (rules, targets, controls) and wakes
+// every Guard after a successful change, so laptops apply it in about a second.
+func withPolicyBroadcast(next fasthttp.RequestHandler) fasthttp.RequestHandler {
+	return func(ctx *fasthttp.RequestCtx) {
+		next(ctx)
+		if status := ctx.Response.StatusCode(); status >= 200 && status < 300 {
+			guardEvents.broadcast(guardEventPolicy)
 		}
 	}
 }

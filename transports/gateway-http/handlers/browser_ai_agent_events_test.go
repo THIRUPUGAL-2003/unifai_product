@@ -51,3 +51,31 @@ func TestGuardEventHubBroadcastAndUnsubscribe(t *testing.T) {
 		t.Fatalf("waiters not cleaned up: %d", len(hub.waiters))
 	}
 }
+
+func TestWithPolicyBroadcastWakesGuardsOnlyOnSuccess(t *testing.T) {
+	a := guardEvents.subscribe("policy-agent")
+	defer guardEvents.unsubscribe("policy-agent", a)
+
+	failing := withPolicyBroadcast(func(ctx *fasthttp.RequestCtx) {
+		ctx.SetStatusCode(fasthttp.StatusBadRequest)
+	})
+	failing(&fasthttp.RequestCtx{})
+	select {
+	case ev := <-a:
+		t.Fatalf("failed write must not wake Guards, got %q", ev)
+	default:
+	}
+
+	ok := withPolicyBroadcast(func(ctx *fasthttp.RequestCtx) {
+		ctx.SetStatusCode(fasthttp.StatusOK)
+	})
+	ok(&fasthttp.RequestCtx{})
+	select {
+	case ev := <-a:
+		if ev != guardEventPolicy {
+			t.Fatalf("got %q, want %q", ev, guardEventPolicy)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("successful write did not wake Guard")
+	}
+}
