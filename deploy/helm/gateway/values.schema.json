@@ -327,6 +327,20 @@
           },
           "additionalProperties": false
         },
+        "guardSecret": {
+          "type": "object",
+          "description": "Reference to an existing Kubernetes Secret containing the shared Browser Guard authentication secret.",
+          "properties": {
+            "existingSecret": {
+              "type": "string"
+            },
+            "key": {
+              "type": "string",
+              "default": "guard-secret"
+            }
+          },
+          "additionalProperties": false
+        },
         "authConfig": {
           "$ref": "#/$defs/authConfig"
         },

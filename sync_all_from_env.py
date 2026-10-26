@@ -393,7 +393,7 @@ def main() -> int:
         return 1
 
     app_port = env_vars.get("APP_PORT", "6000")
-    server_domain = env_vars.get("SERVER_DOMAIN", "https://unifai.yespanchi.com")
+    server_domain = (env_vars.get("SERVER_DOMAIN") or env_vars.get("GATEWAY_BACKEND_URL") or "").strip().rstrip("/")
     proxy_addr = env_vars.get("GATEWAY_PROXY_ADDR", "127.0.0.1:18103")
     pac_port = env_vars.get("PAC_HTTP_PORT", "18195")
 

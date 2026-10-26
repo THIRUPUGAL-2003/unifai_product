@@ -148,7 +148,7 @@ curl --location --request POST 'http://localhost:3100/api/providers' \
     "provider": "anthropic",
     "keys": [
       {
-        "key": "sk-ant-api03-samplekey123456789",
+        "key": "env.ANTHROPIC_API_KEY",
         "weight": 1.0,
         "models": ["claude-3-5-sonnet", "claude-3-haiku"]
       }

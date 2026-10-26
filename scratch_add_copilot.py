@@ -1,9 +1,9 @@
+import datetime
 import os
+import uuid
 from pathlib import Path
 
 import psycopg2
-import uuid
-import datetime
 
 
 def _load_project_env() -> None:
@@ -42,35 +42,70 @@ _sslmode = os.environ.get("DB_SSL_MODE", "").strip()
 if _sslmode:
     _db_options["sslmode"] = _sslmode
 
-conn = psycopg2.connect(**_db_options)
-cur = conn.cursor()
-cur.execute("SELECT domain FROM browser_target_websites WHERE domain IN ('copilot.com', 'www.copilot.com')")
-existing = [r[0] for r in cur.fetchall()]
-print('Existing:', existing)
-
 sql = """
 INSERT INTO browser_target_websites (
     id, domain, platform_name, monitored, block_site, intercepted_count,
     status, reply_bot_enabled, reply_bot_provider, reply_bot_model,
     reply_bot_mode, parent_id, created_at, host_role
 ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+ON CONFLICT (domain) DO NOTHING
 """
 
-if 'copilot.com' not in existing:
-    cur.execute(sql, (
-        'tgt-' + uuid.uuid4().hex[:8], 'copilot.com', 'Copilot', True, False, 0,
-        'MONITORED', False, '', '', '', 'tgt-df3d0ba5', datetime.datetime.now(datetime.timezone.utc), 'ui'
-    ))
-    print('Inserted copilot.com')
+def _new_target(domain: str, parent_id: str = "") -> tuple:
+    return (
+        "tgt-" + uuid.uuid4().hex,
+        domain,
+        "Copilot",
+        True,
+        False,
+        0,
+        "MONITORED",
+        False,
+        "",
+        "",
+        "",
+        parent_id,
+        datetime.datetime.now(datetime.timezone.utc),
+        "ui",
+    )
 
-if 'www.copilot.com' not in existing:
-    cur.execute(sql, (
-        'tgt-' + uuid.uuid4().hex[:8], 'www.copilot.com', 'Copilot', True, False, 0,
-        'MONITORED', False, '', '', '', 'tgt-df3d0ba5', datetime.datetime.now(datetime.timezone.utc), 'ui'
-    ))
-    print('Inserted www.copilot.com')
 
-conn.commit()
-cur.execute("SELECT domain, platform_name, monitored, status, host_role FROM browser_target_websites WHERE platform_name='Copilot' ORDER BY domain")
-for r in cur.fetchall():
-    print(r)
+def main() -> None:
+    conn = psycopg2.connect(**_db_options)
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id, domain FROM browser_target_websites "
+                    "WHERE domain IN (%s, %s) FOR UPDATE",
+                    ("copilot.com", "www.copilot.com"),
+                )
+                existing = {domain: target_id for target_id, domain in cur.fetchall()}
+                if "copilot.com" not in existing:
+                    cur.execute(sql, _new_target("copilot.com"))
+                    cur.execute(
+                        "SELECT id FROM browser_target_websites WHERE domain = %s",
+                        ("copilot.com",),
+                    )
+                    row = cur.fetchone()
+                    if row is None:
+                        raise RuntimeError("Failed to create or find the copilot.com root target")
+                    existing["copilot.com"] = row[0]
+
+                if "www.copilot.com" not in existing:
+                    cur.execute(sql, _new_target("www.copilot.com", existing["copilot.com"]))
+
+                cur.execute(
+                    "SELECT domain, platform_name, monitored, status, host_role "
+                    "FROM browser_target_websites "
+                    "WHERE domain IN (%s, %s) ORDER BY domain",
+                    ("copilot.com", "www.copilot.com"),
+                )
+                for row in cur.fetchall():
+                    print(row)
+    finally:
+        conn.close()
+
+
+if __name__ == "__main__":
+    main()

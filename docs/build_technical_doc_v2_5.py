@@ -954,16 +954,16 @@ def build_markdown():
 
 | Section | Module & Topic Specification | Detailed Engineering Subsystems & Topics | Page |
 | :---: | :--- | :--- | :---: |
-| **1.0** | **Product Overview & Mission** | 1.1 Intro to Raksha \| 1.2 Purpose & Objectives \| 1.3 Key Features \| 1.4 Use Cases & Benefits \| 1.5 Scope & Limitations | **Page 3 - 4** |
-| **2.0** | **System Architecture & High-Level Design** | 2.1 Dual Data Planes \| 2.2 Ingestion & Proxy Pipelines \| 2.3 Persistence & Multi-Storage Fabric \| 2.4 Cryptographic Boundaries | **Page 5** |
-| **3.0** | **Browser Guard & Endpoint Fleet Mechanics** | 3.1 Python mitmproxy Agent \| 3.2 PAC Steering (18103/18195) \| 3.3 Dynamic Content Parsing \| 3.4 Triple Remediation Pipeline | **Page 6** |
-| **4.0** | **Unified AI Gateway & Provider Fabric** | 4.1 OpenAI-Compatible `/v1/*` Modality Engine \| 4.2 28+ Provider Adapters \| 4.3 Failover & Load Balancing \| 4.4 Model Context Protocol | **Page 7** |
-| **5.0** | **Governance, Budgets & Virtual Keys** | 5.1 Cryptographic Virtual Keys \| 5.2 Multi-Tier Budget Quotas \| 5.3 TPM/RPM Throttling \| 5.4 Chargebacks & Cost Attribution | **Page 8** |
-| **6.0** | **Security Enforcement & Hazard Screening** | 6.1 Inline PII & Regulated Data Masking \| 6.2 CEL Policy Rules \| 6.3 Secondary AI Guard Bot \| 6.4 Jailbreak & Prompt Injection Defense | **Page 9** |
-| **7.0** | **Identity Federation & Enterprise RBAC** | 7.1 Multi-Tenant RBAC Matrix \| 7.2 SCIM 2.0 Inbound Sync (Okta/Entra) \| 7.3 Active Directory LDAP/LDAPS \| 7.4 Session Security Policies | **Page 10** |
-| **8.0** | **Observability, Telemetry & Audit Trails** | 8.1 Real-Time Prompt/Search Logs \| 8.2 OTel & Prometheus Exporters \| 8.3 Immutable Audit Trails \| 8.4 CISO Analytics Dashboard | **Page 11** |
-| **9.0** | **Enterprise Deployment & Infrastructure** | 9.1 Containerized Stack (Docker & Helm) \| 9.2 Endpoint Packages (Inno Setup / Mac) \| 9.3 Secrets Hardening \| 9.4 High Availability | **Page 12** |
-| **10.0** | **Technical Glossary & Reference Matrix** | 10.1 Key Terminology & Definitions \| 10.2 Network Port & Protocol Matrix \| 10.3 Failover Protocol & Diagnostic Runbook | **Page 13** |
+| **1.0** | **Product Overview & Mission** | 1.1 Intro to Raksha \\| 1.2 Purpose & Objectives \\| 1.3 Key Features \\| 1.4 Use Cases & Benefits \\| 1.5 Scope & Limitations | **Page 3 - 4** |
+| **2.0** | **System Architecture & High-Level Design** | 2.1 Dual Data Planes \\| 2.2 Ingestion & Proxy Pipelines \\| 2.3 Persistence & Multi-Storage Fabric \\| 2.4 Cryptographic Boundaries | **Page 5** |
+| **3.0** | **Browser Guard & Endpoint Fleet Mechanics** | 3.1 Python mitmproxy Agent \\| 3.2 PAC Steering (18103/18195) \\| 3.3 Dynamic Content Parsing \\| 3.4 Triple Remediation Pipeline | **Page 6** |
+| **4.0** | **Unified AI Gateway & Provider Fabric** | 4.1 OpenAI-Compatible `/v1/*` Modality Engine \\| 4.2 28+ Provider Adapters \\| 4.3 Failover & Load Balancing \\| 4.4 Model Context Protocol | **Page 7** |
+| **5.0** | **Governance, Budgets & Virtual Keys** | 5.1 Cryptographic Virtual Keys \\| 5.2 Multi-Tier Budget Quotas \\| 5.3 TPM/RPM Throttling \\| 5.4 Chargebacks & Cost Attribution | **Page 8** |
+| **6.0** | **Security Enforcement & Hazard Screening** | 6.1 Inline PII & Regulated Data Masking \\| 6.2 CEL Policy Rules \\| 6.3 Secondary AI Guard Bot \\| 6.4 Jailbreak & Prompt Injection Defense | **Page 9** |
+| **7.0** | **Identity Federation & Enterprise RBAC** | 7.1 Multi-Tenant RBAC Matrix \\| 7.2 SCIM 2.0 Inbound Sync (Okta/Entra) \\| 7.3 Active Directory LDAP/LDAPS \\| 7.4 Session Security Policies | **Page 10** |
+| **8.0** | **Observability, Telemetry & Audit Trails** | 8.1 Real-Time Prompt/Search Logs \\| 8.2 OTel & Prometheus Exporters \\| 8.3 Immutable Audit Trails \\| 8.4 CISO Analytics Dashboard | **Page 11** |
+| **9.0** | **Enterprise Deployment & Infrastructure** | 9.1 Containerized Stack (Docker & Helm) \\| 9.2 Endpoint Packages (Inno Setup / Mac) \\| 9.3 Secrets Hardening \\| 9.4 High Availability | **Page 12** |
+| **10.0** | **Technical Glossary & Reference Matrix** | 10.1 Key Terminology & Definitions \\| 10.2 Network Port & Protocol Matrix \\| 10.3 Failover Protocol & Diagnostic Runbook | **Page 13** |
 
 > **Architectural Scope Note:** This technical specification is organized modularly to provide complete verification depth across all operational layers of YP-Raksha v2.5. Each section delivers verified implementation facts from source code, operational binaries, and configuration schemas, serving as the official technical baseline for deployment and enterprise infosec compliance.
 

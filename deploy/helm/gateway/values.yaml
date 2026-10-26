@@ -225,6 +225,12 @@ gateway:
     name: ""
     key: "encryption-key"
 
+  # Use an existing Kubernetes Secret for Browser Guard agent authentication.
+  # Agents and this Gateway must be configured with the same secret.
+  guardSecret:
+    existingSecret: ""
+    key: "guard-secret"
+
   # Authentication configuration (top-level)
   # This controls authentication for Gateway API and dashboard
   authConfig:
@@ -1207,7 +1213,7 @@ postgresql:
   # PostgreSQL subchart configuration (when postgresql.enabled is true)
   auth:
     username: gateway
-    password: gateway_password
+    password: ""
     database: gateway
     # Use existing Kubernetes secret for password (takes precedence over password field).
     # The postgres pod and gateway will both read from this secret.
@@ -1328,7 +1334,7 @@ vectorStore:
     # Redis subchart configuration (when redis.enabled is true)
     auth:
       enabled: true
-      password: "redis_password"
+      password: ""
 
     master:
       persistence:

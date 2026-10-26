@@ -93,24 +93,6 @@
   var blockedSitesMap = null;
   var lastBlockedSitesList = null;
 
-  function normalizeDomainHost(value) {
-    var host = String(value || "").toLowerCase().trim();
-    if (!host) return "";
-    if (host.indexOf("://") >= 0) {
-      try { host = new URL(host).hostname; } catch (e) { return ""; }
-    } else {
-      host = host.split("/", 1)[0].split("?", 1)[0].split("#", 1)[0];
-      if ((host.match(/:/g) || []).length === 1 && /:\d+$/.test(host)) {
-        host = host.replace(/:\d+$/, "");
-      }
-    }
-    if (host.charAt(0) === "[" && host.indexOf("]") >= 0) {
-      host = host.slice(1, host.indexOf("]"));
-    }
-    host = host.replace(/^www\./, "").replace(/\.$/, "");
-    return host;
-  }
-
   function buildDomainMap(domains) {
     var map = Object.create(null);
     if (!Array.isArray(domains)) return map;
@@ -285,330 +267,142 @@
     run();
   }
 
-  function syncRules() {
-    withBase(function () {
-      if (!base) return;
-      fetch(base + "/extension/rules", { method: "GET", cache: "no-store" })
-        .then(function (r) {
-          if (!r.ok) throw new Error("rules");
-          return r.json();
-        })
-        .then(function (data) {
-          if (!data || !Array.isArray(data.rules)) return;
-          var rules = data.rules;
-          if (data.server_host) {
-            serverHost = data.server_host;
-          }
-          var stored = {
-            cached_rules: rules,
-            server_host: serverHost,
-            block_file_extension: Boolean(data.block_file_extension),
-            file_extension_block_message: data.file_extension_block_message || "",
-            file_extension_target_websites: data.file_extension_target_websites || "",
-            block_upload: Boolean(data.block_upload),
-            upload_warning: data.upload_warning || "",
-            upload_target_websites: data.upload_target_websites || "",
-            file_extension_mode: data.file_extension_mode || "block_listed",
-            restricted_file_extensions: data.restricted_file_extensions || "",
-            allowed_file_extensions: data.allowed_file_extensions || "",
-            block_clipboard: Boolean(data.block_clipboard),
-            block_drag_drop: Boolean(data.block_drag_drop),
-            block_download: Boolean(data.block_download),
-            governance_target_websites: data.governance_target_websites || "",
-            governance_block_message: data.governance_block_message || "",
-            clipboard_target_websites: data.clipboard_target_websites || "",
-            drag_drop_target_websites: data.drag_drop_target_websites || "",
-            download_target_websites: data.download_target_websites || "",
-            clipboard_block_message: data.clipboard_block_message || "",
-            drag_drop_block_message: data.drag_drop_block_message || "",
-            download_block_message: data.download_block_message || "",
-            block_screenshot: Boolean(data.block_screenshot),
-            screenshot_block_message: data.screenshot_block_message || "",
-            screenshot_target_websites: data.screenshot_target_websites || ""
-          };
-          var msg = {
-            source: "gateway-guard",
-            nonce: guardNonce,
-            type: "sync_rules",
-            rules: rules,
-            block_upload: Boolean(data.block_upload),
-            upload_warning: data.upload_warning || "",
-            upload_target_websites: data.upload_target_websites || "",
-            file_extension_mode: data.file_extension_mode || "block_listed",
-            restricted_file_extensions: data.restricted_file_extensions || "",
-            allowed_file_extensions: data.allowed_file_extensions || "",
-            block_file_extension: Boolean(data.block_file_extension),
-            file_extension_block_message: data.file_extension_block_message || "",
-            file_extension_target_websites: data.file_extension_target_websites || "",
-            block_clipboard: Boolean(data.block_clipboard),
-            block_drag_drop: Boolean(data.block_drag_drop),
-            block_download: Boolean(data.block_download),
-            governance_target_websites: data.governance_target_websites || "",
-            governance_block_message: data.governance_block_message || "",
-            clipboard_target_websites: data.clipboard_target_websites || "",
-            drag_drop_target_websites: data.drag_drop_target_websites || "",
-            download_target_websites: data.download_target_websites || "",
-            clipboard_block_message: data.clipboard_block_message || "",
-            drag_drop_block_message: data.drag_drop_block_message || "",
-            download_block_message: data.download_block_message || "",
-            block_screenshot: Boolean(data.block_screenshot),
-            screenshot_block_message: data.screenshot_block_message || "",
-            screenshot_target_websites: data.screenshot_target_websites || ""
-          };
-          if (Array.isArray(data.restricted_extensions)) {
-            stored.cached_exts = data.restricted_extensions;
-            msg.restricted_extensions = data.restricted_extensions;
-          }
-          applyClipboardPolicyState(stored);
-          if (data.uninstall_key_configured !== undefined) {
-            stored.uninstall_key_configured = Boolean(data.uninstall_key_configured);
-            stored.uninstall_key_rotated_at = data.uninstall_key_rotated_at || "";
-          }
-          if (chrome.storage && chrome.storage.local) {
-            chrome.storage.local.set(stored);
-          }
-          window.postMessage(msg, "*");
+  // Policy keys written by background.js and forwarded to the page hook.
+  var POLICY_KEYS = [
+    "cached_rules", "cached_exts",
+    "block_upload", "upload_warning", "upload_target_websites",
+    "file_extension_mode", "restricted_file_extensions", "allowed_file_extensions",
+    "block_file_extension", "file_extension_block_message", "file_extension_target_websites",
+    "block_clipboard", "block_drag_drop", "block_download", "governance_target_websites", "governance_block_message",
+    "clipboard_target_websites", "drag_drop_target_websites", "download_target_websites",
+    "clipboard_block_message", "drag_drop_block_message", "download_block_message",
+    "block_screenshot", "screenshot_block_message", "screenshot_target_websites"
+  ];
+  var SITE_KEYS = ["cached_sites", "cached_blocked_sites", "server_host"];
+  var CLIPBOARD_KEYS = ["cached_sites", "block_clipboard", "clipboard_target_websites", "clipboard_block_message", "governance_block_message"];
 
-          // Resilient fallback: if local agent EXE is an older build without governance fields, fetch directly from gateway
-          if (data.block_clipboard === undefined && data.block_upload === undefined) {
-            var gwUrls = [];
-            if (serverHost) gwUrls.push("https://" + serverHost + "/api/browser-ai/rules?for=agent");
-            var gwIdx = 0;
-            function tryNextGw() {
-              if (gwIdx >= gwUrls.length) return;
-              fetch(gwUrls[gwIdx++], { method: "GET", cache: "no-store" })
-                .then(function (gr) { return gr.json(); })
-                .then(function (gdata) {
-                  if (gdata && ("block_clipboard" in gdata || "block_upload" in gdata)) {
-                    var governanceCache = {
-                      block_clipboard: Boolean(gdata.block_clipboard),
-                      clipboard_target_websites: gdata.clipboard_target_websites || "",
-                      clipboard_block_message: gdata.clipboard_block_message || "",
-                      governance_block_message: gdata.governance_block_message || "",
-                      block_download: Boolean(gdata.block_download),
-                      download_target_websites: gdata.download_target_websites || ""
-                    };
-                    applyClipboardPolicyState(Object.assign({ cached_sites: monitoredSitesForPolicy }, governanceCache));
-                    if (chrome.storage && chrome.storage.local) chrome.storage.local.set(governanceCache);
-                    var gmsg = {
-                      source: "gateway-guard",
-                      nonce: guardNonce,
-                      type: "sync_rules",
-                      rules: rules,
-                      block_upload: Boolean(gdata.block_upload),
-                      upload_warning: gdata.upload_warning || "",
-                      upload_target_websites: gdata.upload_target_websites || "",
-                      file_extension_mode: gdata.file_extension_mode || "block_listed",
-                      restricted_file_extensions: gdata.restricted_file_extensions || "",
-                      allowed_file_extensions: gdata.allowed_file_extensions || "",
-                      block_file_extension: Boolean(gdata.block_file_extension),
-                      file_extension_block_message: gdata.file_extension_block_message || "",
-                      file_extension_target_websites: gdata.file_extension_target_websites || "",
-                      block_clipboard: Boolean(gdata.block_clipboard),
-                      block_drag_drop: Boolean(gdata.block_drag_drop),
-                      block_download: Boolean(gdata.block_download),
-                      governance_target_websites: gdata.governance_target_websites || "",
-                      governance_block_message: gdata.governance_block_message || "",
-                      clipboard_target_websites: gdata.clipboard_target_websites || "",
-                      drag_drop_target_websites: gdata.drag_drop_target_websites || "",
-                      download_target_websites: gdata.download_target_websites || "",
-                      clipboard_block_message: gdata.clipboard_block_message || "",
-                      drag_drop_block_message: gdata.drag_drop_block_message || "",
-                      download_block_message: gdata.download_block_message || "",
-                      block_screenshot: Boolean(gdata.block_screenshot),
-                      screenshot_block_message: gdata.screenshot_block_message || "",
-                      screenshot_target_websites: gdata.screenshot_target_websites || ""
-                    };
-                    if (chrome.storage && chrome.storage.local) {
-                      chrome.storage.local.set(gmsg);
-                    }
-                    window.postMessage(gmsg, "*");
-                  } else {
-                    tryNextGw();
-                  }
-                })
-                .catch(function () { tryNextGw(); });
-            }
-            tryNextGw();
-          }
-        })
-        .catch(function () { });
+  var armedHere = false;
+  var pageBlocked = false;
+
+  function policyMessage(res) {
+    res = res || {};
+    var msg = {
+      source: "gateway-guard",
+      nonce: guardNonce,
+      type: "sync_rules",
+      rules: Array.isArray(res.cached_rules) ? res.cached_rules : [],
+      restricted_extensions: Array.isArray(res.cached_exts) ? res.cached_exts : [],
+      file_extension_mode: res.file_extension_mode || "block_listed"
+    };
+    POLICY_KEYS.forEach(function (key) {
+      if (key === "cached_rules" || key === "cached_exts" || key === "file_extension_mode") return;
+      msg[key] = key.indexOf("block_") === 0 && key.slice(-8) !== "_message" ? Boolean(res[key]) : (res[key] || "");
     });
+    return msg;
+  }
+
+  // Policy reaches the page only while this frame is an armed Target Website.
+  function postPolicyToPage() {
+    if (!armedHere || !chrome.storage || !chrome.storage.local) return;
+    chrome.storage.local.get(POLICY_KEYS, function (res) {
+      if (!armedHere) return;
+      window.postMessage(policyMessage(res), "*");
+    });
+  }
+
+  function disarmPage() {
+    if (!armedHere) return;
+    armedHere = false;
+    window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "disarm" }, "*");
+  }
+
+  function evaluateSite(state) {
+    state = state || {};
+    if (state.server_host) serverHost = normalizeDomainHost(state.server_host);
+    if (isServerHost(location.hostname)) {
+      disarmPage();
+      return;
+    }
+    var blockedSites = Array.isArray(state.cached_blocked_sites) ? state.cached_blocked_sites : [];
+    if (hostBlockedMatches(location.hostname, blockedSites)) {
+      armedHere = false;
+      if (!pageBlocked) {
+        pageBlocked = true;
+        renderBlockedPage(location.hostname);
+      }
+      return;
+    }
+    var sites = Array.isArray(state.cached_sites) ? state.cached_sites : [];
+    if (!hostMatches(location.hostname, sites)) {
+      // Not a Target Website (or removed from the list): stay passive.
+      disarmPage();
+      return;
+    }
+    if (armedHere) return;
+    injectHook(function () {
+      armedHere = true;
+      window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "arm" }, "*");
+      postPolicyToPage();
+    });
+  }
+
+  var lastSyncRequestAt = 0;
+  function requestBackgroundSync() {
+    var now = Date.now();
+    if (now - lastSyncRequestAt < 5000) return;
+    lastSyncRequestAt = now;
+    try {
+      chrome.runtime.sendMessage({ type: "guard_sync_now" }, function () {
+        if (chrome.runtime.lastError) return;
+      });
+    } catch (e) { }
   }
 
   function armIfMonitored() {
-    // 1. Check local cache first for zero-latency startup
-    if (chrome.storage && chrome.storage.local) {
-      chrome.storage.local.get([
-        "cached_rules", "cached_sites", "cached_blocked_sites", "cached_exts", "server_host",
-        "block_upload", "upload_warning", "upload_target_websites", "file_extension_mode", "restricted_file_extensions", "allowed_file_extensions",
-        "block_file_extension", "file_extension_block_message", "file_extension_target_websites",
-        "block_clipboard", "block_drag_drop", "block_download", "governance_target_websites", "governance_block_message",
-        "clipboard_target_websites", "drag_drop_target_websites", "download_target_websites",
-        "clipboard_block_message", "drag_drop_block_message", "download_block_message",
-        "block_screenshot", "screenshot_block_message", "screenshot_target_websites"
-      ], function (res) {
-        if (Array.isArray(res && res.cached_sites)) {
-          monitoredSitesForPolicy = res.cached_sites;
-          applyClipboardPolicyState(res);
-        }
-        if (res && res.server_host) serverHost = res.server_host;
-        if (isServerHost(location.hostname)) {
-          window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "disarm" }, "*");
-          return;
-        }
-        var blockedSites = (res && Array.isArray(res.cached_blocked_sites)) ? res.cached_blocked_sites : [];
-        if (hostBlockedMatches(location.hostname, blockedSites)) {
-          renderBlockedPage(location.hostname);
-          return;
-        }
-        var sites = (res && Array.isArray(res.cached_sites)) ? res.cached_sites : [];
-        if (hostMatches(location.hostname, sites)) {
-          injectHook(function () {
-            window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "arm" }, "*");
-            window.postMessage({
-              source: "gateway-guard",
-              nonce: guardNonce,
-              type: "sync_rules",
-              rules: Array.isArray(res.cached_rules) ? res.cached_rules : [],
-              restricted_extensions: res.cached_exts || [],
-              block_upload: Boolean(res && res.block_upload),
-              upload_warning: (res && res.upload_warning) || "",
-              upload_target_websites: (res && res.upload_target_websites) || "",
-              file_extension_mode: (res && res.file_extension_mode) || "block_listed",
-              restricted_file_extensions: (res && res.restricted_file_extensions) || "",
-              allowed_file_extensions: (res && res.allowed_file_extensions) || "",
-              block_file_extension: Boolean(res && res.block_file_extension),
-              file_extension_block_message: (res && res.file_extension_block_message) || "",
-              file_extension_target_websites: (res && res.file_extension_target_websites) || "",
-              block_clipboard: Boolean(res && res.block_clipboard),
-              block_drag_drop: Boolean(res && res.block_drag_drop),
-              block_download: Boolean(res && res.block_download),
-              governance_target_websites: (res && res.governance_target_websites) || "",
-              governance_block_message: (res && res.governance_block_message) || "",
-              clipboard_target_websites: (res && res.clipboard_target_websites) || "",
-              drag_drop_target_websites: (res && res.drag_drop_target_websites) || "",
-              download_target_websites: (res && res.download_target_websites) || "",
-              clipboard_block_message: (res && res.clipboard_block_message) || "",
-              drag_drop_block_message: (res && res.drag_drop_block_message) || "",
-              download_block_message: (res && res.download_block_message) || "",
-              block_screenshot: Boolean(res && res.block_screenshot),
-              screenshot_block_message: (res && res.screenshot_block_message) || "",
-              screenshot_target_websites: (res && res.screenshot_target_websites) || ""
-            }, "*");
-          });
-        } else {
-          // Domain is not monitored or was deleted: do not inject hook
-          if (hookInjected) {
-            window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "disarm" }, "*");
-          }
-        }
-      });
-    }
-
-    // 2. Fetch live configuration from local agent
-    withBase(function () {
-      if (!base) return;
-      fetch(base + "/extension/sites", { method: "GET", cache: "no-store" })
-        .then(function (r) {
-          if (!r.ok) throw new Error("sites");
-          return r.json();
-        })
-        .then(function (data) {
-          if (!data || !Array.isArray(data.hosts)) return;
-          var domains = data.hosts || [];
-          var blockedDomains = Array.isArray(data.blocked_hosts) ? data.blocked_hosts : [];
-          if (data.server_host) {
-            serverHost = data.server_host;
-          }
-          if (chrome.storage && chrome.storage.local) {
-            chrome.storage.local.set({
-              cached_sites: domains,
-              cached_blocked_sites: blockedDomains,
-              server_host: serverHost
-            });
-          }
-          monitoredSitesForPolicy = domains;
-          applyClipboardPolicyState({
-            cached_sites: domains,
-            block_clipboard: clipboardPolicy.enabled,
-            clipboard_target_websites: clipboardPolicy.targetSites,
-            clipboard_block_message: clipboardPolicy.message
-          });
-          if (hostBlockedMatches(location.hostname, blockedDomains)) {
-            renderBlockedPage(location.hostname);
-            return;
-          }
-          if (isServerHost(location.hostname) || !hostMatches(location.hostname, domains)) {
-            // Server portal or domain not in target websites: disarm immediately
-            if (hookInjected) {
-              window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "disarm" }, "*");
-            }
-            return;
-          }
-          injectHook(function () {
-            window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "arm" }, "*");
-            syncRules();
-          });
-        })
-        .catch(function () { });
+    if (!chrome.storage || !chrome.storage.local) return;
+    chrome.storage.local.get(SITE_KEYS.concat(CLIPBOARD_KEYS), function (res) {
+      res = res || {};
+      if (Array.isArray(res.cached_sites)) {
+        monitoredSitesForPolicy = res.cached_sites;
+        applyClipboardPolicyState(res);
+      } else {
+        // First run, nothing cached yet: background fills storage and onChanged arms us.
+        requestBackgroundSync();
+      }
+      evaluateSite(res);
     });
   }
 
-  // Listen for storage changes across background worker and tabs
+  // All updates arrive through storage written by background.js.
   if (chrome.storage && chrome.storage.onChanged) {
     chrome.storage.onChanged.addListener(function (changes, areaName) {
       if (areaName !== "local") return;
       var clipboardState = {};
-      ["cached_sites", "block_clipboard", "clipboard_target_websites", "clipboard_block_message", "governance_block_message"].forEach(function (key) {
+      CLIPBOARD_KEYS.forEach(function (key) {
         if (changes[key]) clipboardState[key] = changes[key].newValue;
       });
       if (Object.keys(clipboardState).length) {
         clipboardState.cached_sites = clipboardState.cached_sites || monitoredSitesForPolicy;
         applyClipboardPolicyState(clipboardState);
       }
-      if (changes.cached_blocked_sites) {
-        var newBlocked = Array.isArray(changes.cached_blocked_sites.newValue) ? changes.cached_blocked_sites.newValue : [];
-        if (hostBlockedMatches(location.hostname, newBlocked)) {
-          renderBlockedPage(location.hostname);
-          return;
-        }
+      var sitesChanged = SITE_KEYS.some(function (key) { return Boolean(changes[key]); });
+      if (sitesChanged) {
+        var wasArmed = armedHere;
+        chrome.storage.local.get(SITE_KEYS, function (res) {
+          evaluateSite(res);
+          // Already armed and still a target: policy is unchanged by a site-list edit.
+          if (wasArmed && armedHere && POLICY_KEYS.some(function (key) { return Boolean(changes[key]); })) postPolicyToPage();
+        });
+        return;
       }
-      if (changes.cached_rules) {
-        var newRules = Array.isArray(changes.cached_rules.newValue) ? changes.cached_rules.newValue : [];
-        var rulesMsg = {
-          source: "gateway-guard",
-          nonce: guardNonce,
-          type: "sync_rules",
-          rules: newRules
-        };
-        if (changes.cached_exts) {
-          rulesMsg.restricted_extensions = changes.cached_exts.newValue || [];
-        }
-        window.postMessage(rulesMsg, "*");
-      }
-      if (changes.cached_sites) {
-        var newSites = Array.isArray(changes.cached_sites.newValue) ? changes.cached_sites.newValue : [];
-        if (hostMatches(location.hostname, newSites)) {
-          injectHook(function () {
-            window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "arm" }, "*");
-          });
-        } else {
-          // Domain was deleted from target sites list: disarm immediately
-          if (hookInjected) {
-            window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "disarm" }, "*");
-          }
-        }
+      if (armedHere && POLICY_KEYS.some(function (key) { return Boolean(changes[key]); })) {
+        postPolicyToPage();
       }
     });
   }
 
-  // Periodic site refresh every 10 seconds and on tab focus
-  setInterval(function () {
-    armIfMonitored();
-  }, 10000);
   window.addEventListener("focus", function () {
-    armIfMonitored();
+    if (armedHere) requestBackgroundSync();
   });
 
   window.addEventListener("message", function (ev) {

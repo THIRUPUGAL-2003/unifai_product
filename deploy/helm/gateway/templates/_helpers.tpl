@@ -78,6 +78,25 @@ app.kubernetes.io/component: server
 {{- end }}
 {{- end }}
 
+{{- define "gateway.postgresql.resolvedPassword" -}}
+{{- $password := .Values.postgresql.auth.password | default "" -}}
+{{- if $password -}}
+{{- $password -}}
+{{- else -}}
+{{- $name := printf "%s-postgresql" (include "gateway.fullname" .) -}}
+{{- $existing := lookup "v1" "Secret" .Release.Namespace $name -}}
+{{- $data := dict -}}
+{{- if $existing -}}
+{{- $data = default dict $existing.data -}}
+{{- end -}}
+{{- if hasKey $data "password" -}}
+{{- index $data "password" | b64dec -}}
+{{- else -}}
+{{- randAlphaNum 40 -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
 {{- define "gateway.postgresql.password" -}}
 {{- if .Values.postgresql.external.enabled -}}
 {{- if .Values.postgresql.external.existingSecret -}}
@@ -86,11 +105,7 @@ env.GATEWAY_POSTGRES_PASSWORD
 {{- .Values.postgresql.external.password -}}
 {{- end -}}
 {{- else -}}
-{{- if .Values.postgresql.auth.existingSecret -}}
 env.GATEWAY_POSTGRES_PASSWORD
-{{- else -}}
-{{- .Values.postgresql.auth.password -}}
-{{- end -}}
 {{- end -}}
 {{- end -}}
 
@@ -152,7 +167,28 @@ env.GATEWAY_REDIS_PASSWORD
 {{- .Values.vectorStore.redis.external.password -}}
 {{- end -}}
 {{- else -}}
-{{- .Values.vectorStore.redis.auth.password -}}
+{{- if .Values.vectorStore.redis.auth.enabled -}}
+env.GATEWAY_REDIS_PASSWORD
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "gateway.redis.resolvedPassword" -}}
+{{- $password := .Values.vectorStore.redis.auth.password | default "" -}}
+{{- if $password -}}
+{{- $password -}}
+{{- else -}}
+{{- $name := printf "%s-redis" (include "gateway.fullname" .) -}}
+{{- $existing := lookup "v1" "Secret" .Release.Namespace $name -}}
+{{- $data := dict -}}
+{{- if $existing -}}
+{{- $data = default dict $existing.data -}}
+{{- end -}}
+{{- if hasKey $data "password" -}}
+{{- index $data "password" | b64dec -}}
+{{- else -}}
+{{- randAlphaNum 40 -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 

@@ -93,12 +93,14 @@ spec:
               value: {{ .Values.gateway.logLevel | quote }}
             - name: LOG_STYLE
               value: {{ .Values.gateway.logStyle | quote }}
-            {{- if .Values.gateway.encryptionKeySecret.name }}
-            - name: GATEWAY_ENCRYPTION_KEY
+            {{- if .Values.gateway.guardSecret.existingSecret }}
+            - name: GATEWAY_GUARD_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.gateway.encryptionKeySecret.name }}
-                  key: {{ .Values.gateway.encryptionKeySecret.key }}
+                  name: {{ .Values.gateway.guardSecret.existingSecret }}
+                  key: {{ .Values.gateway.guardSecret.key | default "guard-secret" }}
+            {{- end }}
+            {{- if .Values.gateway.encryptionKeySecret.name }}
             - name: GATEWAY_ENCRYPTION_KEY
               valueFrom:
                 secretKeyRef:
@@ -119,22 +121,18 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.postgresql.external.existingSecret }}
                   key: {{ .Values.postgresql.external.passwordKey | default "password" }}
-            - name: GATEWAY_POSTGRES_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.postgresql.external.existingSecret }}
-                  key: {{ .Values.postgresql.external.passwordKey | default "password" }}
             {{- else if and .Values.postgresql.enabled (not .Values.postgresql.external.enabled) .Values.postgresql.auth.existingSecret }}
             - name: GATEWAY_POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.postgresql.auth.existingSecret }}
                   key: {{ .Values.postgresql.auth.passwordKey | default "password" }}
+            {{- else if and .Values.postgresql.enabled (not .Values.postgresql.external.enabled) }}
             - name: GATEWAY_POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.postgresql.auth.existingSecret }}
-                  key: {{ .Values.postgresql.auth.passwordKey | default "password" }}
+                  name: {{ include "gateway.fullname" . }}-postgresql
+                  key: password
             {{- end }}
             {{- /* Redis password from existing secret */ -}}
             {{- if and .Values.vectorStore.enabled (eq .Values.vectorStore.type "redis") .Values.vectorStore.redis.external.enabled .Values.vectorStore.redis.external.existingSecret }}
@@ -143,19 +141,15 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.vectorStore.redis.external.existingSecret }}
                   key: {{ .Values.vectorStore.redis.external.passwordKey | default "password" }}
+            {{- else if and .Values.vectorStore.enabled (eq .Values.vectorStore.type "redis") .Values.vectorStore.redis.enabled (not .Values.vectorStore.redis.external.enabled) .Values.vectorStore.redis.auth.enabled }}
             - name: GATEWAY_REDIS_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.vectorStore.redis.external.existingSecret }}
-                  key: {{ .Values.vectorStore.redis.external.passwordKey | default "password" }}
+                  name: {{ include "gateway.fullname" . }}-redis
+                  key: password
             {{- end }}
             {{- /* Weaviate API key from existing secret */ -}}
             {{- if and .Values.vectorStore.enabled (eq .Values.vectorStore.type "weaviate") .Values.vectorStore.weaviate.external.enabled .Values.vectorStore.weaviate.external.existingSecret }}
-            - name: GATEWAY_WEAVIATE_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.vectorStore.weaviate.external.existingSecret }}
-                  key: {{ .Values.vectorStore.weaviate.external.apiKeyKey | default "api-key" }}
             - name: GATEWAY_WEAVIATE_API_KEY
               valueFrom:
                 secretKeyRef:
@@ -169,19 +163,9 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.vectorStore.qdrant.external.existingSecret }}
                   key: {{ .Values.vectorStore.qdrant.external.apiKeyKey | default "api-key" }}
-            - name: GATEWAY_QDRANT_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.vectorStore.qdrant.external.existingSecret }}
-                  key: {{ .Values.vectorStore.qdrant.external.apiKeyKey | default "api-key" }}
             {{- end }}
             {{- /* Pinecone API key from existing secret */ -}}
             {{- if and .Values.vectorStore.enabled (eq .Values.vectorStore.type "pinecone") .Values.vectorStore.pinecone.external.enabled .Values.vectorStore.pinecone.external.existingSecret }}
-            - name: GATEWAY_PINECONE_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.vectorStore.pinecone.external.existingSecret }}
-                  key: {{ .Values.vectorStore.pinecone.external.apiKeyKey | default "api-key" }}
             - name: GATEWAY_PINECONE_API_KEY
               valueFrom:
                 secretKeyRef:
@@ -197,29 +181,11 @@ spec:
                   name: {{ .Values.storage.logsStore.objectStorage.existingSecret }}
                   key: {{ .Values.storage.logsStore.objectStorage.accessKeyIdKey | default "access-key-id" }}
                   optional: true
-            - name: GATEWAY_OBJECT_STORAGE_ACCESS_KEY_ID
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.storage.logsStore.objectStorage.existingSecret }}
-                  key: {{ .Values.storage.logsStore.objectStorage.accessKeyIdKey | default "access-key-id" }}
-                  optional: true
             - name: GATEWAY_OBJECT_STORAGE_SECRET_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.storage.logsStore.objectStorage.existingSecret }}
                   key: {{ .Values.storage.logsStore.objectStorage.secretAccessKeyKey | default "secret-access-key" }}
-                  optional: true
-            - name: GATEWAY_OBJECT_STORAGE_SECRET_ACCESS_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.storage.logsStore.objectStorage.existingSecret }}
-                  key: {{ .Values.storage.logsStore.objectStorage.secretAccessKeyKey | default "secret-access-key" }}
-                  optional: true
-            - name: GATEWAY_OBJECT_STORAGE_SESSION_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.storage.logsStore.objectStorage.existingSecret }}
-                  key: {{ .Values.storage.logsStore.objectStorage.sessionTokenKey | default "session-token" }}
                   optional: true
             - name: GATEWAY_OBJECT_STORAGE_SESSION_TOKEN
               valueFrom:
@@ -246,20 +212,10 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.storage.logsStore.objectStorage.existingSecret }}
                   key: {{ .Values.storage.logsStore.objectStorage.credentialsJsonKey | default "credentials-json" }}
-            - name: GATEWAY_OBJECT_STORAGE_CREDENTIALS_JSON
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.storage.logsStore.objectStorage.existingSecret }}
-                  key: {{ .Values.storage.logsStore.objectStorage.credentialsJsonKey | default "credentials-json" }}
             {{- end }}
             {{- end }}
             {{- /* Maxim API key from existing secret */ -}}
             {{- if and .Values.gateway.plugins.maxim.enabled .Values.gateway.plugins.maxim.secretRef .Values.gateway.plugins.maxim.secretRef.name }}
-            - name: GATEWAY_MAXIM_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.gateway.plugins.maxim.secretRef.name }}
-                  key: {{ .Values.gateway.plugins.maxim.secretRef.key | default "api-key" }}
             - name: GATEWAY_MAXIM_API_KEY
               valueFrom:
                 secretKeyRef:
@@ -290,16 +246,6 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.gateway.governance.authConfig.existingSecret }}
                   key: {{ .Values.gateway.governance.authConfig.usernameKey | default "username" }}
-            - name: GATEWAY_ADMIN_USERNAME
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.gateway.governance.authConfig.existingSecret }}
-                  key: {{ .Values.gateway.governance.authConfig.usernameKey | default "username" }}
-            - name: GATEWAY_ADMIN_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.gateway.governance.authConfig.existingSecret }}
-                  key: {{ .Values.gateway.governance.authConfig.passwordKey | default "password" }}
             - name: GATEWAY_ADMIN_PASSWORD
               valueFrom:
                 secretKeyRef:
@@ -313,16 +259,6 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.gateway.authConfig.existingSecret }}
                   key: {{ .Values.gateway.authConfig.usernameKey | default "username" }}
-            - name: GATEWAY_ADMIN_USERNAME
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.gateway.authConfig.existingSecret }}
-                  key: {{ .Values.gateway.authConfig.usernameKey | default "username" }}
-            - name: GATEWAY_ADMIN_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.gateway.authConfig.existingSecret }}
-                  key: {{ .Values.gateway.authConfig.passwordKey | default "password" }}
             - name: GATEWAY_ADMIN_PASSWORD
               valueFrom:
                 secretKeyRef:
