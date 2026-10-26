@@ -84,7 +84,11 @@ func isGuardSyncRateLimited(ip string) bool {
 }
 
 func configuredGuardSecret() string {
-	return strings.TrimSpace(os.Getenv("GATEWAY_GUARD_SECRET"))
+	secret := strings.TrimSpace(os.Getenv("GATEWAY_GUARD_SECRET"))
+	if len([]byte(secret)) < 32 {
+		return ""
+	}
+	return secret
 }
 
 func guardSecretRequired() bool {

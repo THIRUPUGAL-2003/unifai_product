@@ -20,9 +20,14 @@ func TestGuardSecretMustMatch(t *testing.T) {
 }
 
 func TestConfiguredGuardSecretReadsEnvironment(t *testing.T) {
-	t.Setenv("GATEWAY_GUARD_SECRET", "  test-shared-secret  ")
-	if got := configuredGuardSecret(); got != "test-shared-secret" {
+	testSecret := "test-shared-secret-that-is-at-least-32-bytes"
+	t.Setenv("GATEWAY_GUARD_SECRET", "  "+testSecret+"  ")
+	if got := configuredGuardSecret(); got != testSecret {
 		t.Fatalf("configuredGuardSecret() = %q, want trimmed environment value", got)
+	}
+	t.Setenv("GATEWAY_GUARD_SECRET", "too-short")
+	if got := configuredGuardSecret(); got != "" {
+		t.Fatalf("configuredGuardSecret() accepted a weak secret")
 	}
 }
 

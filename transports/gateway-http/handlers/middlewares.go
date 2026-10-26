@@ -14,7 +14,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/google/uuid"
 	providerUtils "github.com/gateway/gateway/core/providers/utils"
 	"github.com/gateway/gateway/core/schemas"
 	"github.com/gateway/gateway/framework/configstore"
@@ -25,6 +24,7 @@ import (
 	"github.com/gateway/gateway/plugins/governance"
 	"github.com/gateway/gateway/transports/gateway-http/integrations"
 	"github.com/gateway/gateway/transports/gateway-http/lib"
+	"github.com/google/uuid"
 	"github.com/valyala/fasthttp"
 )
 

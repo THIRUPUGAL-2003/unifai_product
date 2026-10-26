@@ -12,7 +12,6 @@ import json
 import os
 import re
 import sys
-from urllib.parse import urlsplit
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -236,39 +235,6 @@ def update_doc_file(
         return False
 
 
-def update_extension_endpoint(path: str, server_host: str, repo_root: str) -> bool:
-    if not os.path.isfile(path):
-        return False
-    try:
-        with open(path, "r", encoding="utf-8-sig", errors="ignore") as f:
-            content = f.read()
-        replacement = "var GATEWAY_SERVER_HOST = " + json.dumps(server_host) + ";"
-        updated, count = re.subn(
-            r"(?m)^var GATEWAY_SERVER_HOST\s*=.*;$",
-            lambda _: replacement,
-            content,
-        )
-        if count != 1:
-            print(
-                f"[sync_config_from_env ERROR] Expected one GATEWAY_SERVER_HOST in "
-                f"{rel(path, repo_root)}, found {count}.",
-                file=sys.stderr,
-            )
-            return False
-        if updated == content:
-            return False
-        with open(path, "w", encoding="utf-8", newline="\n") as f:
-            f.write(updated)
-        print(f"[sync_config_from_env] Updated {rel(path, repo_root)}")
-        return True
-    except Exception as e:
-        print(
-            f"[sync_config_from_env] Failed {rel(path, repo_root)}: {e}",
-            file=sys.stderr,
-        )
-        return False
-
-
 def main() -> int:
     repo_root = find_repo_root()
     server_domain = read_env_var(repo_root, "SERVER_DOMAIN", "").rstrip("/")
@@ -278,12 +244,6 @@ def main() -> int:
             file=sys.stderr,
         )
         return 1
-    parsed_domain = urlsplit(server_domain if "://" in server_domain else "//" + server_domain)
-    server_host = parsed_domain.netloc.rsplit("@", 1)[-1].split("/", 1)[0]
-    if not server_host:
-        print("[sync_config_from_env ERROR] SERVER_DOMAIN must contain a valid host.", file=sys.stderr)
-        return 1
-
     proxy_addr = read_env_var(repo_root, "GATEWAY_PROXY_ADDR", "")
     if not proxy_addr:
         print(
@@ -366,9 +326,6 @@ def main() -> int:
     ]
 
     updated = 0
-    endpoint_js = os.path.join(bg, "extension", "endpoint.js")
-    if update_extension_endpoint(endpoint_js, server_host, repo_root):
-        updated += 1
     for cfg in config_files:
         if update_json_config(cfg, server_domain, proxy_addr, pac_http_port, repo_root, guard_secret):
             updated += 1

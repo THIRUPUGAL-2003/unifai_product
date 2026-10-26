@@ -7,6 +7,8 @@
 /.secrets/
 apps/browser-guard/config/gateway_guard_config.json
 apps/browser-guard/release/gateway_guard_config.json
+apps/browser-guard/**/gateway_guard_config.json
+transports/gateway-http/apps/browser-guard/**/gateway_guard_config.json
 
 # Runtime data
 /data/

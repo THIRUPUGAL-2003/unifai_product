@@ -1115,14 +1115,24 @@ def _write_unpacked(base_url: str) -> str:
     try:
         from agent_config import GATEWAY_BACKEND_URL
         if GATEWAY_BACKEND_URL:
-            sh = GATEWAY_BACKEND_URL.split("://", 1)[-1].split("/", 1)[0].split(":", 1)[0].strip().lower()
-            if sh.startswith("www."):
-                sh = sh[4:]
-            srv_host = sh
+            from urllib.parse import urlsplit
+
+            parsed = urlsplit(
+                GATEWAY_BACKEND_URL
+                if "://" in GATEWAY_BACKEND_URL
+                else "//" + GATEWAY_BACKEND_URL
+            )
+            srv_host = parsed.netloc.rsplit("@", 1)[-1]
     except Exception:
         pass
     with open(os.path.join(dst, "endpoint.js"), "w", encoding="utf-8") as f:
-        f.write(f'var GATEWAY_GUARD_BASE = "{base_url}";\nvar GATEWAY_SERVER_HOST = "{srv_host}";\n')
+        f.write(
+            "var GATEWAY_GUARD_BASE = "
+            + json.dumps(base_url)
+            + ";\nvar GATEWAY_SERVER_HOST = "
+            + json.dumps(srv_host)
+            + ";\n"
+        )
     # Keep the extension identity and version aligned with the private key used
     # to sign the CRX. The private key never enters the extension bundle.
     pem = _ensure_pem()

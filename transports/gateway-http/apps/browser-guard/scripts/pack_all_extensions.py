@@ -16,6 +16,7 @@ import shutil
 import hashlib
 import struct
 import time
+import re
 
 
 def _read_crx_manifest_version(path):
@@ -77,6 +78,18 @@ def pack_all():
         _public_key_b64,
         is_signed_firefox_xpi,
     )
+    import agent_config
+
+    backend_url = str(
+        getattr(agent_config, "GATEWAY_BACKEND_URL", "")
+        or getattr(agent_config, "DEFAULT_BACKEND", "")
+    ).strip()
+    server_host = ""
+    if backend_url:
+        from urllib.parse import urlsplit
+
+        parsed_backend = urlsplit(backend_url if "://" in backend_url else "//" + backend_url)
+        server_host = parsed_backend.netloc.rsplit("@", 1)[-1]
 
     mdata["version"] = EXTENSION_VERSION
     mdata["key"] = _public_key_b64(_ensure_pem())
@@ -95,6 +108,21 @@ def pack_all():
                     zf.writestr(fname, manifest_payload)
                     with open(os.path.join(staging_ext, fname), "wb") as mf:
                         mf.write(manifest_payload)
+                elif fname == "endpoint.js":
+                    endpoint_path = os.path.join(ext_src, fname)
+                    with open(endpoint_path, "r", encoding="utf-8") as endpoint_file:
+                        endpoint_payload = endpoint_file.read()
+                    endpoint_payload, count = re.subn(
+                        r"(?m)^var GATEWAY_SERVER_HOST\s*=.*;$",
+                        "var GATEWAY_SERVER_HOST = " + json.dumps(server_host) + ";",
+                        endpoint_payload,
+                    )
+                    if count != 1:
+                        raise RuntimeError("extension/endpoint.js must contain one GATEWAY_SERVER_HOST setting")
+                    endpoint_bytes = endpoint_payload.encode("utf-8")
+                    zf.writestr(fname, endpoint_bytes)
+                    with open(os.path.join(staging_ext, fname), "wb") as ef:
+                        ef.write(endpoint_bytes)
                 else:
                     zf.write(fpath, fname)
                     shutil.copy2(fpath, os.path.join(staging_ext, fname))
@@ -146,7 +174,6 @@ def pack_all():
     # 3. Signed Chromium CRX3 (yp-raksha.crx & legacy guard_extension.crx)
     try:
         from agent_extension import pack_extension, _crx_path, get_extension_id
-        import agent_config
         pac_p = getattr(agent_config, "PAC_HTTP_PORT", 18195)
         crx_file = pack_extension(f"http://127.0.0.1:{pac_p}")
         if crx_file and os.path.isfile(crx_file):
