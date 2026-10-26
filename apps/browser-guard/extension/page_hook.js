@@ -2025,6 +2025,8 @@
       host: location.hostname,
       url: location.href,
       is_blocked: false,
+      action: (clientAction === "warned" || clientAction === "warn") ? "Warned" : "Allowed",
+      rule: (clientAction === "warned" || clientAction === "warn") ? (clientDecision.rule || "") : ""
     }, "*");
   }, true);
 
@@ -2198,7 +2200,8 @@
       host: location.hostname,
       url: location.href,
       is_blocked: false,
-      rule: ""
+      action: (clientAction === "warned" || clientAction === "warn") ? "Warned" : "Allowed",
+      rule: (clientAction === "warned" || clientAction === "warn") ? (clientDecision.rule || "") : ""
     }, "*");
   }, true);
 
