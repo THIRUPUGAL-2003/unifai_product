@@ -686,46 +686,72 @@
       }
     }
 
+    var redactRules = [];
+    var warnDecision = null;
+
     for (var k = 0; k < dynamicRules.length; k++) {
       var r = dynamicRules[k];
-      if (r.re) {
+      if (r && r.re) {
         r.re.lastIndex = 0;
         if (r.re.test(fullContent)) {
-        var act = String(r.action || "BLOCK").toUpperCase();
-        if (act === "BLOCK" || act === "BLOCKED") {
-          return {
-            blocked: true,
-            action: "Blocked",
-            message: r.msg || ("Blocked by security rule: " + r.name),
-            rule: r.name,
-            matchedRule: r
-          };
-        }
-        if (act === "REDACT" || act === "REDACTED") {
-          var redacted = fullContent.replace(r.re, "[REDACTED]");
-          return {
-            blocked: false,
-            action: "Redacted",
-            message: r.msg || ("Confidential text was redacted (" + r.name + ")."),
-            rule: r.name,
-            redacted_prompt: redacted,
-            matchedRule: r
-          };
-        }
-        if (act === "WARN" || act === "WARNED") {
-          return {
-            blocked: false,
-            action: "Warned",
-            message: r.msg || ("Security Warning: " + r.name + " detected."),
-            rule: r.name,
-            matchedRule: r
-          };
+          var act = String(r.action || "BLOCK").toUpperCase();
+          if (act === "BLOCK" || act === "BLOCKED") {
+            return {
+              blocked: true,
+              action: "Blocked",
+              message: r.msg || ("Blocked by security rule: " + r.name),
+              rule: r.name,
+              matchedRule: r
+            };
+          }
+          if (act === "REDACT" || act === "REDACTED") {
+            redactRules.push(r);
+          } else if (act === "WARN" || act === "WARNED") {
+            if (!warnDecision) {
+              warnDecision = {
+                blocked: false,
+                action: "Warned",
+                message: r.msg || ("Security Warning: " + r.name + " detected."),
+                rule: r.name,
+                matchedRule: r
+              };
+            }
+          }
         }
       }
     }
+
+    if (redactRules.length > 0) {
+      var redactedText = text || "";
+      var ruleNames = [];
+      for (var ri = 0; ri < redactRules.length; ri++) {
+        var rr = redactRules[ri];
+        ruleNames.push(rr.name);
+        var flags = rr.re.flags || "";
+        if (flags.indexOf("g") === -1) flags += "g";
+        try {
+          var reG = new RegExp(rr.re.source, flags);
+          redactedText = redactedText.replace(reG, "[REDACTED]");
+        } catch (eG) {
+          redactedText = redactedText.replace(rr.re, "[REDACTED]");
+        }
+      }
+      return {
+        blocked: false,
+        action: "Redacted",
+        message: "Confidential text was redacted (" + ruleNames.join(", ") + ").",
+        rule: ruleNames.join(", "),
+        redacted_prompt: redactedText,
+        matchedRules: redactRules
+      };
+    }
+
+    if (warnDecision) {
+      return warnDecision;
+    }
+
+    return null;
   }
-  return null;
-}
 
   var _lastAskSig = "";
   var _lastAskTime = 0;
@@ -768,6 +794,32 @@
           host: location.hostname,
           url: location.href,
           is_blocked: true,
+          rule: clientDecision.rule || ""
+        }, "*");
+
+        resolve(clientDecision);
+        return;
+      }
+
+      var cAct = String((clientDecision && clientDecision.action) || "").toLowerCase();
+      if (cAct === "redacted" || cAct === "redact") {
+        _lastAskSig = sig;
+        _lastAskTime = Date.now();
+        _lastAskDecision = clientDecision;
+        if (trimmed) {
+          lastDecisionCache = { text: trimmed, time: Date.now(), decision: clientDecision };
+        }
+        window.postMessage({
+          source: "gateway-guard-page",
+          nonce: guardNonce,
+          id: "log_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2),
+          prompt: clientDecision.redacted_prompt || prompt,
+          files: files || [],
+          upload_images: images || [],
+          host: location.hostname,
+          url: location.href,
+          is_blocked: false,
+          action: "Redacted",
           rule: clientDecision.rule || ""
         }, "*");
 
@@ -1025,29 +1077,92 @@
     return detected;
   }
 
-  // Set Composer text (for auto-redaction)
+  // Set Composer text (for auto-redaction) across ChatGPT, Claude, Gemini, Copilot, Perplexity, etc.
   function setComposerText(text) {
-    var targets = [
-      document.activeElement,
+    if (typeof text !== "string") return false;
+    var composer = getDeepActiveElement() || document.activeElement;
+    var candidates = [
+      composer,
       document.querySelector("div#prompt-textarea"),
       document.querySelector("div.ProseMirror"),
       document.querySelector("rich-textarea div[contenteditable]"),
+      document.querySelector("div[contenteditable='true']"),
+      document.querySelector("textarea#prompt-textarea"),
+      document.querySelector("textarea[data-id]"),
       document.querySelector("textarea")
     ];
-    for (var i = 0; i < targets.length; i++) {
-      var t = targets[i];
-      if (!t) continue;
-      if (t.tagName === "TEXTAREA" || t.tagName === "INPUT") {
-        t.value = text;
-        t.dispatchEvent(new Event("input", { bubbles: true }));
-        return true;
-      }
-      if (t.isContentEditable) {
-        t.innerText = text;
-        t.dispatchEvent(new Event("input", { bubbles: true }));
-        return true;
+
+    var target = null;
+    for (var i = 0; i < candidates.length; i++) {
+      var c = candidates[i];
+      if (c && (c.tagName === "TEXTAREA" || c.tagName === "INPUT" || c.isContentEditable || c.getAttribute("contenteditable") === "true")) {
+        target = c;
+        break;
       }
     }
+    if (!target) return false;
+
+    try { target.focus(); } catch (e) {}
+
+    // 1. Textarea and Input elements (support React synthetic event system via native setter)
+    if (target.tagName === "TEXTAREA" || target.tagName === "INPUT") {
+      try {
+        var proto = target.tagName === "TEXTAREA" ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+        var nativeSetter = Object.getOwnPropertyDescriptor(proto, "value");
+        if (nativeSetter && nativeSetter.set) {
+          nativeSetter.set.call(target, text);
+        } else {
+          target.value = text;
+        }
+      } catch (ex) {
+        target.value = text;
+      }
+      target.dispatchEvent(new Event("input", { bubbles: true }));
+      target.dispatchEvent(new Event("change", { bubbles: true }));
+      return true;
+    }
+
+    // 2. Rich contenteditable editors (ProseMirror, Lexical, DraftJS, Gemini rich-textarea)
+    if (target.isContentEditable || target.getAttribute("contenteditable") === "true") {
+      try {
+        var sel = window.getSelection();
+        if (sel) {
+          var range = document.createRange();
+          range.selectNodeContents(target);
+          sel.removeAllRanges();
+          sel.addRange(range);
+        }
+      } catch (eSel) {}
+
+      var inserted = false;
+      try {
+        inserted = document.execCommand("insertText", false, text);
+      } catch (eCmd) {
+        inserted = false;
+      }
+
+      if (!inserted) {
+        try {
+          target.innerText = text;
+        } catch (eTxt) {
+          target.textContent = text;
+        }
+      }
+
+      try {
+        target.dispatchEvent(new InputEvent("input", {
+          bubbles: true,
+          cancelable: true,
+          inputType: "insertText",
+          data: text
+        }));
+      } catch (eInp) {
+        target.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+      target.dispatchEvent(new Event("change", { bubbles: true }));
+      return true;
+    }
+
     return false;
   }
 
@@ -1155,27 +1270,99 @@
     proceed(decision || { blocked: false });
   }
 
-  function rewriteBody(body, nextText) {
+  function rewriteBody(body, nextText, origText) {
     if (typeof body !== "string" || !nextText) return null;
     try {
       var parsed = JSON.parse(body);
       var changed = false;
-      if (parsed && typeof parsed.prompt === "string") { parsed.prompt = nextText; changed = true; }
-      if (parsed && typeof parsed.query === "string") { parsed.query = nextText; changed = true; }
-      if (parsed && typeof parsed.query_str === "string") { parsed.query_str = nextText; changed = true; }
+
+      // Recursive walker to redact string properties matching origText or known prompt fields
+      function walk(obj) {
+        if (!obj || typeof obj !== "object") return;
+        for (var k in obj) {
+          if (!Object.prototype.hasOwnProperty.call(obj, k)) continue;
+          var v = obj[k];
+          if (typeof v === "string") {
+            if (origText && v.indexOf(origText) >= 0) {
+              obj[k] = v.split(origText).join(nextText);
+              changed = true;
+            } else if (k === "prompt" || k === "query" || k === "query_str" || k === "text" || k === "input" || k === "inputs" || k === "message") {
+              obj[k] = nextText;
+              changed = true;
+            }
+          } else if (typeof v === "object" && v !== null) {
+            walk(v);
+          }
+        }
+      }
+
+      // 1. ChatGPT / OpenAI style: messages array
       if (parsed && Array.isArray(parsed.messages)) {
         for (var m = parsed.messages.length - 1; m >= 0; m--) {
           var msg = parsed.messages[m];
           if (!msg) continue;
           var role = msg.role || (msg.author && msg.author.role) || "";
-          if (role !== "user") continue;
-          if (typeof msg.content === "string") { msg.content = nextText; changed = true; }
-          else if (msg.content && Array.isArray(msg.content.parts)) { msg.content.parts = [nextText]; changed = true; }
-          break;
+          if (role === "user" || !role) {
+            if (typeof msg.content === "string") {
+              msg.content = nextText;
+              changed = true;
+            } else if (msg.content && Array.isArray(msg.content.parts)) {
+              msg.content.parts = [nextText];
+              changed = true;
+            } else if (Array.isArray(msg.content)) {
+              for (var c = 0; c < msg.content.length; c++) {
+                if (msg.content[c] && typeof msg.content[c].text === "string") {
+                  msg.content[c].text = nextText;
+                  changed = true;
+                }
+              }
+            }
+            break;
+          }
         }
       }
+
+      // 2. Gemini / Vertex style: contents array
+      if (parsed && Array.isArray(parsed.contents)) {
+        for (var cIdx = parsed.contents.length - 1; cIdx >= 0; cIdx--) {
+          var item = parsed.contents[cIdx];
+          if (item && Array.isArray(item.parts)) {
+            for (var p = 0; p < item.parts.length; p++) {
+              if (item.parts[p] && typeof item.parts[p].text === "string") {
+                item.parts[p].text = nextText;
+                changed = true;
+              }
+            }
+            break;
+          }
+        }
+      }
+
+      // 3. Copilot / SignalR style: arguments array
+      if (parsed && Array.isArray(parsed.arguments) && parsed.arguments[0]) {
+        var arg0 = parsed.arguments[0];
+        if (arg0.message && typeof arg0.message.text === "string") { arg0.message.text = nextText; changed = true; }
+        else if (arg0.message && typeof arg0.message.content === "string") { arg0.message.content = nextText; changed = true; }
+        else if (typeof arg0.text === "string") { arg0.text = nextText; changed = true; }
+        else if (typeof arg0.input === "string") { arg0.input = nextText; changed = true; }
+      }
+
+      // 4. Standard root prompt/query fields
+      if (parsed && typeof parsed.prompt === "string") { parsed.prompt = nextText; changed = true; }
+      if (parsed && typeof parsed.query === "string") { parsed.query = nextText; changed = true; }
+      if (parsed && typeof parsed.query_str === "string") { parsed.query_str = nextText; changed = true; }
+      if (parsed && typeof parsed.text === "string") { parsed.text = nextText; changed = true; }
+      if (parsed && typeof parsed.input === "string") { parsed.input = nextText; changed = true; }
+
+      if (!changed) {
+        walk(parsed);
+      }
+
       return changed ? JSON.stringify(parsed) : null;
     } catch (err) {
+      if (origText && body.indexOf(origText) >= 0) {
+        return body.split(origText).join(nextText);
+      }
       return null;
     }
   }
@@ -1638,9 +1825,68 @@
         host: location.hostname,
         url: location.href,
         is_blocked: true,
+        action: "Blocked",
         rule: clientDecision.rule || ""
       }, "*");
       return;
+    }
+
+    var clientAction = String((clientDecision && clientDecision.action) || "").toLowerCase();
+    if (clientAction === "redacted" || clientAction === "redact") {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      var redactedText = clientDecision.redacted_prompt || text;
+      setComposerText(redactedText);
+      showBubble(clientDecision.message || "Sensitive text was redacted before sending.", clientDecision.rule, "redact");
+
+      var redactLogId = "redact_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2);
+      window.postMessage({
+        source: "gateway-guard-page",
+        nonce: guardNonce,
+        id: redactLogId,
+        prompt: redactedText,
+        original_prompt: text,
+        files: effectiveFiles || [],
+        upload_images: stagedImages || [],
+        host: location.hostname,
+        url: location.href,
+        is_blocked: false,
+        action: "Redacted",
+        rule: clientDecision.rule || ""
+      }, "*");
+
+      var enterTarget = e.target;
+      setTimeout(function () {
+        passKey = true;
+        try {
+          var sendBtns = querySelectorAllDeep(
+            "button[aria-label*='Send' i], button[aria-label*='Submit' i], button[aria-label*='Ask' i], button.send-button, [data-testid*='send-button' i], [data-testid*='submit' i], cib-serp button, button[title*='Send' i], button[title*='Submit' i], button[type='submit']"
+          );
+          var sendBtn = sendBtns.length ? sendBtns[sendBtns.length - 1] : null;
+          if (sendBtn) {
+            passClick = true;
+            try {
+              sendBtn.click();
+            } finally {
+              passClick = false;
+            }
+          } else if (enterTarget) {
+            enterTarget.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true, cancelable: true, keyCode: 13, which: 13 }));
+          }
+        } finally {
+          passKey = false;
+        }
+      }, 50);
+      return;
+    }
+
+    if (clientAction === "warned" || clientAction === "warn") {
+      var now = Date.now();
+      if (now - lastWarnedTime > 4000 || lastWarnedRule !== clientDecision.rule) {
+        lastWarnedTime = now;
+        lastWarnedRule = clientDecision.rule || "";
+        showBubble(clientDecision.message, clientDecision.rule, "warn");
+      }
     }
 
     if (effectiveFiles.length > 0 || stagedImages.length > 0) {
@@ -1775,9 +2021,54 @@
         host: location.hostname,
         url: location.href,
         is_blocked: true,
+        action: "Blocked",
         rule: clientDecision.rule || ""
       }, "*");
       return;
+    }
+
+    var clientAction = String((clientDecision && clientDecision.action) || "").toLowerCase();
+    if (clientAction === "redacted" || clientAction === "redact") {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      var redactedText = clientDecision.redacted_prompt || text;
+      setComposerText(redactedText);
+      showBubble(clientDecision.message || "Sensitive text was redacted before sending.", clientDecision.rule, "redact");
+
+      var redactClickId = "redact_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2);
+      window.postMessage({
+        source: "gateway-guard-page",
+        nonce: guardNonce,
+        id: redactClickId,
+        prompt: redactedText,
+        original_prompt: text,
+        files: effectiveFiles || [],
+        upload_images: stagedImages || [],
+        host: location.hostname,
+        url: location.href,
+        is_blocked: false,
+        action: "Redacted",
+        rule: clientDecision.rule || ""
+      }, "*");
+
+      setTimeout(function () {
+        passClick = true;
+        try {
+          btn.click();
+        } finally {
+          passClick = false;
+        }
+      }, 50);
+      return;
+    }
+
+    if (clientAction === "warned" || clientAction === "warn") {
+      var now2 = Date.now();
+      if (now2 - lastWarnedTime > 4000 || lastWarnedRule !== clientDecision.rule) {
+        lastWarnedTime = now2;
+        lastWarnedRule = clientDecision.rule || "";
+        showBubble(clientDecision.message, clientDecision.rule, "warn");
+      }
     }
 
     if (effectiveFiles.length > 0 || stagedImages.length > 0) {
@@ -2211,12 +2502,22 @@
           var action = String((chosen && chosen.action) || "").toLowerCase();
           var nextInit = init ? Object.assign({}, init) : {};
           if ((action === "redacted" || action === "redact") && chosen.redacted_prompt && init) {
-            var rewritten = rewriteBody(init.body, chosen.redacted_prompt);
+            var rewritten = rewriteBody(init.body, chosen.redacted_prompt, promptText);
             if (rewritten) {
               nextInit.body = rewritten;
             }
           }
-          result = origFetch.apply(window, nextArgs);
+          if (nextInit && nextInit.body && nextInit.body !== (init && init.body)) {
+            var modifiedArgs = Array.prototype.slice.call(args);
+            if (modifiedArgs.length >= 2) {
+              modifiedArgs[1] = nextInit;
+              result = origFetch.apply(window, modifiedArgs);
+            } else {
+              result = origFetch.call(window, targetUrl, nextInit);
+            }
+          } else {
+            result = origFetch.apply(window, nextArgs);
+          }
         });
         if (!sent) return createBlockedFetchResponse(decision, targetUrl);
         return result;
@@ -2279,8 +2580,16 @@
     if (promptText) {
       var clientDecision = evaluateClientRules(promptText, []);
       if (clientDecision && clientDecision.blocked) {
-        showBubble(clientDecision.message, clientDecision.rule);
+        showBubble(clientDecision.message, clientDecision.rule, "block");
         return;
+      }
+      var cAct = String((clientDecision && clientDecision.action) || "").toLowerCase();
+      if ((cAct === "redacted" || cAct === "redact") && clientDecision.redacted_prompt) {
+        var rewrittenXhr = rewriteBody(body, clientDecision.redacted_prompt, promptText);
+        if (rewrittenXhr) {
+          showBubble(clientDecision.message || "Sensitive text was redacted before sending.", clientDecision.rule, "redact");
+          return origXHRSend.call(this, rewrittenXhr);
+        }
       }
     }
     return origXHRSend.apply(this, arguments);
@@ -2341,6 +2650,15 @@
             }, "*");
             return;
           }
+          var wsAct = String((wsDecision && wsDecision.action) || "").toLowerCase();
+          if ((wsAct === "redacted" || wsAct === "redact") && wsDecision.redacted_prompt) {
+            showBubble(wsDecision.message || "Sensitive text was redacted before sending.", wsDecision.rule, "redact");
+            var rewrittenWs = rewriteBody(cleanStr, wsDecision.redacted_prompt, promptText);
+            if (rewrittenWs) {
+              var finalWsData = data.endsWith("\x1e") ? (rewrittenWs + "\x1e") : rewrittenWs;
+              return origWSSend.call(this, finalWsData);
+            }
+          }
           // Coordinate with extension and desktop proxy: record allowed WebSocket prompt so proxy skips duplicate logging
           window.postMessage({
             source: "gateway-guard-page",
@@ -2377,6 +2695,15 @@
       scanDOMForSession();
     }
   }, 5000);
+
+  if (typeof window !== "undefined") {
+    window.__yp_test = {
+      evaluateClientRules: evaluateClientRules,
+      rewriteBody: rewriteBody,
+      setComposerText: setComposerText,
+      setDynamicRules: setDynamicRules
+    };
+  }
 
   console.log("[YP-Raksha] In-Browser DLP Engine Active: Prompts, Images, Files, WebSockets & Corporate AI Sessions Protected.");
 })();
