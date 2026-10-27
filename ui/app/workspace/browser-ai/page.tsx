@@ -6321,6 +6321,42 @@ export default function BrowserAiPage() {
 															</Badge>
 														);
 													}
+													if (extStatus === "disconnected" || extStatus === "disabled") {
+														return (
+															<Badge
+																variant="outline"
+																className="border-amber-500/40 bg-amber-500/10 text-amber-400 flex items-center gap-1.5 w-fit font-medium text-xs py-0.5"
+																title="Browser extension disconnected or turned off in browser"
+															>
+																<AlertTriangle className="h-3 w-3 shrink-0 text-amber-400" />
+																Disconnected
+															</Badge>
+														);
+													}
+													if (extStatus === "uninstalled" || extStatus === "uninstall") {
+														return (
+															<Badge
+																variant="outline"
+																className="border-rose-500/40 bg-rose-500/10 text-rose-400 flex items-center gap-1.5 w-fit font-medium text-xs py-0.5"
+																title="Browser extension uninstalled or removed from browser"
+															>
+																<X className="h-3 w-3 shrink-0 text-rose-400" />
+																Uninstalled
+															</Badge>
+														);
+													}
+													if (extStatus === "removed") {
+														return (
+															<Badge
+																variant="outline"
+																className="border-rose-500/40 bg-rose-500/10 text-rose-400 flex items-center gap-1.5 w-fit font-medium text-xs py-0.5"
+																title="Browser extension files or policy removed"
+															>
+																<Trash2 className="h-3 w-3 shrink-0 text-rose-400" />
+																Removed
+															</Badge>
+														);
+													}
 													if (extStatus === "installed") {
 														return (
 															<Badge
@@ -8272,19 +8308,49 @@ export default function BrowserAiPage() {
 								<div>
 									<span className="text-[10px] uppercase font-semibold text-muted-foreground block">Browser Extension</span>
 									<span className="font-mono text-xs">
-										{selectedAgentDetails.extension_status === "connected" ? (
-											<span className="text-emerald-400 font-semibold flex items-center gap-1 mt-0.5">
-												<span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" /> Connected
-											</span>
-										) : selectedAgentDetails.extension_status === "installed" ? (
-											<span className="text-sky-400 font-medium flex items-center gap-1 mt-0.5">
-												<span className="h-1.5 w-1.5 rounded-full bg-sky-400" /> Installed
-											</span>
-										) : (
-											<span className="text-slate-400 flex items-center gap-1 mt-0.5">
-												<span className="h-1.5 w-1.5 rounded-full bg-slate-500" /> Not Installed
-											</span>
-										)}
+										{(() => {
+											const es = (selectedAgentDetails.extension_status || "not_installed").toLowerCase();
+											if (es === "connected") {
+												return (
+													<span className="text-emerald-400 font-semibold flex items-center gap-1 mt-0.5">
+														<span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" /> Connected
+													</span>
+												);
+											}
+											if (es === "disconnected" || es === "disabled") {
+												return (
+													<span className="text-amber-400 font-medium flex items-center gap-1 mt-0.5">
+														<AlertTriangle className="h-3 w-3 shrink-0 text-amber-400" /> Disconnected
+													</span>
+												);
+											}
+											if (es === "uninstalled" || es === "uninstall") {
+												return (
+													<span className="text-rose-400 font-medium flex items-center gap-1 mt-0.5">
+														<X className="h-3 w-3 shrink-0 text-rose-400" /> Uninstalled
+													</span>
+												);
+											}
+											if (es === "removed") {
+												return (
+													<span className="text-rose-400 font-medium flex items-center gap-1 mt-0.5">
+														<Trash2 className="h-3 w-3 shrink-0 text-rose-400" /> Removed
+													</span>
+												);
+											}
+											if (es === "installed") {
+												return (
+													<span className="text-sky-400 font-medium flex items-center gap-1 mt-0.5">
+														<span className="h-1.5 w-1.5 rounded-full bg-sky-400" /> Installed
+													</span>
+												);
+											}
+											return (
+												<span className="text-slate-400 flex items-center gap-1 mt-0.5">
+													<span className="h-1.5 w-1.5 rounded-full bg-slate-500" /> Not Installed
+												</span>
+											);
+										})()}
 									</span>
 								</div>
 								<div>

@@ -1673,6 +1673,35 @@ func normalizeCorporateEmailDomain(raw string) string {
 	return ascii
 }
 
+func areRelatedAIHosts(h1, h2 string) bool {
+	h1 = strings.TrimPrefix(strings.ToLower(h1), "www.")
+	h2 = strings.TrimPrefix(strings.ToLower(h2), "www.")
+	if h1 == h2 {
+		return true
+	}
+	pairs := [][2]string{
+		{"chatgpt.com", "openai.com"},
+		{"chat.openai.com", "chatgpt.com"},
+		{"claude.ai", "anthropic.com"},
+		{"grok.com", "x.ai"},
+		{"gemini.google.com", "aistudio.google.com"},
+		{"gemini.google.com", "google.com"},
+		{"copilot.microsoft.com", "bing.com"},
+		{"copilot.microsoft.com", "microsoft.com"},
+	}
+	for _, p := range pairs {
+		if (strings.HasSuffix(h1, p[0]) || strings.HasSuffix(h1, "."+p[0])) &&
+			(strings.HasSuffix(h2, p[1]) || strings.HasSuffix(h2, "."+p[1])) {
+			return true
+		}
+		if (strings.HasSuffix(h1, p[1]) || strings.HasSuffix(h1, "."+p[1])) &&
+			(strings.HasSuffix(h2, p[0]) || strings.HasSuffix(h2, "."+p[0])) {
+			return true
+		}
+	}
+	return false
+}
+
 func corporateTargetFilterMatches(filter, provider, pageURL string) bool {
 	provider = strings.TrimSpace(provider)
 	pageHost := ""
@@ -1702,6 +1731,15 @@ func corporateTargetFilterMatches(filter, provider, pageURL string) bool {
 		}
 		if pageHost != "" {
 			if pageHost == targetHost || strings.HasSuffix(pageHost, "."+targetHost) {
+				return true
+			}
+			if strings.HasPrefix(pageHost, targetHost+".") || strings.Contains(pageHost, "."+targetHost+".") {
+				return true
+			}
+			if areRelatedAIHosts(pageHost, targetHost) {
+				return true
+			}
+			if provider != "" && (strings.EqualFold(provider, target) || strings.EqualFold(provider, targetHost)) {
 				return true
 			}
 			continue
@@ -2278,7 +2316,13 @@ func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, prompt
 	lowTrimmed := strings.ToLower(trimmedPrompt)
 	isUpload := strings.HasPrefix(trimmedPrompt, "[FILE UPLOAD]") ||
 		strings.HasPrefix(trimmedPrompt, "[VOICE UPLOAD]") ||
-		strings.HasPrefix(trimmedPrompt, "[SITE BLOCKED")
+		strings.HasPrefix(trimmedPrompt, "[SITE BLOCKED") ||
+		strings.HasPrefix(trimmedPrompt, "--copy paste") ||
+		strings.HasPrefix(trimmedPrompt, "--drag drop") ||
+		strings.HasPrefix(trimmedPrompt, "--download") ||
+		strings.HasPrefix(trimmedPrompt, "[CLIPBOARD") ||
+		strings.HasPrefix(trimmedPrompt, "[DRAG") ||
+		strings.HasPrefix(trimmedPrompt, "[DOWNLOAD")
 
 	// Never persist internal loopback, private networks, or internal portal traffic as Browser AI Prompt Logs
 	metaDom := ""
@@ -2385,6 +2429,10 @@ func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, prompt
 				predictedCategory = "SITE_BLOCK"
 			} else if strings.Contains(strings.ToLower(blockedReason), "clipboard") || strings.Contains(strings.ToLower(promptFull), "--copy paste") {
 				predictedCategory = "CLIPBOARD_GOVERNANCE"
+			} else if strings.Contains(strings.ToLower(blockedReason), "drag") || strings.Contains(strings.ToLower(promptFull), "--drag drop") || strings.Contains(strings.ToLower(promptFull), "[drag") {
+				predictedCategory = "DRAG_DROP_GOVERNANCE"
+			} else if strings.Contains(strings.ToLower(blockedReason), "download") || strings.Contains(strings.ToLower(promptFull), "--download") || strings.Contains(strings.ToLower(promptFull), "[download") {
+				predictedCategory = "DOWNLOAD_GOVERNANCE"
 			}
 		} else if statusStr, ok := metadata["status"].(string); ok && statusStr != "" {
 			status = statusStr
@@ -2398,6 +2446,18 @@ func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, prompt
 		}
 	} else if strings.Contains(strings.ToLower(promptFull), "--copy paste") || strings.Contains(strings.ToLower(promptFull), "[clipboard") {
 		predictedCategory = "CLIPBOARD_GOVERNANCE"
+		if riskScore < 60 {
+			riskScore = 60
+			predictiveRisk = "MEDIUM"
+		}
+	} else if strings.Contains(strings.ToLower(promptFull), "--drag drop") || strings.Contains(strings.ToLower(promptFull), "[drag") {
+		predictedCategory = "DRAG_DROP_GOVERNANCE"
+		if riskScore < 60 {
+			riskScore = 60
+			predictiveRisk = "MEDIUM"
+		}
+	} else if strings.Contains(strings.ToLower(promptFull), "--download") || strings.Contains(strings.ToLower(promptFull), "[download") {
+		predictedCategory = "DOWNLOAD_GOVERNANCE"
 		if riskScore < 60 {
 			riskScore = 60
 			predictiveRisk = "MEDIUM"

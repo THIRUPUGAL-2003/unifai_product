@@ -9,9 +9,15 @@ if (typeof importScripts === "function") {
   importScripts("endpoint.js", "guard_base.js");
 }
 
-var SYNC_MIN_INTERVAL_MS = 2000;
+var SYNC_MIN_INTERVAL_MS = 1000; // Reduced from 2000ms → faster first-sync after laptop boot
 var _syncInFlight = false;
 var _lastSyncAt = 0;
+
+try {
+  if (chrome.runtime && chrome.runtime.setUninstallURL) {
+    chrome.runtime.setUninstallURL("http://127.0.0.1:18195/extension/uninstalled");
+  }
+} catch (_) {}
 
 function updateBadge(active) {
   if (chrome.action && chrome.action.setBadgeText) {
@@ -217,6 +223,53 @@ function matchesDomainList(host, raw, monitoredSites) {
   return value.split(/[;,\s]+/).some(function (site) { return matchesDomain(host, site); });
 }
 
+function recordDownloadBlockedLog(sourceHost, item) {
+  chrome.storage.local.get(["server_host"], function (stored) {
+    var sHost = gatewayHost(stored && stored.server_host) ||
+      gatewayHost(typeof GATEWAY_SERVER_HOST === "string" ? GATEWAY_SERVER_HOST : "");
+    var fileName = (item && (item.filename || item.url || "")) || "downloaded file";
+    try { fileName = fileName.replace(/^.*[\\\/]/, ""); } catch (_) {}
+    var promptText = "--download [DOWNLOAD BLOCKED] " + fileName;
+    var payload = {
+      id: "dl_block_" + Date.now().toString(36),
+      eval_id: "dl_block_" + Date.now().toString(36),
+      host: sourceHost,
+      url: item.url || ("https://" + sourceHost + "/"),
+      prompt: promptText,
+      files: [],
+      upload_images: [],
+      is_blocked: true,
+      rule: "Download Policy",
+      blocked_reason: "Download Policy",
+      status: "Blocked (Download Policy)",
+      browser: "Chrome"
+    };
+    resolveGuardBase(function (base) {
+      if (base) {
+        fetch(base + "/extension/check", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Browser-Guard-Extension": "1" },
+          body: JSON.stringify(payload)
+        }).catch(function () {
+          if (sHost) {
+            fetch("https://" + sHost + "/api/browser-ai/intercept", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload)
+            }).catch(function () {});
+          }
+        });
+      } else if (sHost) {
+        fetch("https://" + sHost + "/api/browser-ai/intercept", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        }).catch(function () {});
+      }
+    });
+  });
+}
+
 function cancelDownloadIfGoverned(item, sourceUrl) {
   var sourceHost = domainFromUrl(sourceUrl);
   if (!sourceHost || !item || typeof item.id !== "number") return;
@@ -227,6 +280,7 @@ function cancelDownloadIfGoverned(item, sourceUrl) {
     try {
       chrome.downloads.cancel(item.id, function () {
         if (chrome.runtime && chrome.runtime.lastError) return;
+        recordDownloadBlockedLog(sourceHost, item);
       });
     } catch (_) {}
   });
@@ -268,7 +322,7 @@ if (chrome.runtime && chrome.runtime.onMessage) {
 // While the EXE is not running yet, it retries every second, so a freshly installed
 // EXE and extension find each other within about a second in either install order.
 var WATCH_WAIT_SECONDS = 20; // under the 30s MV3 service worker idle limit
-var WATCH_RETRY_MS = 1000;
+var WATCH_RETRY_MS = 500;  // Reduced from 1000ms → faster EXE reconnect after laptop boot
 var _watchRunning = false;
 var _watchVersion = -1;
 

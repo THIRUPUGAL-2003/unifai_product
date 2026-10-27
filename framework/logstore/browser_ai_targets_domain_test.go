@@ -155,6 +155,7 @@ func TestCorporateTargetFilterUsesHostnameBoundaries(t *testing.T) {
 		{name: "unrelated suffix lookalike", provider: "chatgpt", pageURL: "https://notchatgpt.com/", want: false},
 		{name: "target in path only", provider: "chatgpt", pageURL: "https://evil.example/path/chatgpt.com", want: false},
 		{name: "unselected target", provider: "gemini", pageURL: "https://gemini.google.com/", want: false},
+		{name: "parent domain alias match", provider: "chatgpt", pageURL: "https://chatgpt.com/", want: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

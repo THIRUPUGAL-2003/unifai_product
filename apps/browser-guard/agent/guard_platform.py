@@ -811,9 +811,82 @@ def firefox_profiles_dirs() -> list[str]:
     return out
 
 
+def _register_autostart_task_scheduler(exe_path: str) -> bool:
+    """Register EXE via Windows Task Scheduler for instant startup at login (no delay).
+
+    Task Scheduler starts the EXE at the highest possible priority immediately
+    after user logon — much faster than the Registry Run key which is throttled
+    by Windows startup sequencing.  Returns True on success.
+    """
+    if not IS_WIN:
+        return False
+    task_name = "YP_Raksha_Guard"
+    try:
+        # Delete any old task first so we always register fresh with latest exe_path
+        subprocess.run(
+            ["schtasks", "/Delete", "/TN", task_name, "/F"],
+            capture_output=True,
+            creationflags=subprocess.CREATE_NO_WINDOW,  # type: ignore[attr-defined]
+        )
+        # /SC ONLOGON  — runs at user logon
+        # /RL HIGHEST  — highest privilege level (no UAC prompt for non-elevated)
+        # /DELAY 0000:00 — zero delay after logon
+        # /F           — force overwrite if exists
+        result = subprocess.run(
+            [
+                "schtasks", "/Create",
+                "/TN", task_name,
+                "/TR", f'"{exe_path}"',
+                "/SC", "ONLOGON",
+                "/RL", "HIGHEST",
+                "/DELAY", "0000:00",
+                "/F",
+            ],
+            capture_output=True,
+            text=True,
+            creationflags=subprocess.CREATE_NO_WINDOW,  # type: ignore[attr-defined]
+        )
+        if result.returncode == 0:
+            print("[YP Raksha] Autostart registered (Task Scheduler ONLOGON, no delay, HIGHEST priority).")
+            return True
+        print(f"[YP Raksha WARNING] schtasks failed (rc={result.returncode}): {result.stderr.strip()}")
+        return False
+    except Exception as e:
+        print(f"[YP Raksha WARNING] Task Scheduler register failed: {e}")
+        return False
+
+
 def register_autostart(exe_path: str) -> None:
-    """Register Guard to start at user login."""
+    """Register Guard to start at user login.
+
+    Strategy (Windows):
+      1. Try Windows Task Scheduler (ONLOGON, HIGHEST priority, 0-second delay) —
+         fastest possible startup; EXE is ready before the user opens any browser.
+      2. Fall back to HKCU Run registry key if schtasks is unavailable.
+    """
     if IS_WIN:
+        # Primary: Task Scheduler for instant, high-priority autostart
+        if _register_autostart_task_scheduler(exe_path):
+            # Also set the Run key as a belt-and-suspenders fallback for restricted
+            # environments where Task Scheduler service may be disabled.
+            try:
+                key = winreg.OpenKey(  # type: ignore
+                    winreg.HKEY_CURRENT_USER,  # type: ignore
+                    r"Software\Microsoft\Windows\CurrentVersion\Run",
+                    0,
+                    winreg.KEY_SET_VALUE,  # type: ignore
+                )
+                winreg.SetValueEx(key, "YP_Raksha", 0, winreg.REG_SZ, f'"{exe_path}"')  # type: ignore
+                try:
+                    winreg.DeleteValue(key, "Gateway_Guard")  # type: ignore
+                except Exception:
+                    pass
+                winreg.CloseKey(key)  # type: ignore
+            except Exception:
+                pass  # Run key is just a fallback; Task Scheduler already registered
+            return
+
+        # Fallback: Registry Run key
         try:
             key = winreg.OpenKey(  # type: ignore
                 winreg.HKEY_CURRENT_USER,  # type: ignore
@@ -827,7 +900,7 @@ def register_autostart(exe_path: str) -> None:
             except Exception:
                 pass
             winreg.CloseKey(key)  # type: ignore
-            print("[YP Raksha] Autostart registered (Windows Run key).")
+            print("[YP Raksha] Autostart registered (Windows Run key fallback).")
         except Exception as e:
             print(f"[YP Raksha WARNING] Autostart register failed: {e}")
         return
@@ -879,6 +952,18 @@ def register_autostart(exe_path: str) -> None:
 
 def clear_autostart() -> None:
     if IS_WIN:
+        # Remove Task Scheduler task (primary autostart method)
+        for task_name in ("YP_Raksha_Guard", "Gateway_Guard"):
+            try:
+                subprocess.run(
+                    ["schtasks", "/Delete", "/TN", task_name, "/F"],
+                    capture_output=True,
+                    creationflags=subprocess.CREATE_NO_WINDOW,  # type: ignore[attr-defined]
+                )
+                print(f"[YP Raksha] Task Scheduler task removed: {task_name}")
+            except Exception as e:
+                print(f"[YP Raksha WARNING] Could not remove Task Scheduler task {task_name}: {e}")
+        # Remove Registry Run key (fallback autostart method)
         try:
             key = winreg.OpenKey(  # type: ignore
                 winreg.HKEY_CURRENT_USER,  # type: ignore
@@ -893,7 +978,7 @@ def clear_autostart() -> None:
                     pass
             winreg.CloseKey(key)  # type: ignore
         except Exception as e:
-            print(f"[YP Raksha WARNING] Could not clear autostart: {e}")
+            print(f"[YP Raksha WARNING] Could not clear autostart Run key: {e}")
         return
     if IS_MAC:
         for p_name in ("com.yespanchi.raksha.plist", "com.gateway.guard.plist"):

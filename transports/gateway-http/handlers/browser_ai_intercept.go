@@ -341,8 +341,15 @@ func (h *BrowserAIHandler) intercept(ctx *fasthttp.RequestCtx) {
 	// File-upload audit logs: proxy already decided allow/block. Do not re-run AI Guard Bot
 	// or Reply Bot on "[FILE UPLOAD] …" — that corrupts Allowed upload rows in Prompt Logs.
 	uploadScan := metadataBool(payload.Metadata, "upload_scan")
-	if strings.HasPrefix(strings.TrimSpace(payload.Prompt), "[FILE UPLOAD]") ||
-		strings.HasPrefix(strings.TrimSpace(payload.Prompt), "[VOICE UPLOAD]") {
+	pTrimmed := strings.TrimSpace(payload.Prompt)
+	if strings.HasPrefix(pTrimmed, "[FILE UPLOAD]") ||
+		strings.HasPrefix(pTrimmed, "[VOICE UPLOAD]") ||
+		strings.HasPrefix(pTrimmed, "--copy paste") ||
+		strings.HasPrefix(pTrimmed, "--drag drop") ||
+		strings.HasPrefix(pTrimmed, "--download") ||
+		strings.HasPrefix(pTrimmed, "[DRAG") ||
+		strings.HasPrefix(pTrimmed, "[CLIPBOARD") ||
+		strings.HasPrefix(pTrimmed, "[DOWNLOAD") {
 		uploadScan = true
 	}
 

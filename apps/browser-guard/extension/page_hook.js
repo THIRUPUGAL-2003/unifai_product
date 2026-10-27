@@ -124,6 +124,13 @@
       lastDecisionCache = { text: "", time: 0, decision: null };
     }
     if (ev.data.type === "sync_rules") {
+      lastCheckedKey = "";
+      setTimeout(function () {
+        if (armed) {
+          scanStorageForSession();
+          scanDOMForSession();
+        }
+      }, 300);
       setDynamicRules(ev.data.rules || []);
       if (typeof ev.data.block_upload !== "undefined") {
         govBlockUpload = Boolean(ev.data.block_upload);
@@ -404,12 +411,16 @@
   function triggerScreenshotAlert() {
     if (!armed || !govBlockScreenshot || !isControlActiveForSite(govScreenshotTargetWebsites)) return;
 
-    // Best-effort clipboard clearing after a recognized browser shortcut.
+    // NOTE: Do NOT call navigator.clipboard.writeText("") here.
+    // That fires a clipboard event which triggers the clipboard blocked banner
+    // simultaneously with the screenshot shield — two banners collide on screen.
+    // The full-screen overlay already blacks out the content, no clipboard clear needed.
+
+    // Remove any existing clipboard notice so it doesn't overlap the screenshot shield
     try {
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText("");
-      }
-    } catch (e) {}
+      var clipNotice = document.getElementById("yp-raksha-isolated-clipboard-notice");
+      if (clipNotice) clipNotice.remove();
+    } catch (_) {}
 
     // 2. Display full-screen Privacy Shield overlay
     if (!_screenshotShieldEl) {
@@ -434,8 +445,9 @@
     _screenshotShieldEl.style.opacity = "1";
     _screenshotShieldEl.style.pointerEvents = "all";
 
-    // Show toast alert
-    showBubble(govScreenshotBlockMessage || "A browser print or common screenshot shortcut was detected.", "Screenshot Deterrent", "block");
+    // Dismiss any existing toast to keep only the main full-screen shield
+    var oldBubble = document.getElementById("yp-raksha-alert-card");
+    if (oldBubble) oldBubble.remove();
 
     // Fade out after 2.5 seconds
     setTimeout(function () {
@@ -463,11 +475,13 @@
     }
   }
 
-  // Defeat OS Snipping tools (Win+Shift+S, Lightshot, ShareX) via Window Blur Shield:
+  // Defeat OS Snipping tools (Win+Shift+S, Lightshot, ShareX) via Window Blur & Opaque Curtain Shield:
   // When an OS screenshot tool or snip overlay opens, the browser window immediately
-  // loses focus (blur event). Blurring the page ensures the capture grabs only blurred content.
+  // loses focus (blur event). Showing an opaque curtain ensures the capture grabs only a blackout screen.
   var _blurShieldStyleId = "yp-blur-shield-style";
-  window.addEventListener("blur", function () {
+  var _blurCurtainId = "yp-blur-curtain";
+
+  function applyScreenshotBlur() {
     if (!armed || !govBlockScreenshot || !isControlActiveForSite(govScreenshotTargetWebsites)) return;
     if (!document.getElementById(_blurShieldStyleId)) {
       var bs = document.createElement("style");
@@ -475,11 +489,30 @@
       bs.textContent = "body, html { filter: blur(35px) !important; -webkit-filter: blur(35px) !important; user-select: none !important; }";
       (document.head || document.documentElement).appendChild(bs);
     }
-  }, true);
+    if (!document.getElementById(_blurCurtainId)) {
+      var curtain = document.createElement("div");
+      curtain.id = _blurCurtainId;
+      curtain.style.cssText =
+        "position:fixed;inset:0;width:100vw;height:100vh;background:#0a0f1d;opacity:0.98;backdrop-filter:blur(30px);" +
+        "-webkit-backdrop-filter:blur(30px);z-index:2147483646;pointer-events:none;display:flex;align-items:center;" +
+        "justify-content:center;color:#f87171;font-family:-apple-system,BlinkMacSystemFont,sans-serif;font-size:20px;font-weight:700;";
+      curtain.innerHTML = '<div style="display:flex;align-items:center;gap:10px;"><span style="font-size:28px;">🛡️</span><span>SCREEN CAPTURE RESTRICTED</span></div>';
+      (document.body || document.documentElement).appendChild(curtain);
+    }
+  }
 
-  window.addEventListener("focus", function () {
+  function removeScreenshotBlur() {
     var bs = document.getElementById(_blurShieldStyleId);
     if (bs) bs.remove();
+    var curtain = document.getElementById(_blurCurtainId);
+    if (curtain) curtain.remove();
+  }
+
+  window.addEventListener("blur", applyScreenshotBlur, true);
+  window.addEventListener("focus", removeScreenshotBlur, true);
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) applyScreenshotBlur();
+    else removeScreenshotBlur();
   }, true);
 
   // Intercept Screen Recording & Screen Sharing API (navigator.mediaDevices.getDisplayMedia)
@@ -497,34 +530,29 @@
   } catch (_) {}
 
   // Intercept PrintScreen key, Snipping tool shortcuts (Win+Shift+S), Mac Cmd+Shift+3/4
+  function handleCaptureKey(e) {
+    if (!armed || !govBlockScreenshot || !isControlActiveForSite(govScreenshotTargetWebsites)) return;
+    var isPrtScn = e.key === "PrintScreen" || e.keyCode === 44 || e.code === "PrintScreen";
+    var isWinShiftS = (e.key === "s" || e.key === "S" || e.code === "KeyS") && e.shiftKey && (e.metaKey || e.altKey);
+    var isMacCapture = e.metaKey && e.shiftKey && (e.key === "3" || e.key === "4" || e.key === "5" || e.code === "Digit3" || e.code === "Digit4" || e.code === "Digit5");
+    var isPrint = (e.ctrlKey || e.metaKey) && (e.key === "p" || e.key === "P" || e.code === "KeyP");
+
+    if (isPrtScn || isWinShiftS || isMacCapture || isPrint) {
+      try {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+      } catch (_) {}
+      triggerScreenshotAlert();
+    }
+  }
+
+  window.addEventListener("keydown", handleCaptureKey, true);
+  document.addEventListener("keydown", handleCaptureKey, true);
   window.addEventListener("keyup", function (e) {
     if (!armed || !govBlockScreenshot || !isControlActiveForSite(govScreenshotTargetWebsites)) return;
-    if (e.key === "PrintScreen" || e.keyCode === 44) {
+    if (e.key === "PrintScreen" || e.keyCode === 44 || e.code === "PrintScreen") {
       triggerScreenshotAlert();
-    }
-  }, true);
-
-  window.addEventListener("keydown", function (e) {
-    if (!armed || !govBlockScreenshot || !isControlActiveForSite(govScreenshotTargetWebsites)) return;
-    if (e.key === "PrintScreen" || e.keyCode === 44) {
-      e.preventDefault();
-      triggerScreenshotAlert();
-      return;
-    }
-    if ((e.key === "s" || e.key === "S") && e.shiftKey && (e.metaKey || e.altKey)) {
-      e.preventDefault();
-      triggerScreenshotAlert();
-      return;
-    }
-    if (e.metaKey && e.shiftKey && (e.key === "3" || e.key === "4" || e.key === "5")) {
-      e.preventDefault();
-      triggerScreenshotAlert();
-      return;
-    }
-    if ((e.ctrlKey || e.metaKey) && (e.key === "p" || e.key === "P")) {
-      e.preventDefault();
-      triggerScreenshotAlert();
-      return;
     }
   }, true);
 
@@ -554,7 +582,7 @@
       for (var i = localStorage.length - 1; i >= 0; i--) {
         var k = localStorage.key(i) || "";
         var kLow = k.toLowerCase();
-        if (kLow.includes("token") || kLow.includes("auth") || kLow.includes("session") || kLow.includes("user") || kLow.includes("oidc")) {
+        if (kLow.includes("token") || kLow.includes("auth") || kLow.includes("session") || kLow.includes("user") || kLow.includes("oidc") || kLow.includes("profile")) {
           localStorage.removeItem(k);
         }
       }
@@ -564,12 +592,22 @@
       location.href = "https://chatgpt.com/api/auth/signout";
     } else if (h.includes("claude.ai")) {
       location.href = "https://claude.ai/api/auth/logout";
-    } else if (h.includes("gemini.google.com")) {
-      location.href = "https://accounts.google.com/Logout";
+    } else if (h.includes("gemini.google.com") || h.includes("aistudio.google.com")) {
+      location.href = "https://accounts.google.com/AccountChooser?continue=" + encodeURIComponent(location.href);
     } else if (h.includes("deepseek.com")) {
       location.href = "https://chat.deepseek.com/sign_in";
     } else if (h.includes("copilot.microsoft.com")) {
       location.href = "https://login.microsoftonline.com/common/oauth2/v2.0/logout";
+    } else if (h.includes("grok.com") || h.includes("x.ai")) {
+      location.href = "https://grok.com/sign-in";
+    } else if (h.includes("perplexity.ai")) {
+      location.href = "https://www.perplexity.ai/api/auth/signout";
+    } else if (h.includes("mistral.ai")) {
+      location.href = "https://chat.mistral.ai/auth/login";
+    } else if (h.includes("poe.com")) {
+      location.href = "https://poe.com/login";
+    } else if (h.includes("lovable.dev")) {
+      location.href = "https://lovable.dev/login";
     } else {
       location.reload();
     }
@@ -584,39 +622,76 @@
     if (existing) {
       var msgEl = existing.querySelector(".yp-corp-msg");
       if (msgEl && message) msgEl.textContent = message;
+      var emailEl = existing.querySelector(".yp-corp-email");
+      if (emailEl && email) emailEl.textContent = email;
       return;
     }
-    var banner = document.createElement("div");
-    banner.id = "yp-corp-policy-banner";
-    banner.style.cssText = "position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:2147483647;" +
-      "max-width:720px;width:calc(100% - 32px);background:#0f172a;color:#f8fafc;border:2px solid #ef4444;" +
-      "border-radius:14px;padding:16px 20px;box-shadow:0 25px 50px -12px rgba(0,0,0,0.85);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;" +
-      "display:flex;align-items:center;gap:14px;animation:ypFadeIn 0.3s ease-out;";
-    var emailTag = email ? ' <span style="font-size:11px;background:#1e293b;color:#f87171;padding:2px 8px;border-radius:4px;border:1px solid rgba(239,68,68,0.4);font-family:monospace;">' + email + '</span>' : '';
-    banner.innerHTML = '<div style="background:rgba(239,68,68,0.18);color:#ef4444;border-radius:50%;width:38px;height:38px;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:bold;flex-shrink:0;">✕</div>' +
-      '<div style="flex:1;min-width:0;">' +
-      '  <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap;">' +
-      '    <strong style="font-size:12px;letter-spacing:0.04em;text-transform:uppercase;color:#f87171;">Corporate Policy Restriction</strong>' +
+
+    if (!document.getElementById("yp-corp-keyframes")) {
+      var kf = document.createElement("style");
+      kf.id = "yp-corp-keyframes";
+      kf.textContent = "@keyframes ypFadeInModal{from{opacity:0;transform:scale(0.92)}to{opacity:1;transform:scale(1)}}" +
+        "@keyframes ypFadeInOverlay{from{opacity:0}to{opacity:1}}";
+      (document.head || document.documentElement).appendChild(kf);
+    }
+
+    // Centered modal overlay container
+    var overlay = document.createElement("div");
+    overlay.id = "yp-corp-policy-banner";
+    overlay.style.cssText = "all:initial;position:fixed;top:0;left:0;right:0;bottom:0;width:100vw;height:100vh;" +
+      "background:rgba(2,6,23,0.72);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);z-index:2147483647;" +
+      "display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;pointer-events:auto;" +
+      "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;animation:ypFadeInOverlay 0.25s ease-out;";
+
+    var emailTag = email
+      ? '<span class="yp-corp-email" style="font-size:12px;background:#1e293b;color:#fca5a5;padding:3px 10px;border-radius:20px;border:1px solid rgba(239,68,68,0.35);font-family:ui-monospace,SFMono-Regular,Consolas,monospace;word-break:break-all;">' + email + '</span>'
+      : '';
+
+    overlay.innerHTML =
+      '<div style="max-width:520px;width:100%;background:linear-gradient(160deg, #0f172a 0%, #1e293b 100%);color:#f8fafc;' +
+      'border:2px solid #ef4444;border-radius:18px;padding:32px 28px;box-shadow:0 30px 60px -12px rgba(0,0,0,0.85), 0 0 35px -5px rgba(239,68,68,0.3);' +
+      'box-sizing:border-box;text-align:center;display:flex;flex-direction:column;align-items:center;gap:14px;animation:ypFadeInModal 0.3s cubic-bezier(0.16, 1, 0.3, 1);">' +
+      '  <div style="background:rgba(239,68,68,0.16);border:2px solid #ef4444;color:#ef4444;border-radius:50%;width:52px;height:52px;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:bold;box-shadow:0 0 20px rgba(239,68,68,0.25);margin-bottom:2px;">✕</div>' +
+      '  <div style="display:flex;flex-direction:column;align-items:center;gap:6px;width:100%;">' +
+      '    <strong style="font-size:14px;letter-spacing:0.06em;text-transform:uppercase;color:#f87171;font-weight:800;">Corporate Policy Restriction</strong>' +
       emailTag +
       '  </div>' +
-      '  <p class="yp-corp-msg" style="font-size:12.5px;color:#cbd5e1;line-height:1.45;margin:0 0 6px 0;">' + (message || "Personal accounts are restricted. Please sign in with your corporate account.") + '</p>' +
-      '</div>' +
-      '<button id="yp-btn-signout" style="background:#ef4444;color:#ffffff;border:none;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer;flex-shrink:0;box-shadow:0 2px 4px rgba(239,68,68,0.3);transition:background 0.2s;">Sign Out</button>';
-    (document.body || document.documentElement).appendChild(banner);
+      '  <p class="yp-corp-msg" style="font-size:13.5px;color:#cbd5e1;line-height:1.55;margin:4px 0 8px 0;max-width:440px;">' +
+      (message || "Personal accounts are restricted by corporate security policy. Please log in with your company account.") +
+      '  </p>' +
+      '  <button id="yp-btn-signout" style="background:#ef4444;color:#ffffff;border:none;border-radius:10px;padding:12px 32px;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 4px 14px rgba(239,68,68,0.4);transition:all 0.2s ease;letter-spacing:0.02em;">Sign Out</button>' +
+      '  <div id="yp-corp-timer-notice" style="font-size:11.5px;color:#94a3b8;margin-top:2px;">Auto signing out in <span id="yp-corp-countdown" style="color:#f87171;font-weight:700;">8</span>s...</div>' +
+      '</div>';
+
+    (document.body || document.documentElement).appendChild(overlay);
 
     var btnSignout = document.getElementById("yp-btn-signout");
     if (btnSignout) {
       btnSignout.addEventListener("click", function () {
         performAutoLogout();
       });
+      btnSignout.addEventListener("mouseenter", function () {
+        btnSignout.style.background = "#dc2626";
+        btnSignout.style.transform = "translateY(-1px)";
+      });
+      btnSignout.addEventListener("mouseleave", function () {
+        btnSignout.style.background = "#ef4444";
+        btnSignout.style.transform = "translateY(0)";
+      });
     }
 
-    // Auto-Logout after 5 seconds to prevent personal account persistence
-    setTimeout(function () {
-      if (sessionBlocked) {
-        performAutoLogout();
+    var secondsLeft = 8;
+    var timerEl = document.getElementById("yp-corp-countdown");
+    var countdownInterval = setInterval(function () {
+      secondsLeft--;
+      if (timerEl) timerEl.textContent = String(secondsLeft);
+      if (secondsLeft <= 0) {
+        clearInterval(countdownInterval);
+        if (sessionBlocked) {
+          performAutoLogout();
+        }
       }
-    }, 5000);
+    }, 1000);
   }
 
   function detectProviderName() {
@@ -624,7 +699,8 @@
     if (h.includes("chatgpt.com") || h.includes("openai.com")) return "chatgpt";
     if (h.includes("claude.ai") || h.includes("anthropic.com")) return "claude";
     if (h.includes("copilot.microsoft.com") || h.includes("bing.com")) return "copilot";
-    if (h.includes("gemini.google.com") || h.includes("bard.google.com")) return "gemini";
+    if (h.includes("gemini.google.com") || h.includes("bard.google.com") || h.includes("aistudio.google.com")) return "gemini";
+    if (h.includes("grok.com") || h.includes("x.ai")) return "grok";
     if (h.includes("deepseek.com")) return "deepseek";
     if (h.includes("mistral.ai")) return "mistral";
     if (h.includes("perplexity.ai")) return "perplexity";
@@ -634,14 +710,18 @@
     return parts[0] || "ai";
   }
 
-  function triggerSessionAuth(email, workspaceId) {
+  var lastCheckedAt = 0;
+  function triggerSessionAuth(email, workspaceId, force) {
     if (!email) return;
     email = String(email).trim().toLowerCase();
     var domain = email.indexOf("@") >= 0 ? email.split("@")[1].trim() : email;
     var ws = workspaceId ? String(workspaceId).trim() : "";
     var key = email + "::" + ws;
-    if (key === lastCheckedKey) return;
+    var now = Date.now();
+    // Re-verify periodically (every 15 min max) or immediately if email/workspace changed
+    if (!force && key === lastCheckedKey && (now - lastCheckedAt < 900000)) return;
     lastCheckedKey = key;
+    lastCheckedAt = now;
     detectedEmail = email;
     detectedWorkspace = ws;
 
@@ -659,25 +739,28 @@
     }, "*");
   }
 
-  // Universal deep object search for email and workspace keys
+  // Universal deep object search for email and workspace keys across all auth formats
   function scanObjectForSession(obj, depth) {
-    if (!obj || typeof obj !== "object" || (depth || 0) > 4) return;
+    if (!obj || typeof obj !== "object" || (depth || 0) > 5) return;
     try {
-      if (typeof obj.email === "string" && obj.email.includes("@")) {
+      var candidate = obj.email || obj.email_address || obj.user_email || obj.upn || obj.mail ||
+        obj.userPrincipalName || obj.preferred_username || obj.accountEmail || obj.account_email ||
+        obj.primaryEmail || obj.primary_email;
+      if (typeof candidate === "string" && candidate.includes("@")) {
         var ws = obj.workspace_id || obj.org_id || obj.organization_id || obj.account_id || obj.accountId || obj.tenant_id || "";
-        triggerSessionAuth(obj.email, ws);
+        triggerSessionAuth(candidate, ws);
         return;
       }
-      if (typeof obj.email_address === "string" && obj.email_address.includes("@")) {
-        triggerSessionAuth(obj.email_address, obj.workspace_id || obj.org_id);
+      if (typeof obj.sub === "string" && obj.sub.includes("@")) {
+        triggerSessionAuth(obj.sub, obj.workspace_id || obj.org_id || "");
         return;
       }
-      if (typeof obj.user_email === "string" && obj.user_email.includes("@")) {
-        triggerSessionAuth(obj.user_email, obj.workspace_id);
+      if (typeof obj.username === "string" && obj.username.includes("@")) {
+        triggerSessionAuth(obj.username, obj.workspace_id || obj.org_id || "");
         return;
       }
-      if (typeof obj.upn === "string" && obj.upn.includes("@")) {
-        triggerSessionAuth(obj.upn, obj.tenant_id || obj.tenantId);
+      if (typeof obj.login === "string" && obj.login.includes("@")) {
+        triggerSessionAuth(obj.login, obj.workspace_id || obj.org_id || "");
         return;
       }
       for (var k in obj) {
@@ -691,6 +774,7 @@
   // Scan LocalStorage and SessionStorage for JWT or user profiles
   function scanStorageForSession() {
     try {
+      var emailRegex = /\b[A-Za-z0-9._%+-]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})\b/;
       var storages = [localStorage, sessionStorage];
       for (var s = 0; s < storages.length; s++) {
         var st = storages[s];
@@ -698,23 +782,29 @@
         for (var i = 0; i < st.length; i++) {
           var k = st.key(i);
           if (!k) continue;
-          var kLow = k.toLowerCase();
-          if (kLow.includes("user") || kLow.includes("auth") || kLow.includes("account") || kLow.includes("session") || kLow.includes("token") || kLow.includes("profile") || kLow.includes("oidc")) {
-            var val = st.getItem(k);
-            if (!val || typeof val !== "string") continue;
-            if (val.startsWith("{") && val.endsWith("}")) {
-              try {
-                scanObjectForSession(JSON.parse(val), 0);
-              } catch (je) {}
-            }
-            if (val.startsWith("ey") && val.includes(".")) {
-              try {
-                var parts = val.split(".");
-                if (parts.length >= 2) {
-                  var payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
-                  scanObjectForSession(payload, 0);
-                }
-              } catch (jte) {}
+          var val = st.getItem(k);
+          if (!val || typeof val !== "string") continue;
+          if (val.startsWith("{") && val.endsWith("}")) {
+            try {
+              scanObjectForSession(JSON.parse(val), 0);
+            } catch (je) {}
+          }
+          if (val.startsWith("ey") && val.includes(".")) {
+            try {
+              var parts = val.split(".");
+              if (parts.length >= 2) {
+                var payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
+                scanObjectForSession(payload, 0);
+              }
+            } catch (jte) {}
+          }
+          if (val.includes("@") && val.length < 8000) {
+            var emMatch = val.match(emailRegex);
+            if (emMatch && emMatch[0]) {
+              var em = emMatch[0].toLowerCase();
+              if (!em.includes("sentry") && !em.includes("example.com") && !em.includes("w3.org") && !em.includes("schema.org") && !em.includes("datadoghq") && !em.includes(".png") && !em.includes(".jpg")) {
+                triggerSessionAuth(em, "");
+              }
             }
           }
         }
@@ -722,26 +812,46 @@
     } catch (e) {}
   }
 
-  // Scan DOM for visible user email (e.g. profile avatars, user menus)
+  // Scan DOM for visible user email (profile avatars, Google Account chips, user menus)
   function scanDOMForSession() {
     try {
-      var elements = querySelectorAllDeep("[aria-label*='@'], [title*='@'], [alt*='@'], [data-testid*='profile'], [data-testid*='user'], button, div[role='button']");
       var emailRegex = /\b[A-Za-z0-9._%+-]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})\b/;
+      var elements = querySelectorAllDeep("[aria-label*='@'], [title*='@'], [alt*='@'], [data-identifier*='@'], [data-email*='@'], [data-user*='@'], [data-testid*='profile'], [data-testid*='user'], [data-testid*='account'], a[href*='accounts.google.com'], img[alt*='Google Account']");
       for (var i = 0; i < elements.length; i++) {
         var el = elements[i];
         if (!el) continue;
-        var txt = (el.getAttribute("aria-label") || "") + " " + (el.getAttribute("title") || "") + " " + (el.getAttribute("alt") || "") + " " + (el.innerText || "");
+        var txt = (el.getAttribute("aria-label") || "") + " " + (el.getAttribute("title") || "") + " " + (el.getAttribute("alt") || "") + " " + (el.getAttribute("data-identifier") || "") + " " + (el.getAttribute("data-email") || "") + " " + (el.innerText || "");
         var m = txt.match(emailRegex);
         if (m && m[0]) {
-          triggerSessionAuth(m[0], "");
-          return;
+          var em = m[0].toLowerCase();
+          if (!em.includes("sentry") && !em.includes("example.com") && !em.includes("w3.org") && !em.includes("schema.org")) {
+            triggerSessionAuth(em, "");
+            return;
+          }
         }
       }
-      if (typeof window.__NEXT_DATA__ === "object") {
+      if (typeof window.__NEXT_DATA__ === "object" && window.__NEXT_DATA__ !== null) {
         scanObjectForSession(window.__NEXT_DATA__, 0);
       }
-      if (typeof window.__remixContext === "object") {
+      if (typeof window.__remixContext === "object" && window.__remixContext !== null) {
         scanObjectForSession(window.__remixContext, 0);
+      }
+      if (typeof window.__INITIAL_STATE__ === "object" && window.__INITIAL_STATE__ !== null) {
+        scanObjectForSession(window.__INITIAL_STATE__, 0);
+      }
+      if (typeof window.WIZ_global_data === "object" && window.WIZ_global_data !== null) {
+        scanObjectForSession(window.WIZ_global_data, 0);
+        try {
+          var wStr = JSON.stringify(window.WIZ_global_data);
+          var wm = wStr.match(emailRegex);
+          if (wm && wm[0] && !wm[0].includes("google.com/")) {
+            triggerSessionAuth(wm[0].toLowerCase(), "");
+            return;
+          }
+        } catch (_) {}
+      }
+      if (typeof window._gaUserInfo === "object" && window._gaUserInfo !== null) {
+        scanObjectForSession(window._gaUserInfo, 0);
       }
     } catch (e) {}
   }
@@ -833,6 +943,14 @@
   function ask(prompt, files, images) {
     if (!armed) {
       return Promise.resolve({ blocked: false, passthrough: true });
+    }
+    if (sessionBlocked) {
+      return Promise.resolve({
+        blocked: true,
+        action: "Blocked",
+        message: sessionBlockedReason || "Personal accounts are restricted by corporate security policy. Please log in with your company account.",
+        rule: "Corporate AI Account Enforcement"
+      });
     }
     var trimmed = (prompt || "").trim();
     var fileNamesSig = (files || []).map(function (f) { return (f && (f.name || f)) || ""; }).sort().join(",");
@@ -1303,14 +1421,14 @@
 
     (document.body || document.documentElement).appendChild(card);
 
-    // Auto-dismiss after 1.5 seconds (User requested 1.5s only)
+    // Auto-dismiss after 1 second (User requirement: 1 sec la vantu oirum)
     setTimeout(function () {
       if (card && card.parentNode) {
         card.style.transition = "opacity 0.2s ease";
         card.style.opacity = "0";
         setTimeout(function () { if (card.parentNode) card.remove(); }, 200);
       }
-    }, 1500);
+    }, 1000);
   }
 
   var lastWarnedTime = 0;
@@ -1591,31 +1709,87 @@
     }
   }, true);
 
-  // Hook 2: Drag & Drop Files
-  window.addEventListener("dragover", function (ev) {
+  // Hook 2: Drag & Drop Files and Ingestion
+  function handleDragOverOrEnter(ev) {
     if (!armed) return;
     var uploadActive = govBlockUpload && isControlActiveForSite(govUploadTargetWebsites);
     var dragDropActive = govBlockDragDrop && isControlActiveForSite(govDragDropTargetWebsites);
     if (uploadActive || dragDropActive) {
+      if (ev.dataTransfer) {
+        ev.dataTransfer.dropEffect = "none";
+      }
       ev.preventDefault();
+      ev.stopPropagation();
+      ev.stopImmediatePropagation();
     }
-  }, true);
+  }
 
-  window.addEventListener("drop", function (ev) {
+  function handleDropBlock(ev) {
     if (!armed) return;
     var uploadActive = govBlockUpload && isControlActiveForSite(govUploadTargetWebsites);
     var dragDropActive = govBlockDragDrop && isControlActiveForSite(govDragDropTargetWebsites);
     if (dragDropActive) {
       ev.preventDefault();
+      ev.stopPropagation();
       ev.stopImmediatePropagation();
+      var droppedSummary = "";
+      if (ev.dataTransfer) {
+        if (ev.dataTransfer.files && ev.dataTransfer.files.length) {
+          var fNames = [];
+          for (var fi = 0; fi < ev.dataTransfer.files.length; fi++) fNames.push(ev.dataTransfer.files[fi].name);
+          droppedSummary = "Files: " + fNames.join(", ");
+        } else {
+          try {
+            var dtText = ev.dataTransfer.getData("text/plain") || "";
+            if (dtText) droppedSummary = "Text: " + dtText.trim().slice(0, 300);
+          } catch (_) {}
+        }
+        ev.dataTransfer.dropEffect = "none";
+        try { ev.dataTransfer.clearData(); } catch (_) {}
+      }
       showBubble(govDragDropBlockMessage || govBlockMessage || "Drag-and-drop file and data ingestion is blocked by corporate data governance policy.", "Data Governance Policy", "block");
+      var promptLogText = "--drag drop [DRAG & DROP BLOCKED]";
+      if (droppedSummary) {
+        promptLogText += " " + droppedSummary;
+      }
+      window.postMessage({
+        source: "gateway-guard-page",
+        nonce: guardNonce,
+        id: "drag_block_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2),
+        prompt: promptLogText,
+        host: location.hostname,
+        url: location.href,
+        is_blocked: true,
+        rule: "Drag & Drop Policy",
+        blocked_reason: "Drag & Drop Policy",
+        status: "Blocked (Drag & Drop Policy)"
+      }, "*");
       return;
     }
     if (uploadActive) {
       if (ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files.length) {
         ev.preventDefault();
+        ev.stopPropagation();
         ev.stopImmediatePropagation();
+        var upNames = [];
+        for (var ufi = 0; ufi < ev.dataTransfer.files.length; ufi++) upNames.push(ev.dataTransfer.files[ufi].name);
+        if (ev.dataTransfer) {
+          ev.dataTransfer.dropEffect = "none";
+          try { ev.dataTransfer.clearData(); } catch (_) {}
+        }
         showBubble(govUploadWarning || "File uploads and attachments to this AI platform are blocked by corporate policy.", "File Upload Policy", "block");
+        window.postMessage({
+          source: "gateway-guard-page",
+          nonce: guardNonce,
+          id: "upload_drop_block_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2),
+          prompt: "--drag drop [DRAG & DROP BLOCKED] Upload: " + (upNames.join(", ") || "Files"),
+          host: location.hostname,
+          url: location.href,
+          is_blocked: true,
+          rule: "File Upload Policy",
+          blocked_reason: "File Upload Policy",
+          status: "Blocked (File Upload Policy)"
+        }, "*");
         return;
       }
     }
@@ -1624,12 +1798,20 @@
       for (var i = 0; i < files.length; i++) {
         if (!inspectAndStageFile(files[i])) {
           ev.preventDefault();
+          ev.stopPropagation();
           ev.stopImmediatePropagation();
           return;
         }
       }
     }
-  }, true);
+  }
+
+  window.addEventListener("dragenter", handleDragOverOrEnter, true);
+  document.addEventListener("dragenter", handleDragOverOrEnter, true);
+  window.addEventListener("dragover", handleDragOverOrEnter, true);
+  document.addEventListener("dragover", handleDragOverOrEnter, true);
+  window.addEventListener("drop", handleDropBlock, true);
+  document.addEventListener("drop", handleDropBlock, true);
 
   // Hook 3: Clipboard Paste (Ctrl+V Screenshots, Files & Sensitive Text Shielding)
   window.addEventListener("paste", function (ev) {
@@ -1637,11 +1819,16 @@
     if (govBlockClipboard && isControlActiveForSite(govClipboardTargetWebsites)) {
       ev.preventDefault();
       ev.stopImmediatePropagation();
+      // Do not show clipboard bubble when screenshot shield is already visible —
+      // the two banners must never appear at the same time.
+      var screenshotShieldActive = !!(document.getElementById("yp-screenshot-shield") || document.getElementById("yp-blur-curtain"));
       var pastedSnippet = "";
       try {
         if (ev.clipboardData) pastedSnippet = ev.clipboardData.getData("text/plain") || "";
       } catch (e) {}
-      showBubble(govClipboardBlockMessage || govBlockMessage || "Pasting data into this AI tool is blocked by corporate data governance policy.", "Clipboard Policy", "block");
+      if (!screenshotShieldActive) {
+        showBubble(govClipboardBlockMessage || govBlockMessage || "Copy paste not allowed", "Clipboard Policy", "block");
+      }
       var promptLogText = "--copy paste [CLIPBOARD PASTE]";
       if (pastedSnippet && pastedSnippet.trim()) {
         promptLogText += " " + pastedSnippet.trim().slice(0, 1000);
@@ -1724,12 +1911,16 @@
     if (!armed || !govBlockClipboard || !isControlActiveForSite(govClipboardTargetWebsites)) return;
     ev.preventDefault();
     ev.stopImmediatePropagation();
+    // Do not show clipboard bubble when screenshot shield is already visible.
+    var screenshotShieldActive = !!(document.getElementById("yp-screenshot-shield") || document.getElementById("yp-blur-curtain"));
     var copiedSnippet = "";
     try {
       var sel = window.getSelection ? window.getSelection().toString() : "";
       if (sel) copiedSnippet = sel;
     } catch (e) {}
-    showBubble(govClipboardBlockMessage || govBlockMessage || "Copying responses and data from this AI service is restricted by corporate security policy.", "Clipboard Policy", "block");
+    if (!screenshotShieldActive) {
+      showBubble(govClipboardBlockMessage || govBlockMessage || "Copy paste not allowed", "Clipboard Policy", "block");
+    }
     var promptLogText = "--copy paste [CLIPBOARD COPY]";
     if (copiedSnippet && copiedSnippet.trim()) {
       promptLogText += " " + copiedSnippet.trim().slice(0, 1000);
@@ -1752,12 +1943,16 @@
     if (!armed || !govBlockClipboard || !isControlActiveForSite(govClipboardTargetWebsites)) return;
     ev.preventDefault();
     ev.stopImmediatePropagation();
+    // Do not show clipboard bubble when screenshot shield is already visible.
+    var screenshotShieldActive = !!(document.getElementById("yp-screenshot-shield") || document.getElementById("yp-blur-curtain"));
     var cutSnippet = "";
     try {
       var sel = window.getSelection ? window.getSelection().toString() : "";
       if (sel) cutSnippet = sel;
     } catch (e) {}
-    showBubble(govClipboardBlockMessage || govBlockMessage || "Cutting data from this AI service is restricted by corporate security policy.", "Clipboard Policy", "block");
+    if (!screenshotShieldActive) {
+      showBubble(govClipboardBlockMessage || govBlockMessage || "Copy paste not allowed", "Clipboard Policy", "block");
+    }
     var promptLogText = "--copy paste [CLIPBOARD CUT]";
     if (cutSnippet && cutSnippet.trim()) {
       promptLogText += " " + cutSnippet.trim().slice(0, 1000);
@@ -1791,7 +1986,10 @@
           clipboardApi[method] = function () {
             if (clipboardPolicyActive()) {
               showBubble(govClipboardBlockMessage || govBlockMessage || "Clipboard access is blocked by corporate policy.", "Clipboard Policy", "block");
-              return Promise.reject(new DOMException("Clipboard access is blocked by corporate policy.", "NotAllowedError"));
+              // Safely resolve with empty content so Chrome does not throw an Uncaught (in promise) NotAllowedError
+              if (method === "readText") return Promise.resolve("");
+              if (method === "read") return Promise.resolve([]);
+              return Promise.resolve();
             }
             return original.apply(clipboardApi, arguments);
           };
@@ -2800,11 +2998,21 @@
     };
   }
 
-  // Periodic and load session inspection
-  setTimeout(function () {
-    scanStorageForSession();
-    scanDOMForSession();
-  }, 1200);
+  // Periodic, load, and focus session inspection
+  [400, 1200, 2500].forEach(function (ms) {
+    setTimeout(function () {
+      if (armed) {
+        scanStorageForSession();
+        scanDOMForSession();
+      }
+    }, ms);
+  });
+  window.addEventListener("focus", function () {
+    if (armed) {
+      scanStorageForSession();
+      scanDOMForSession();
+    }
+  });
   setInterval(function () {
     if (armed) {
       scanStorageForSession();

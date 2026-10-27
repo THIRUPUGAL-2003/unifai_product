@@ -182,29 +182,87 @@
   var clipboardNoticeAt = 0;
   function showClipboardBlockedNotice() {
     var now = Date.now();
-    if (now - clipboardNoticeAt < 1200) return;
+    if (now - clipboardNoticeAt < 1000) return;
     clipboardNoticeAt = now;
     try {
-      var host = document.getElementById("yp-raksha-isolated-clipboard-notice");
-      if (!host) {
-        host = document.createElement("div");
-        host.id = "yp-raksha-isolated-clipboard-notice";
-        var shadow = host.attachShadow ? host.attachShadow({ mode: "closed" }) : host;
-        var box = document.createElement("div");
-        box.textContent = clipboardPolicy.message || "Copying and pasting are blocked by company security policy.";
-        box.style.cssText = "position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:2147483647;background:#7f1d1d;color:white;padding:14px 22px;border-radius:10px;font:600 14px Segoe UI,Arial,sans-serif;box-shadow:0 8px 28px #0008;max-width:80vw;text-align:center;";
-        shadow.appendChild(box);
-        (document.documentElement || document).appendChild(host);
-      }
-      setTimeout(function () { try { host.remove(); } catch (e) {} }, 2600);
+      var old = document.getElementById("yp-raksha-isolated-clipboard-notice");
+      if (old) old.remove();
+      var host = document.createElement("div");
+      host.id = "yp-raksha-isolated-clipboard-notice";
+      var shadow = host.attachShadow ? host.attachShadow({ mode: "closed" }) : host;
+      var box = document.createElement("div");
+      box.textContent = "Copy paste not allowed";
+      box.style.cssText = "position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:2147483647;background:#7f1d1d;color:white;padding:10px 22px;border-radius:10px;font:600 13px Segoe UI,Arial,sans-serif;box-shadow:0 8px 28px #0008;max-width:80vw;text-align:center;transition:opacity 0.2s ease;";
+      shadow.appendChild(box);
+      (document.documentElement || document).appendChild(host);
+      setTimeout(function () {
+        try {
+          box.style.opacity = "0";
+          setTimeout(function () { try { host.remove(); } catch (_) {} }, 200);
+        } catch (e) {}
+      }, 1000);
     } catch (e) {}
+  }
+
+  var _lastGovLogSig = "";
+  var _lastGovLogTime = 0;
+  function recordIsolatedGovernanceLog(promptText, ruleName) {
+    var now = Date.now();
+    var sig = promptText + "||" + ruleName;
+    if (sig === _lastGovLogSig && (now - _lastGovLogTime < 2500)) return;
+    _lastGovLogSig = sig;
+    _lastGovLogTime = now;
+    var checkPayload = {
+      id: "gov_" + now.toString(36) + "_" + Math.random().toString(36).slice(2),
+      eval_id: "gov_" + now.toString(36),
+      host: location.hostname,
+      url: location.href,
+      prompt: promptText,
+      files: [],
+      upload_images: [],
+      is_blocked: true,
+      rule: ruleName,
+      blocked_reason: ruleName,
+      status: "Blocked (" + ruleName + ")",
+      browser: detectCurrentBrowser()
+    };
+    withBase(function () {
+      if (base) {
+        fetch(base + "/extension/check", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Browser-Guard-Extension": "1" },
+          body: JSON.stringify(checkPayload)
+        }).catch(function () {
+          if (serverHost) {
+            fetch("https://" + serverHost + "/api/browser-ai/intercept", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(checkPayload)
+            }).catch(function () {});
+          }
+        });
+      } else if (serverHost) {
+        fetch("https://" + serverHost + "/api/browser-ai/intercept", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(checkPayload)
+        }).catch(function () {});
+      }
+    });
   }
 
   function blockClipboardEvent(ev) {
     if (!clipboardPolicyApplies()) return;
+    if (document.getElementById("yp-blur-curtain") || document.getElementById("yp-screenshot-shield")) {
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
+      return;
+    }
     ev.preventDefault();
     ev.stopImmediatePropagation();
     showClipboardBlockedNotice();
+    var actionType = ev.type === "paste" ? "PASTE" : (ev.type === "cut" ? "CUT" : "COPY");
+    recordIsolatedGovernanceLog("--copy paste [CLIPBOARD " + actionType + "]", "Clipboard Policy");
   }
   ["copy", "cut", "paste"].forEach(function (type) {
     window.addEventListener(type, blockClipboardEvent, true);
@@ -222,10 +280,167 @@
         : (typeof state.governance_block_message === "string" ? state.governance_block_message : clipboardPolicy.message),
       monitoredSites: monitoredSitesForPolicy
     };
+    applyScreenshotPolicyState(state);
+    applyDragDropPolicyState(state);
   }
 
+  var dragDropPolicy = { enabled: false, targetSites: "", message: "", monitoredSites: [] };
+  function dragDropPolicyApplies() {
+    if (!dragDropPolicy.enabled) return false;
+    var monitoredSites = dragDropPolicy.monitoredSites || monitoredSitesForPolicy;
+    if (isServerHost(location.hostname) || !hostMatches(location.hostname, monitoredSites)) return false;
+    var raw = String(dragDropPolicy.targetSites || "").trim();
+    if (raw && raw.toLowerCase() !== "all" && raw !== "*") {
+      return hostInConfiguredSites(location.hostname, raw);
+    }
+    return true;
+  }
+
+  function applyDragDropPolicyState(state) {
+    state = state || {};
+    dragDropPolicy = {
+      enabled: typeof state.block_drag_drop === "boolean" ? state.block_drag_drop : dragDropPolicy.enabled,
+      targetSites: typeof state.drag_drop_target_websites === "string" ? state.drag_drop_target_websites : dragDropPolicy.targetSites,
+      message: typeof state.drag_drop_block_message === "string"
+        ? state.drag_drop_block_message
+        : (typeof state.governance_block_message === "string" ? state.governance_block_message : dragDropPolicy.message),
+      monitoredSites: monitoredSitesForPolicy
+    };
+  }
+
+  var dragDropNoticeAt = 0;
+  function showDragDropBlockedNotice() {
+    var now = Date.now();
+    if (now - dragDropNoticeAt < 1200) return;
+    dragDropNoticeAt = now;
+    try {
+      var host = document.getElementById("yp-raksha-isolated-dragdrop-notice");
+      if (!host) {
+        host = document.createElement("div");
+        host.id = "yp-raksha-isolated-dragdrop-notice";
+        var shadow = host.attachShadow ? host.attachShadow({ mode: "closed" }) : host;
+        var box = document.createElement("div");
+        box.textContent = dragDropPolicy.message || "Drag-and-drop file and data ingestion is blocked by corporate policy.";
+        box.style.cssText = "position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:2147483647;background:#7f1d1d;color:white;padding:14px 22px;border-radius:10px;font:600 14px Segoe UI,Arial,sans-serif;box-shadow:0 8px 28px #0008;max-width:80vw;text-align:center;";
+        shadow.appendChild(box);
+        (document.documentElement || document).appendChild(host);
+      }
+      setTimeout(function () { try { host.remove(); } catch (e) {} }, 2600);
+    } catch (e) {}
+  }
+
+  function blockDragDropEvent(ev) {
+    if (!dragDropPolicyApplies()) return;
+    var droppedSummary = "";
+    if (ev.dataTransfer) {
+      if (ev.dataTransfer.files && ev.dataTransfer.files.length) {
+        var names = [];
+        for (var i = 0; i < ev.dataTransfer.files.length; i++) names.push(ev.dataTransfer.files[i].name);
+        droppedSummary = "Files: " + names.join(", ");
+      } else {
+        try {
+          var t = ev.dataTransfer.getData("text/plain");
+          if (t) droppedSummary = "Text: " + t.trim().slice(0, 300);
+        } catch (_) {}
+      }
+      ev.dataTransfer.dropEffect = "none";
+      try { ev.dataTransfer.clearData(); } catch (_) {}
+    }
+    ev.preventDefault();
+    ev.stopPropagation();
+    ev.stopImmediatePropagation();
+    if (ev.type === "drop") {
+      showDragDropBlockedNotice();
+      recordIsolatedGovernanceLog("--drag drop [DRAG & DROP BLOCKED]" + (droppedSummary ? " " + droppedSummary : ""), "Drag & Drop Policy");
+    }
+  }
+
+  ["dragenter", "dragover", "drop"].forEach(function (type) {
+    window.addEventListener(type, blockDragDropEvent, true);
+    document.addEventListener(type, blockDragDropEvent, true);
+  });
+
+  var screenshotPolicy = { enabled: false, targetSites: "", message: "", monitoredSites: [] };
+  function screenshotPolicyApplies() {
+    if (!screenshotPolicy.enabled) return false;
+    var monitoredSites = screenshotPolicy.monitoredSites || monitoredSitesForPolicy;
+    if (isServerHost(location.hostname) || !hostMatches(location.hostname, monitoredSites)) return false;
+    var raw = String(screenshotPolicy.targetSites || "").trim();
+    if (raw && raw.toLowerCase() !== "all" && raw !== "*") {
+      return hostInConfiguredSites(location.hostname, raw);
+    }
+    return true;
+  }
+
+  function applyScreenshotPolicyState(state) {
+    state = state || {};
+    screenshotPolicy = {
+      enabled: typeof state.block_screenshot === "boolean" ? state.block_screenshot : screenshotPolicy.enabled,
+      targetSites: typeof state.screenshot_target_websites === "string" ? state.screenshot_target_websites : screenshotPolicy.targetSites,
+      message: typeof state.screenshot_block_message === "string"
+        ? state.screenshot_block_message
+        : (typeof state.governance_block_message === "string" ? state.governance_block_message : screenshotPolicy.message),
+      monitoredSites: monitoredSitesForPolicy
+    };
+  }
+
+  function applyIsolatedCurtain() {
+    if (!screenshotPolicyApplies()) return;
+    var curtain = document.getElementById("yp-blur-curtain");
+    if (!curtain) {
+      curtain = document.createElement("div");
+      curtain.id = "yp-blur-curtain";
+      curtain.style.cssText = "position:fixed;inset:0;width:100vw;height:100vh;background:#0a0f1d;opacity:0.98;backdrop-filter:blur(30px);-webkit-backdrop-filter:blur(30px);z-index:2147483646;pointer-events:none;display:flex;align-items:center;justify-content:center;color:#f87171;font-family:-apple-system,BlinkMacSystemFont,sans-serif;font-size:20px;font-weight:700;";
+      curtain.innerHTML = '<div style="display:flex;align-items:center;gap:10px;"><span style="font-size:28px;">🛡️</span><span>SCREEN CAPTURE RESTRICTED</span></div>';
+      (document.body || document.documentElement).appendChild(curtain);
+    }
+  }
+
+  function removeIsolatedCurtain() {
+    var curtain = document.getElementById("yp-blur-curtain");
+    if (curtain) curtain.remove();
+  }
+
+  window.addEventListener("blur", applyIsolatedCurtain, true);
+  window.addEventListener("focus", removeIsolatedCurtain, true);
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) applyIsolatedCurtain();
+    else removeIsolatedCurtain();
+  }, true);
+
+  function handleIsolatedCaptureKeys(e) {
+    if (!screenshotPolicyApplies()) return;
+    var isPrtScn = e.key === "PrintScreen" || e.keyCode === 44 || e.code === "PrintScreen";
+    var isWinShiftS = (e.key === "s" || e.key === "S" || e.code === "KeyS") && e.shiftKey && (e.metaKey || e.altKey);
+    var isMacCapture = e.metaKey && e.shiftKey && (e.key === "3" || e.key === "4" || e.key === "5" || e.code === "Digit3" || e.code === "Digit4" || e.code === "Digit5");
+    var isPrint = (e.ctrlKey || e.metaKey) && (e.key === "p" || e.key === "P" || e.code === "KeyP");
+
+    if (isPrtScn || isWinShiftS || isMacCapture || isPrint) {
+      try {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+      } catch (_) {}
+      // NOTE: Do NOT call navigator.clipboard.writeText("") here.
+      // Doing so fires a clipboard event which triggers the clipboard
+      // blocked banner simultaneously with the screenshot curtain.
+      applyIsolatedCurtain();
+      setTimeout(removeIsolatedCurtain, 2500);
+    }
+  }
+
+  window.addEventListener("keydown", handleIsolatedCaptureKeys, true);
+  document.addEventListener("keydown", handleIsolatedCaptureKeys, true);
+  window.addEventListener("keyup", function (e) {
+    if (!screenshotPolicyApplies()) return;
+    if (e.key === "PrintScreen" || e.keyCode === 44 || e.code === "PrintScreen") {
+      applyIsolatedCurtain();
+      setTimeout(removeIsolatedCurtain, 2500);
+    }
+  }, true);
+
   if (chrome.storage && chrome.storage.local) {
-    chrome.storage.local.get(["cached_sites", "block_clipboard", "clipboard_target_websites", "clipboard_block_message", "governance_block_message"], applyClipboardPolicyState);
+    chrome.storage.local.get(["cached_sites", "block_clipboard", "clipboard_target_websites", "clipboard_block_message", "governance_block_message", "block_screenshot", "screenshot_target_websites", "screenshot_block_message"], applyClipboardPolicyState);
   }
 
   // Accurate client-side browser detector across Chrome, Edge, Safari, Firefox, Brave, Opera, Vivaldi
@@ -284,7 +499,11 @@
     "block_screenshot", "screenshot_block_message", "screenshot_target_websites"
   ];
   var SITE_KEYS = ["cached_sites", "cached_blocked_sites", "server_host"];
-  var CLIPBOARD_KEYS = ["cached_sites", "block_clipboard", "clipboard_target_websites", "clipboard_block_message", "governance_block_message"];
+  var CLIPBOARD_KEYS = [
+    "cached_sites", "block_clipboard", "clipboard_target_websites", "clipboard_block_message", "governance_block_message",
+    "block_screenshot", "screenshot_target_websites", "screenshot_block_message",
+    "block_drag_drop", "drag_drop_target_websites", "drag_drop_block_message"
+  ];
 
   var armedHere = false;
   var pageBlocked = false;
@@ -358,7 +577,7 @@
   var lastSyncRequestAt = 0;
   function requestBackgroundSync() {
     var now = Date.now();
-    if (now - lastSyncRequestAt < 5000) return;
+    if (now - lastSyncRequestAt < 2000) return; // Reduced from 5000ms → faster policy pickup
     lastSyncRequestAt = now;
     try {
       chrome.runtime.sendMessage({ type: "guard_sync_now" }, function () {
@@ -412,6 +631,14 @@
 
   window.addEventListener("focus", function () {
     if (armedHere) requestBackgroundSync();
+  });
+
+  // On laptop wake/resume: tab becomes visible again → re-arm check immediately
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "visible") {
+      // Re-evaluate arm status in case EXE restarted after sleep
+      armIfMonitored();
+    }
   });
 
   window.addEventListener("message", function (ev) {

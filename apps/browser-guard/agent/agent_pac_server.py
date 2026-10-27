@@ -133,6 +133,12 @@ class _PACRequestHandler(http.server.BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         path = (self.path or "/").split("?", 1)[0]
         _check_and_record_extension_activity(self, path)
+        if path in ("/extension/uninstalled", "/extension/uninstall"):
+            from agent_extension import mark_extension_uninstalled
+            mark_extension_uninstalled()
+            print("[Gateway Guard] Browser extension uninstalled notification received.")
+            self._json(200, {"status": "ok", "message": "extension uninstall recorded"})
+            return
         if path in ("/extension/ping", "/extension/status"):
             from agent_extension import get_extension_status
             self._json(200, {

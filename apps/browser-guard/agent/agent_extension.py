@@ -1963,9 +1963,34 @@ def record_extension_activity() -> None:
     with _extension_status_lock:
         _last_extension_ping = now
     try:
+        flag_file = os.path.join(data_dir(), "extension_uninstalled.flag")
+        if os.path.isfile(flag_file):
+            os.remove(flag_file)
+    except Exception:
+        pass
+    try:
         seen_file = os.path.join(data_dir(), "extension_last_seen.txt")
         with open(seen_file, "w", encoding="utf-8") as f:
             f.write(str(int(now)))
+    except Exception:
+        pass
+
+
+def mark_extension_uninstalled() -> None:
+    """Record that the browser extension was uninstalled or removed by the user."""
+    global _last_extension_ping
+    with _extension_status_lock:
+        _last_extension_ping = 0.0
+    try:
+        seen_file = os.path.join(data_dir(), "extension_last_seen.txt")
+        with open(seen_file, "w", encoding="utf-8") as f:
+            f.write("uninstalled")
+    except Exception:
+        pass
+    try:
+        flag_file = os.path.join(data_dir(), "extension_uninstalled.flag")
+        with open(flag_file, "w", encoding="utf-8") as f:
+            f.write(str(int(time.time())))
     except Exception:
         pass
 
@@ -1975,13 +2000,22 @@ def get_extension_status() -> str:
 
     Returns:
       'connected': Extension actively polling/checking in (within last 90s).
-      'installed': Extension installed/detected on laptop (seen previously or policy present), but browser inactive.
+      'disconnected': Extension was active, but currently inactive or turned off (>90s).
+      'uninstalled': Extension was uninstalled or removed by user.
+      'installed': Extension installed on machine (standby).
       'not_installed': No extension activity or installation detected.
     """
     global _last_extension_ping
     now = time.time()
     with _extension_status_lock:
         last = _last_extension_ping
+
+    # Check uninstalled flag first
+    try:
+        if os.path.isfile(os.path.join(data_dir(), "extension_uninstalled.flag")):
+            return "uninstalled"
+    except Exception:
+        pass
 
     # Check in-memory ping
     if last > 0 and (now - last) <= 90:
@@ -1992,14 +2026,17 @@ def get_extension_status() -> str:
         seen_file = os.path.join(data_dir(), "extension_last_seen.txt")
         if os.path.isfile(seen_file):
             with open(seen_file, "r", encoding="utf-8") as f:
-                ts = float(f.read().strip())
+                content = f.read().strip()
+                if content == "uninstalled":
+                    return "uninstalled"
+                ts = float(content)
                 if (now - ts) <= 90:
                     with _extension_status_lock:
                         _last_extension_ping = ts
                     return "connected"
-                # If seen within the last 14 days, it is installed on this machine
-                if (now - ts) <= 14 * 86400:
-                    return "installed"
+                # If seen within the last 7 days, it was connected but is now disconnected (turned off or browser closed)
+                if (now - ts) <= 7 * 86400:
+                    return "disconnected"
     except Exception:
         pass
 
