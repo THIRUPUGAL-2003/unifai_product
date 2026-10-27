@@ -388,6 +388,11 @@ _governance_cache: dict = {
     "block_screenshot": False,
     "screenshot_block_message": "",
     "screenshot_target_websites": "",
+    "enforce_corporate_domains": False,
+    "corporate_email_domains": "",
+    "allowed_workspace_ids": "",
+    "corporate_target_websites": "",
+    "corporate_block_message": "",
 }
 
 
@@ -529,6 +534,8 @@ def ingest_chrome_storage(data: dict) -> None:
         "block_drag_drop", "drag_drop_target_websites", "drag_drop_block_message",
         "block_download", "download_target_websites", "download_block_message",
         "block_screenshot", "screenshot_block_message", "screenshot_target_websites",
+        "enforce_corporate_domains", "corporate_email_domains", "allowed_workspace_ids",
+        "corporate_target_websites", "corporate_block_message",
         "governance_target_websites", "governance_block_message",
     )
     has_gov = False
@@ -683,6 +690,11 @@ def dynamic_rules() -> list[dict]:
                         "block_screenshot": bool(data.get("block_screenshot")),
                         "screenshot_block_message": str(data.get("screenshot_block_message") or ""),
                         "screenshot_target_websites": str(data.get("screenshot_target_websites") or ""),
+                        "enforce_corporate_domains": bool(data.get("enforce_corporate_domains")),
+                        "corporate_email_domains": str(data.get("corporate_email_domains") or ""),
+                        "allowed_workspace_ids": str(data.get("allowed_workspace_ids") or ""),
+                        "corporate_target_websites": str(data.get("corporate_target_websites") or ""),
+                        "corporate_block_message": str(data.get("corporate_block_message") or ""),
                     }
                 break
         except Exception:
@@ -2374,14 +2386,83 @@ def authorize_ai_session(payload: dict) -> dict:
         if status == 200 and isinstance(resp, dict) and "decision" in resp:
             return resp
         url_direct = f"{backend}/authorize_ai_session"
-        status2, resp2 = _http_json("POST", url_direct, payload, timeout=4)
+        status2, resp2 = _http_json("POST", url_direct, payload, timeout=3)
         if status2 == 200 and isinstance(resp2, dict) and "decision" in resp2:
             return resp2
+
+    # Offline / backend unavailable fallback: evaluate using local governance cache
+    gov = get_governance_controls() or {}
+    enforce_corp = bool(gov.get("enforce_corporate_domains"))
+    policy_ver = int(payload.get("policy_version") or 1)
+    if not enforce_corp:
+        return {
+            "decision": "allow",
+            "reason_code": "POLICY_NOT_ENFORCED",
+            "message": "Corporate domain enforcement is currently inactive.",
+            "policy_version": policy_ver,
+        }
+
+    # Check target website filter
+    corp_targets = str(gov.get("corporate_target_websites") or "").strip().lower()
+    page_url = str(payload.get("page_url") or "").lower()
+    provider = str(payload.get("provider") or "").lower()
+    if corp_targets and corp_targets not in ("all", "*"):
+        parts = [p.strip().replace("*.", "").replace(".", "") for p in corp_targets.replace(";", ",").split(",") if p.strip()]
+        matched_target = any(p in page_url or p == provider for p in parts)
+        if not matched_target:
+            return {
+                "decision": "allow",
+                "reason_code": "TARGET_NOT_RESTRICTED",
+                "message": "Corporate domain enforcement is not required on this target website.",
+                "policy_version": policy_ver,
+            }
+
+    raw_domains = str(gov.get("corporate_email_domains") or "")
+    allowed_domains = set()
+    for d in raw_domains.replace(";", ",").replace("\n", ",").split(","):
+        cl = d.strip().lower().lstrip("@")
+        if cl:
+            allowed_domains.add(cl)
+
+    if not allowed_domains:
+        return {
+            "decision": "allow",
+            "reason_code": "NO_DOMAINS_CONFIGURED",
+            "message": "No corporate email domains have been configured yet.",
+            "policy_version": policy_ver,
+        }
+
+    email = str(payload.get("user_email") or "").strip().lower()
+    email_domain = str(payload.get("email_domain") or "").strip().lower().lstrip("@")
+    if not email_domain and "@" in email:
+        email_domain = email.split("@")[-1].strip()
+
+    if not email_domain:
+        return {
+            "decision": "allow",
+            "reason_code": "PENDING_AUTHENTICATION",
+            "message": "Awaiting user authentication to verify domain.",
+            "policy_version": policy_ver,
+        }
+
+    # Check if domain matches configured corporate domains
+    domain_allowed = (email_domain in allowed_domains) or any(email_domain.endswith("." + ad) for ad in allowed_domains)
+    if not domain_allowed:
+        block_msg = str(gov.get("corporate_block_message") or "").strip()
+        if not block_msg:
+            block_msg = f"Corporate policy restricts access to authorized domains (@{', @'.join(sorted(allowed_domains))}). Personal account (@{email_domain}) is blocked."
+        return {
+            "decision": "block",
+            "reason_code": "UNAUTHORIZED_DOMAIN",
+            "message": block_msg,
+            "policy_version": policy_ver,
+        }
+
     return {
-        "decision": "block",
-        "reason_code": "BACKEND_UNREACHABLE",
-        "message": "Backend session verification unavailable; access is blocked until verification succeeds.",
-        "policy_version": int(payload.get("policy_version") or 1),
+        "decision": "allow",
+        "reason_code": "APPROVED_WORKSPACE",
+        "message": f"Corporate {provider.title() or 'AI'} workspace verified.",
+        "policy_version": policy_ver,
     }
 
 

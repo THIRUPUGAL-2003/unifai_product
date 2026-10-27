@@ -554,7 +554,9 @@
     "block_clipboard", "block_drag_drop", "block_download", "governance_target_websites", "governance_block_message",
     "clipboard_target_websites", "drag_drop_target_websites", "download_target_websites",
     "clipboard_block_message", "drag_drop_block_message", "download_block_message",
-    "block_screenshot", "screenshot_block_message", "screenshot_target_websites"
+    "block_screenshot", "screenshot_block_message", "screenshot_target_websites",
+    "enforce_corporate_domains", "corporate_email_domains", "allowed_workspace_ids",
+    "corporate_target_websites", "corporate_block_message"
   ];
   var SITE_KEYS = ["cached_sites", "cached_blocked_sites", "server_host"];
   var CLIPBOARD_KEYS = [

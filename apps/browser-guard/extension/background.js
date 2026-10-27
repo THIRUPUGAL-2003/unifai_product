@@ -57,6 +57,11 @@ function policyFromRules(data) {
     screenshot_block_message: str(data.screenshot_block_message),
     governance_target_websites: str(data.governance_target_websites),
     governance_block_message: str(data.governance_block_message),
+    enforce_corporate_domains: Boolean(data.enforce_corporate_domains),
+    corporate_email_domains: str(data.corporate_email_domains),
+    allowed_workspace_ids: str(data.allowed_workspace_ids),
+    corporate_target_websites: str(data.corporate_target_websites),
+    corporate_block_message: str(data.corporate_block_message),
     cached_tampered: Boolean(data.tampered)
   };
   if (Array.isArray(data.restricted_extensions)) {
