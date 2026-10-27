@@ -203,10 +203,10 @@
       box.innerHTML =
         '<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">' +
           '<span style="font-size:13px;line-height:1;">🛡️</span>' +
-          '<strong style="font-size:11px;font-weight:700;letter-spacing:0.03em;text-transform:uppercase;color:#f87171;">Copy &amp; Paste Restricted</strong>' +
+          '<strong style="font-size:11px;font-weight:700;letter-spacing:0.03em;text-transform:uppercase;color:#f87171;">Clipboard Paste Restricted</strong>' +
         '</div>' +
         '<div style="font-size:12.5px;line-height:1.4;color:#e2e8f0;font-weight:400;">' +
-          (clipboardPolicy.message || "Copy paste not allowed") +
+          (clipboardPolicy.message || "Pasting into AI inputs is restricted") +
         '</div>';
       shadow.appendChild(box);
       (document.documentElement || document).appendChild(host);
@@ -274,6 +274,11 @@
       ev.stopImmediatePropagation();
       return;
     }
+    // Only intercept PASTE events (prevent exfiltration into AI input boxes).
+    // Allow COPY so users can seamlessly copy AI answers and code snippets without errors.
+    var isPaste = ev.type && ev.type.indexOf("paste") >= 0;
+    if (!isPaste) return;
+
     if (ev.clipboardData) {
       try { ev.clipboardData.clearData(); } catch (_) {}
     }
@@ -281,33 +286,29 @@
     ev.stopPropagation();
     ev.stopImmediatePropagation();
     showClipboardBlockedNotice();
-    var actionType = (ev.type && ev.type.indexOf("paste") >= 0) ? "PASTE" : ((ev.type && ev.type.indexOf("cut") >= 0) ? "CUT" : "COPY");
-    recordIsolatedGovernanceLog("--copy paste [CLIPBOARD " + actionType + "]", "Clipboard Policy");
+    recordIsolatedGovernanceLog("--copy paste [CLIPBOARD PASTE]", "Clipboard Policy");
   }
 
   function handleClipboardKeys(e) {
     if (!clipboardPolicyApplies()) return;
     var isCtrlOrMeta = e.ctrlKey || e.metaKey;
-    var isCopy = (isCtrlOrMeta && (e.key === "c" || e.key === "C" || e.code === "KeyC")) ||
-                 (isCtrlOrMeta && (e.key === "Insert" || e.code === "Insert"));
+    // Only intercept PASTE shortcuts (Ctrl+V, Shift+Insert).
+    // Allow COPY shortcuts (Ctrl+C, Ctrl+Insert) so copying is fast, smooth, and error-free.
     var isPaste = (isCtrlOrMeta && (e.key === "v" || e.key === "V" || e.code === "KeyV")) ||
                   (e.shiftKey && (e.key === "Insert" || e.code === "Insert"));
-    var isCut = (isCtrlOrMeta && (e.key === "x" || e.key === "X" || e.code === "KeyX")) ||
-                (e.shiftKey && (e.key === "Delete" || e.code === "Delete"));
 
-    if (isCopy || isPaste || isCut) {
+    if (isPaste) {
       try {
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
       } catch (_) {}
       showClipboardBlockedNotice();
-      var actionType = isPaste ? "PASTE" : (isCut ? "CUT" : "COPY");
-      recordIsolatedGovernanceLog("--copy paste [CLIPBOARD " + actionType + " KEY]", "Clipboard Policy");
+      recordIsolatedGovernanceLog("--copy paste [CLIPBOARD PASTE KEY]", "Clipboard Policy");
     }
   }
 
-  ["copy", "cut", "paste", "beforecopy", "beforecut", "beforepaste"].forEach(function (type) {
+  ["paste", "beforepaste"].forEach(function (type) {
     window.addEventListener(type, blockClipboardEvent, true);
     document.addEventListener(type, blockClipboardEvent, true);
   });

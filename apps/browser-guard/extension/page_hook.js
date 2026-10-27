@@ -1915,7 +1915,7 @@
         if (ev.clipboardData) pastedSnippet = ev.clipboardData.getData("text/plain") || "";
       } catch (e) {}
       if (!screenshotShieldActive) {
-        showBubble(govClipboardBlockMessage || "Copy paste not allowed", "Copy & Paste Restricted", "block");
+        showBubble(govClipboardBlockMessage || "Copy paste not allowed", "Clipboard Paste Restricted", "block");
       }
       var promptLogText = "--copy paste [CLIPBOARD PASTE]";
       if (pastedSnippet && pastedSnippet.trim()) {
@@ -1930,8 +1930,8 @@
         url: location.href,
         is_blocked: true,
         rule: "Clipboard Policy",
-        blocked_reason: "Copy & Paste Restricted",
-        status: "Blocked (Copy & Paste Restricted)"
+        blocked_reason: "Clipboard Paste Restricted",
+        status: "Blocked (Clipboard Paste Restricted)"
       }, "*");
       return;
     }
@@ -1999,89 +1999,15 @@
     } catch (pasteErr) { }
   }
 
-  function handleCopyEvent(ev) {
-    if (!armed || !govBlockClipboard || !isControlActiveForSite(govClipboardTargetWebsites)) return;
-    if (ev.clipboardData) {
-      try { ev.clipboardData.clearData(); } catch (_) {}
-    }
-    ev.preventDefault();
-    ev.stopPropagation();
-    ev.stopImmediatePropagation();
-    // Do not show clipboard bubble when screenshot shield is already visible.
-    var screenshotShieldActive = !!(document.getElementById("yp-screenshot-shield") || document.getElementById("yp-blur-curtain"));
-    var copiedSnippet = "";
-    try {
-      var sel = window.getSelection ? window.getSelection().toString() : "";
-      if (sel) copiedSnippet = sel;
-    } catch (e) {}
-    if (!screenshotShieldActive) {
-      showBubble(govClipboardBlockMessage || "Copy paste not allowed", "Copy & Paste Restricted", "block");
-    }
-    var promptLogText = "--copy paste [CLIPBOARD COPY]";
-    if (copiedSnippet && copiedSnippet.trim()) {
-      promptLogText += " " + copiedSnippet.trim().slice(0, 1000);
-    }
-    window.postMessage({
-      source: "gateway-guard-page",
-      nonce: guardNonce,
-      id: "copy_block_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2),
-      prompt: promptLogText,
-      host: location.hostname,
-      url: location.href,
-      is_blocked: true,
-      rule: "Clipboard Policy",
-      blocked_reason: "Copy & Paste Restricted",
-      status: "Blocked (Copy & Paste Restricted)"
-    }, "*");
-  }
-
-  function handleCutEvent(ev) {
-    if (!armed || !govBlockClipboard || !isControlActiveForSite(govClipboardTargetWebsites)) return;
-    if (ev.clipboardData) {
-      try { ev.clipboardData.clearData(); } catch (_) {}
-    }
-    ev.preventDefault();
-    ev.stopPropagation();
-    ev.stopImmediatePropagation();
-    // Do not show clipboard bubble when screenshot shield is already visible.
-    var screenshotShieldActive = !!(document.getElementById("yp-screenshot-shield") || document.getElementById("yp-blur-curtain"));
-    var cutSnippet = "";
-    try {
-      var sel = window.getSelection ? window.getSelection().toString() : "";
-      if (sel) cutSnippet = sel;
-    } catch (e) {}
-    if (!screenshotShieldActive) {
-      showBubble(govClipboardBlockMessage || "Copy paste not allowed", "Copy & Paste Restricted", "block");
-    }
-    var promptLogText = "--copy paste [CLIPBOARD CUT]";
-    if (cutSnippet && cutSnippet.trim()) {
-      promptLogText += " " + cutSnippet.trim().slice(0, 1000);
-    }
-    window.postMessage({
-      source: "gateway-guard-page",
-      nonce: guardNonce,
-      id: "cut_block_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2),
-      prompt: promptLogText,
-      host: location.hostname,
-      url: location.href,
-      is_blocked: true,
-      rule: "Clipboard Policy",
-      blocked_reason: "Copy & Paste Restricted",
-      status: "Blocked (Copy & Paste Restricted)"
-    }, "*");
-  }
-
   function handleClipboardKeyHook(e) {
     if (!armed || !govBlockClipboard || !isControlActiveForSite(govClipboardTargetWebsites)) return;
     var isCtrlOrMeta = e.ctrlKey || e.metaKey;
-    var isCopy = (isCtrlOrMeta && (e.key === "c" || e.key === "C" || e.code === "KeyC")) ||
-                 (isCtrlOrMeta && (e.key === "Insert" || e.code === "Insert"));
+    // Only intercept PASTE shortcuts (Ctrl+V, Shift+Insert).
+    // Allow COPY shortcuts (Ctrl+C, Ctrl+Insert) so users can seamlessly copy AI answers and code snippets without errors.
     var isPaste = (isCtrlOrMeta && (e.key === "v" || e.key === "V" || e.code === "KeyV")) ||
                   (e.shiftKey && (e.key === "Insert" || e.code === "Insert"));
-    var isCut = (isCtrlOrMeta && (e.key === "x" || e.key === "X" || e.code === "KeyX")) ||
-                (e.shiftKey && (e.key === "Delete" || e.code === "Delete"));
 
-    if (isCopy || isPaste || isCut) {
+    if (isPaste) {
       try {
         e.preventDefault();
         e.stopPropagation();
@@ -2089,7 +2015,7 @@
       } catch (_) {}
       var screenshotShieldActive = !!(document.getElementById("yp-screenshot-shield") || document.getElementById("yp-blur-curtain"));
       if (!screenshotShieldActive) {
-        showBubble(govClipboardBlockMessage || "Copy paste not allowed", "Copy & Paste Restricted", "block");
+        showBubble(govClipboardBlockMessage || "Copy paste not allowed", "Clipboard Paste Restricted", "block");
       }
     }
   }
@@ -2098,33 +2024,26 @@
     window.addEventListener(t, handlePasteEvent, true);
     document.addEventListener(t, handlePasteEvent, true);
   });
-  ["beforecopy", "copy"].forEach(function (t) {
-    window.addEventListener(t, handleCopyEvent, true);
-    document.addEventListener(t, handleCopyEvent, true);
-  });
-  ["beforecut", "cut"].forEach(function (t) {
-    window.addEventListener(t, handleCutEvent, true);
-    document.addEventListener(t, handleCutEvent, true);
-  });
   window.addEventListener("keydown", handleClipboardKeyHook, true);
   document.addEventListener("keydown", handleClipboardKeyHook, true);
 
   // Cover direct page Clipboard API and execCommand calls as well as DOM events.
-  // The isolated-world content script independently blocks trusted copy/paste events.
+  // The isolated-world content script independently blocks trusted paste events.
   function clipboardPolicyActive() {
     return armed && govBlockClipboard && isControlActiveForSite(govClipboardTargetWebsites);
   }
   try {
     var clipboardApi = navigator.clipboard;
     if (clipboardApi) {
-      ["read", "readText", "write", "writeText"].forEach(function (method) {
+      // Only intercept reading from clipboard (prevent pasting exfiltration into page).
+      // Never intercept writeText / write so ChatGPT/Copilot "Copy code" buttons work smoothly without error.
+      ["read", "readText"].forEach(function (method) {
         var original = clipboardApi[method];
         if (typeof original !== "function") return;
         try {
           clipboardApi[method] = function () {
             if (clipboardPolicyActive()) {
-              showBubble(govClipboardBlockMessage || "Copy paste not allowed", "Copy & Paste Restricted", "block");
-              // Safely resolve with empty content so Chrome does not throw an Uncaught (in promise) NotAllowedError
+              // Silently resolve empty so Copilot/ChatGPT background queries don't throw error or pop up unwanted banners
               if (method === "readText") return Promise.resolve("");
               if (method === "read") return Promise.resolve([]);
               return Promise.resolve();
@@ -2140,8 +2059,9 @@
     if (typeof originalExecCommand === "function") {
       document.execCommand = function (command) {
         var normalized = String(command || "").toLowerCase();
-        if (clipboardPolicyActive() && (normalized === "copy" || normalized === "cut" || normalized === "paste")) {
-          showBubble(govClipboardBlockMessage || "Copy paste not allowed", "Copy & Paste Restricted", "block");
+        // Only block 'paste' commands, allow 'copy' and 'cut'
+        if (clipboardPolicyActive() && normalized === "paste") {
+          showBubble(govClipboardBlockMessage || "Copy paste not allowed", "Clipboard Paste Restricted", "block");
           return false;
         }
         return originalExecCommand.apply(document, arguments);
@@ -2153,7 +2073,7 @@
     if (typeof origQueryCommandEnabled === "function") {
       document.queryCommandEnabled = function (cmd) {
         var normalized = String(cmd || "").toLowerCase();
-        if (clipboardPolicyActive() && (normalized === "copy" || normalized === "cut" || normalized === "paste")) {
+        if (clipboardPolicyActive() && normalized === "paste") {
           return false;
         }
         return origQueryCommandEnabled.apply(document, arguments);

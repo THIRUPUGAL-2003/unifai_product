@@ -5046,7 +5046,7 @@ export default function BrowserAiPage() {
 									</div>
 									<div>
 										<div className="flex items-center gap-2">
-											<p className="text-sm font-semibold">4. Copy-Paste Blocking</p>
+											<p className="text-sm font-semibold">4. Clipboard Pasting Restriction</p>
 											{controls.block_clipboard ? (
 												<Badge variant="outline" className="text-[10px] px-2 py-0.5 border-emerald-500/50 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10">Active</Badge>
 											) : (
@@ -5054,7 +5054,7 @@ export default function BrowserAiPage() {
 											)}
 										</div>
 										<p className="text-xs text-muted-foreground mt-0.5">
-											Block copy, cut, and paste actions on monitored websites.
+											Block unauthorized clipboard pasting into monitored AI inputs while allowing seamless copying.
 										</p>
 									</div>
 								</div>
