@@ -146,17 +146,23 @@ func RBACMiddleware(store configstore.ConfigStore) func(fasthttp.RequestHandler)
 				strings.HasPrefix(path, "/api/customers") ||
 				strings.HasPrefix(path, "/api/roles") ||
 				strings.HasPrefix(path, "/api/permissions") ||
+				strings.HasPrefix(path, "/api/feature-flags") ||
+				strings.HasPrefix(path, "/api/mcp/filterdata") ||
+				strings.HasPrefix(path, "/api/logs/filterdata") ||
+				strings.HasPrefix(path, "/api/product-user-quota") ||
 				strings.HasPrefix(path, "/api/skills")) {
+				next(ctx)
+				return
+			}
+
+			// When a read request targets an authorized workspace section, allow it directly for all roles.
+			if isRead && isSectionGrantedForPath(grantedSections, path) {
 				next(ctx)
 				return
 			}
 
 			// When no custom RBAC is configured, uncustomized admin and sub_admin get section-based access.
 			if strings.TrimSpace(userRbacIDs) == "" && (session.Role == "admin" || session.Role == "sub_admin") {
-				if isRead && isSectionGrantedForPath(grantedSections, path) {
-					next(ctx)
-					return
-				}
 				if len(sections) > 0 {
 					if !rbac.SectionsAllow(grantedSections, sections) {
 						SendError(ctx, fasthttp.StatusForbidden, "this section is not enabled for your account")

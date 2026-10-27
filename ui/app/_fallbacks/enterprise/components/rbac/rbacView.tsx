@@ -890,14 +890,6 @@ export default function RBACView() {
 	// Quick Select Helpers
 	const handleSelectAll = () => {
 		if (!canUpdateRbac) return;
-		if (isTargetUserRole) {
-			const userAllowedIds = permissions
-				.filter((p) => p.resource === "PromptRepository" || p.operation === "Read" || p.operation === "View" || p.operation === "Download")
-				.map((p) => p.id);
-			setSelectedPerms(userAllowedIds);
-			toast.info("Granted View access across features (Full Access on Prompt Repository)");
-			return;
-		}
 		setSelectedPerms(permissions.map((p) => p.id));
 		toast.info("Granted all permissions");
 	};
@@ -944,6 +936,14 @@ export default function RBACView() {
 		} catch (err) {
 			toast.error(getErrorMessage(err));
 		}
+	};
+
+	const roleLabel = (rName: string) => {
+		const r = (rName || "user").toLowerCase();
+		if (r === "admin") return "Admin";
+		if (r === "sub_admin" || r === "subadmin") return "Sub-Admin";
+		if (r === "user") return "User";
+		return rName;
 	};
 
 	// Badge Helper (monochrome enterprise styling, no rainbow colors)
@@ -1341,23 +1341,22 @@ export default function RBACView() {
 									</span>
 								</div>
 
-								{/* Target Metadata & User Role Quick Switch */}
+								{/* Target Metadata */}
 								<div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
 									{target.type === "user" && targetUser && (
 										<>
-											<span>Current Role:</span>
-											<select
-												value={targetUser.role || "user"}
-												onChange={(e) => void handleAssignUserRole(targetUser.id, e.target.value)}
-												disabled={!canUpdateRbac}
-												className="bg-background border-input h-7 rounded border px-2 text-xs font-semibold text-foreground disabled:opacity-70 disabled:cursor-not-allowed"
+											<span className="font-medium text-foreground">Role:</span>
+											<span
+												className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${
+													(targetUser.role || "user").toLowerCase() === "admin"
+														? "border-teal-500/30 bg-teal-500/10 text-teal-400"
+														: (targetUser.role || "user").toLowerCase() === "sub_admin"
+															? "border-purple-500/30 bg-purple-500/10 text-purple-400"
+															: "border-blue-500/30 bg-blue-500/10 text-blue-400"
+												}`}
 											>
-												{roles.map((r) => (
-													<option key={r.id} value={r.name}>
-														{r.name}
-													</option>
-												))}
-											</select>
+												{roleLabel(targetUser.role || "user")}
+											</span>
 											<span>• Email: {targetUser.email || "No email"}</span>
 											{inheritedForUser && (
 												<span className="text-muted-foreground">
@@ -1438,7 +1437,7 @@ export default function RBACView() {
 							<strong>{groupedPermissions.length}</strong> workspace features across 8 primary categories.
 							{isTargetUserRole && (
 								<span className="ml-1 text-foreground/80 font-medium">
-									• User role is restricted to View-only across workspace features (Full Access is active on Prompt Repository).
+									• User role defaults to View-only across workspace features (Full Access on Prompt Repository). Admins and sub-admins can edit and raise permissions.
 								</span>
 							)}
 						</span>
@@ -1461,7 +1460,6 @@ export default function RBACView() {
 									</div>
 									{section.items.map(([resource, perms]) => {
 										const resourceLabel = RESOURCE_LABELS[resource] || resource;
-										const isUserRestricted = isTargetUserRole && resource !== "PromptRepository";
 
 										const viewPerms = perms.filter((p) => p.operation === "Read" || p.operation === "View" || p.operation === "Download");
 										const createPerms = perms.filter((p) => p.operation === "Create");
@@ -1490,7 +1488,6 @@ export default function RBACView() {
 										};
 
 										const toggleCreate = () => {
-											if (isUserRestricted) return;
 											if (isCreateActive) {
 												const toRemove = new Set(createIds);
 												setSelectedPerms((prev) => prev.filter((id) => !toRemove.has(id)));
@@ -1500,7 +1497,6 @@ export default function RBACView() {
 										};
 
 										const toggleEdit = () => {
-											if (isUserRestricted) return;
 											if (isEditActive) {
 												const toRemove = new Set(editIds);
 												setSelectedPerms((prev) => prev.filter((id) => !toRemove.has(id)));
@@ -1510,7 +1506,6 @@ export default function RBACView() {
 										};
 
 										const toggleDelete = () => {
-											if (isUserRestricted) return;
 											if (isDeleteActive) {
 												const toRemove = new Set(deleteIds);
 												setSelectedPerms((prev) => prev.filter((id) => !toRemove.has(id)));
@@ -1520,7 +1515,6 @@ export default function RBACView() {
 										};
 
 										const toggleFullAccess = () => {
-											if (isUserRestricted) return;
 											if (isFullAccessActive) {
 												const toRemove = new Set(allPermIds);
 												setSelectedPerms((prev) => prev.filter((id) => !toRemove.has(id)));
@@ -1631,18 +1625,16 @@ export default function RBACView() {
 													{/* 2. CREATE */}
 													<button
 														type="button"
-														disabled={!canUpdateRbac || isUserRestricted}
-														onClick={canUpdateRbac && !isUserRestricted ? toggleCreate : undefined}
+														disabled={!canUpdateRbac}
+														onClick={canUpdateRbac ? toggleCreate : undefined}
 														className={`h-8 rounded-lg border text-xs font-medium transition-all duration-150 flex items-center justify-center px-2.5 ${
-															!canUpdateRbac || isUserRestricted
-																? "cursor-not-allowed opacity-35 bg-muted/20 border-border/40 text-muted-foreground/50"
-																: "cursor-pointer"
+															!canUpdateRbac ? "cursor-not-allowed opacity-75" : "cursor-pointer"
 														} ${
 															isCreateActive
 																? "border-foreground/30 bg-foreground/10 text-foreground font-semibold shadow-2xs ring-1 ring-foreground/15"
 																: "border-border/70 bg-card hover:bg-muted/50 text-muted-foreground hover:text-foreground"
 														}`}
-														title={isUserRestricted ? "Regular users are restricted to View-only" : "Create new records"}
+														title="Create new records"
 													>
 														Create
 													</button>
@@ -1650,18 +1642,16 @@ export default function RBACView() {
 													{/* 3. EDIT */}
 													<button
 														type="button"
-														disabled={!canUpdateRbac || isUserRestricted}
-														onClick={canUpdateRbac && !isUserRestricted ? toggleEdit : undefined}
+														disabled={!canUpdateRbac}
+														onClick={canUpdateRbac ? toggleEdit : undefined}
 														className={`h-8 rounded-lg border text-xs font-medium transition-all duration-150 flex items-center justify-center px-2.5 ${
-															!canUpdateRbac || isUserRestricted
-																? "cursor-not-allowed opacity-35 bg-muted/20 border-border/40 text-muted-foreground/50"
-																: "cursor-pointer"
+															!canUpdateRbac ? "cursor-not-allowed opacity-75" : "cursor-pointer"
 														} ${
 															isEditActive
 																? "border-foreground/30 bg-foreground/10 text-foreground font-semibold shadow-2xs ring-1 ring-foreground/15"
 																: "border-border/70 bg-card hover:bg-muted/50 text-muted-foreground hover:text-foreground"
 														}`}
-														title={isUserRestricted ? "Regular users are restricted to View-only" : "Modify existing records"}
+														title="Modify existing records"
 													>
 														Edit
 													</button>
@@ -1669,18 +1659,16 @@ export default function RBACView() {
 													{/* 4. DELETE */}
 													<button
 														type="button"
-														disabled={!canUpdateRbac || isUserRestricted}
-														onClick={canUpdateRbac && !isUserRestricted ? toggleDelete : undefined}
+														disabled={!canUpdateRbac}
+														onClick={canUpdateRbac ? toggleDelete : undefined}
 														className={`h-8 rounded-lg border text-xs font-medium transition-all duration-150 flex items-center justify-center px-2.5 ${
-															!canUpdateRbac || isUserRestricted
-																? "cursor-not-allowed opacity-35 bg-muted/20 border-border/40 text-muted-foreground/50"
-																: "cursor-pointer"
+															!canUpdateRbac ? "cursor-not-allowed opacity-75" : "cursor-pointer"
 														} ${
 															isDeleteActive
 																? "border-foreground/30 bg-foreground/10 text-foreground font-semibold shadow-2xs ring-1 ring-foreground/15"
 																: "border-border/70 bg-card hover:bg-muted/50 text-muted-foreground hover:text-foreground"
 														}`}
-														title={isUserRestricted ? "Regular users are restricted to View-only" : "Delete records"}
+														title="Delete records"
 													>
 														Delete
 													</button>
@@ -1688,18 +1676,16 @@ export default function RBACView() {
 													{/* 5. FULL ACCESS */}
 													<button
 														type="button"
-														disabled={!canUpdateRbac || isUserRestricted}
-														onClick={canUpdateRbac && !isUserRestricted ? toggleFullAccess : undefined}
+														disabled={!canUpdateRbac}
+														onClick={canUpdateRbac ? toggleFullAccess : undefined}
 														className={`h-8 rounded-lg border text-xs font-semibold transition-all duration-150 flex items-center justify-center px-2.5 ${
-															!canUpdateRbac || isUserRestricted
-																? "cursor-not-allowed opacity-35 bg-muted/20 border-border/40 text-muted-foreground/50"
-																: "cursor-pointer"
+															!canUpdateRbac ? "cursor-not-allowed opacity-75" : "cursor-pointer"
 														} ${
 															isFullAccessActive
 																? "border-foreground bg-foreground text-background font-semibold shadow-xs"
 																: "border-border/70 bg-card hover:bg-muted/50 text-muted-foreground hover:text-foreground"
 														}`}
-														title={isUserRestricted ? "Regular users are restricted to View-only" : "Grant full access (View, Create, Edit, Delete)"}
+														title="Grant full access (View, Create, Edit, Delete)"
 													>
 														Full Access
 													</button>

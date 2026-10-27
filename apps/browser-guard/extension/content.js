@@ -170,11 +170,14 @@
     // The governance selector only applies to registered monitored targets.
     // Keep this guard aligned with page_hook.js so a stale per-control target
     // cannot keep blocking a site after it has been removed from Target Websites.
-    var monitoredSites = clipboardPolicy.monitoredSites || monitoredSitesForPolicy;
-    if (isServerHost(location.hostname) || !hostMatches(location.hostname, monitoredSites)) return false;
+    if (isServerHost(location.hostname)) return false;
     var raw = String(clipboardPolicy.targetSites || "").trim();
     if (raw && raw.toLowerCase() !== "all" && raw !== "*") {
       return hostInConfiguredSites(location.hostname, raw);
+    }
+    var monitoredSites = clipboardPolicy.monitoredSites || monitoredSitesForPolicy;
+    if (Array.isArray(monitoredSites) && monitoredSites.length > 0) {
+      return hostMatches(location.hostname, monitoredSites);
     }
     return true;
   }
@@ -184,6 +187,7 @@
     var now = Date.now();
     if (now - clipboardNoticeAt < 1000) return;
     clipboardNoticeAt = now;
+    if (document.getElementById("yp-raksha-alert-card")) return;
     try {
       var old = document.getElementById("yp-raksha-isolated-clipboard-notice");
       if (old) old.remove();
@@ -191,8 +195,19 @@
       host.id = "yp-raksha-isolated-clipboard-notice";
       var shadow = host.attachShadow ? host.attachShadow({ mode: "closed" }) : host;
       var box = document.createElement("div");
-      box.textContent = "Copy paste not allowed";
-      box.style.cssText = "position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:2147483647;background:#7f1d1d;color:white;padding:10px 22px;border-radius:10px;font:600 13px Segoe UI,Arial,sans-serif;box-shadow:0 8px 28px #0008;max-width:80vw;text-align:center;transition:opacity 0.2s ease;";
+      box.style.cssText =
+        "position:fixed;bottom:95px;left:50%;transform:translateX(-50%);max-width:460px;width:fit-content;min-width:280px;" +
+        "z-index:2147483647;background:rgba(15,23,42,0.96);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);" +
+        "color:#f9fafb;border:1px solid #ef4444;border-radius:12px;padding:9px 14px;box-shadow:0 10px 30px rgba(0,0,0,0.5);" +
+        "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;transition:opacity 0.2s ease;pointer-events:none;";
+      box.innerHTML =
+        '<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">' +
+          '<span style="font-size:13px;line-height:1;">🛡️</span>' +
+          '<strong style="font-size:11px;font-weight:700;letter-spacing:0.03em;text-transform:uppercase;color:#f87171;">Copy &amp; Paste Restricted</strong>' +
+        '</div>' +
+        '<div style="font-size:12.5px;line-height:1.4;color:#e2e8f0;font-weight:400;">' +
+          (clipboardPolicy.message || "Copy paste not allowed") +
+        '</div>';
       shadow.appendChild(box);
       (document.documentElement || document).appendChild(host);
       setTimeout(function () {
@@ -255,19 +270,49 @@
     if (!clipboardPolicyApplies()) return;
     if (document.getElementById("yp-blur-curtain") || document.getElementById("yp-screenshot-shield")) {
       ev.preventDefault();
+      ev.stopPropagation();
       ev.stopImmediatePropagation();
       return;
     }
+    if (ev.clipboardData) {
+      try { ev.clipboardData.clearData(); } catch (_) {}
+    }
     ev.preventDefault();
+    ev.stopPropagation();
     ev.stopImmediatePropagation();
     showClipboardBlockedNotice();
-    var actionType = ev.type === "paste" ? "PASTE" : (ev.type === "cut" ? "CUT" : "COPY");
+    var actionType = (ev.type && ev.type.indexOf("paste") >= 0) ? "PASTE" : ((ev.type && ev.type.indexOf("cut") >= 0) ? "CUT" : "COPY");
     recordIsolatedGovernanceLog("--copy paste [CLIPBOARD " + actionType + "]", "Clipboard Policy");
   }
-  ["copy", "cut", "paste"].forEach(function (type) {
+
+  function handleClipboardKeys(e) {
+    if (!clipboardPolicyApplies()) return;
+    var isCtrlOrMeta = e.ctrlKey || e.metaKey;
+    var isCopy = (isCtrlOrMeta && (e.key === "c" || e.key === "C" || e.code === "KeyC")) ||
+                 (isCtrlOrMeta && (e.key === "Insert" || e.code === "Insert"));
+    var isPaste = (isCtrlOrMeta && (e.key === "v" || e.key === "V" || e.code === "KeyV")) ||
+                  (e.shiftKey && (e.key === "Insert" || e.code === "Insert"));
+    var isCut = (isCtrlOrMeta && (e.key === "x" || e.key === "X" || e.code === "KeyX")) ||
+                (e.shiftKey && (e.key === "Delete" || e.code === "Delete"));
+
+    if (isCopy || isPaste || isCut) {
+      try {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+      } catch (_) {}
+      showClipboardBlockedNotice();
+      var actionType = isPaste ? "PASTE" : (isCut ? "CUT" : "COPY");
+      recordIsolatedGovernanceLog("--copy paste [CLIPBOARD " + actionType + " KEY]", "Clipboard Policy");
+    }
+  }
+
+  ["copy", "cut", "paste", "beforecopy", "beforecut", "beforepaste"].forEach(function (type) {
     window.addEventListener(type, blockClipboardEvent, true);
     document.addEventListener(type, blockClipboardEvent, true);
   });
+  window.addEventListener("keydown", handleClipboardKeys, true);
+  document.addEventListener("keydown", handleClipboardKeys, true);
 
   function applyClipboardPolicyState(state) {
     state = state || {};
@@ -287,11 +332,14 @@
   var dragDropPolicy = { enabled: false, targetSites: "", message: "", monitoredSites: [] };
   function dragDropPolicyApplies() {
     if (!dragDropPolicy.enabled) return false;
-    var monitoredSites = dragDropPolicy.monitoredSites || monitoredSitesForPolicy;
-    if (isServerHost(location.hostname) || !hostMatches(location.hostname, monitoredSites)) return false;
+    if (isServerHost(location.hostname)) return false;
     var raw = String(dragDropPolicy.targetSites || "").trim();
     if (raw && raw.toLowerCase() !== "all" && raw !== "*") {
       return hostInConfiguredSites(location.hostname, raw);
+    }
+    var monitoredSites = dragDropPolicy.monitoredSites || monitoredSitesForPolicy;
+    if (Array.isArray(monitoredSites) && monitoredSites.length > 0) {
+      return hostMatches(location.hostname, monitoredSites);
     }
     return true;
   }
@@ -313,6 +361,7 @@
     var now = Date.now();
     if (now - dragDropNoticeAt < 1200) return;
     dragDropNoticeAt = now;
+    if (document.getElementById("yp-raksha-alert-card")) return;
     try {
       var host = document.getElementById("yp-raksha-isolated-dragdrop-notice");
       if (!host) {
@@ -320,12 +369,17 @@
         host.id = "yp-raksha-isolated-dragdrop-notice";
         var shadow = host.attachShadow ? host.attachShadow({ mode: "closed" }) : host;
         var box = document.createElement("div");
-        box.textContent = dragDropPolicy.message || "Drag-and-drop file and data ingestion is blocked by corporate policy.";
-        box.style.cssText = "position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:2147483647;background:#7f1d1d;color:white;padding:14px 22px;border-radius:10px;font:600 14px Segoe UI,Arial,sans-serif;box-shadow:0 8px 28px #0008;max-width:80vw;text-align:center;";
+        box.textContent = dragDropPolicy.message || "Drag and drop restricted";
+        box.style.cssText = "position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:2147483647;background:#7f1d1d;color:white;padding:10px 22px;border-radius:10px;font:600 13px Segoe UI,Arial,sans-serif;box-shadow:0 8px 28px #0008;max-width:80vw;text-align:center;transition:opacity 0.2s ease;";
         shadow.appendChild(box);
         (document.documentElement || document).appendChild(host);
+        setTimeout(function () {
+          try {
+            box.style.opacity = "0";
+            setTimeout(function () { try { host.remove(); } catch (_) {} }, 200);
+          } catch (e) {}
+        }, 1000);
       }
-      setTimeout(function () { try { host.remove(); } catch (e) {} }, 2600);
     } catch (e) {}
   }
 
@@ -363,11 +417,14 @@
   var screenshotPolicy = { enabled: false, targetSites: "", message: "", monitoredSites: [] };
   function screenshotPolicyApplies() {
     if (!screenshotPolicy.enabled) return false;
-    var monitoredSites = screenshotPolicy.monitoredSites || monitoredSitesForPolicy;
-    if (isServerHost(location.hostname) || !hostMatches(location.hostname, monitoredSites)) return false;
+    if (isServerHost(location.hostname)) return false;
     var raw = String(screenshotPolicy.targetSites || "").trim();
     if (raw && raw.toLowerCase() !== "all" && raw !== "*") {
       return hostInConfiguredSites(location.hostname, raw);
+    }
+    var monitoredSites = screenshotPolicy.monitoredSites || monitoredSitesForPolicy;
+    if (Array.isArray(monitoredSites) && monitoredSites.length > 0) {
+      return hostMatches(location.hostname, monitoredSites);
     }
     return true;
   }
@@ -559,8 +616,9 @@
       return;
     }
     var sites = Array.isArray(state.cached_sites) ? state.cached_sites : [];
-    if (!hostMatches(location.hostname, sites)) {
-      // Not a Target Website (or removed from the list): stay passive.
+    var isTarget = hostMatches(location.hostname, sites) || clipboardPolicyApplies() || dragDropPolicyApplies() || screenshotPolicyApplies();
+    if (!isTarget) {
+      // Not a Target Website or Governance Policy site: stay passive.
       disarmPage();
       return;
     }
@@ -614,12 +672,12 @@
         applyClipboardPolicyState(clipboardState);
       }
       var sitesChanged = SITE_KEYS.some(function (key) { return Boolean(changes[key]); });
-      if (sitesChanged) {
+      var clipChanged = CLIPBOARD_KEYS.some(function (key) { return Boolean(changes[key]); });
+      if (sitesChanged || clipChanged) {
         var wasArmed = armedHere;
-        chrome.storage.local.get(SITE_KEYS, function (res) {
+        chrome.storage.local.get(SITE_KEYS.concat(CLIPBOARD_KEYS), function (res) {
           evaluateSite(res);
-          // Already armed and still a target: policy is unchanged by a site-list edit.
-          if (wasArmed && armedHere && POLICY_KEYS.some(function (key) { return Boolean(changes[key]); })) postPolicyToPage();
+          if (armedHere && POLICY_KEYS.some(function (key) { return Boolean(changes[key]); })) postPolicyToPage();
         });
         return;
       }

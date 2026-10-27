@@ -327,7 +327,7 @@ func (h *WorkspaceHandler) updateRolePermissions(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	if strings.EqualFold(role.Name, "admin") {
-		SendError(ctx, fasthttp.StatusForbidden, "admin role always has full permissions")
+		SendJSON(ctx, map[string]any{"status": "ok", "message": "admin role always has full permissions", "role": role})
 		return
 	}
 	var body struct {

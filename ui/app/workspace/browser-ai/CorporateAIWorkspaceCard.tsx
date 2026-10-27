@@ -196,14 +196,14 @@ export function CorporateAIWorkspaceCard({
 								)}
 							</div>
 							<CardDescription className="text-xs text-muted-foreground mt-0.5">
-								Restrict access across ChatGPT, Claude, Gemini, Copilot, DeepSeek, Mistral, and monitored AI tools to corporate accounts. Personal email accounts (@gmail.com, @yahoo.com, etc.) are blocked from sending prompts.
+								Restrict AI access to approved corporate accounts and block personal logins.
 							</CardDescription>
 						</div>
 					</div>
 					<div className="flex items-center gap-3 shrink-0 self-start sm:self-center" onClick={(e) => e.stopPropagation()}>
 						<div className="text-right hidden sm:block">
 							<p className="text-xs font-medium text-foreground">Enforce Policy</p>
-							<p className="text-[11px] text-muted-foreground">Block non-corporate accounts</p>
+							<p className="text-[11px] text-muted-foreground">Block personal logins</p>
 						</div>
 						<Switch
 							checked={!!controls.enforce_corporate_domains}
@@ -235,10 +235,10 @@ export function CorporateAIWorkspaceCard({
 					<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
 						<Label className="text-xs font-semibold flex items-center gap-1.5 text-foreground">
 							<Globe className="h-3.5 w-3.5 text-muted-foreground" />
-							Allowed Corporate Email Domains (@company.com)
+							Allowed Email Domains
 						</Label>
 						<span className="text-[11px] text-muted-foreground">
-							Only users logged in with these email domains will be allowed to send prompts
+							Only users with these email domains can send prompts
 						</span>
 					</div>
 
@@ -307,7 +307,7 @@ export function CorporateAIWorkspaceCard({
 				{/* 2. Custom Block Warning Message Section */}
 				<div className="space-y-2 pt-3 border-t border-border/40">
 					<div className="flex items-center justify-between">
-						<Label className="text-xs font-semibold text-foreground">Custom Block Warning Message</Label>
+						<Label className="text-xs font-semibold text-foreground">Warning Message</Label>
 						<Button
 							type="button"
 							variant="ghost"
@@ -315,7 +315,7 @@ export function CorporateAIWorkspaceCard({
 							className="h-6 text-xs text-muted-foreground hover:text-foreground px-2"
 							onClick={() => void handleResetBlockMessage()}
 						>
-							Reset to Default
+							Reset
 						</Button>
 					</div>
 					<div className="flex flex-col sm:flex-row gap-2">
@@ -333,7 +333,7 @@ export function CorporateAIWorkspaceCard({
 							className="h-8 text-xs gap-1.5 shrink-0"
 						>
 							<Save className="h-3.5 w-3.5" />
-							Save Message
+							Save
 						</Button>
 					</div>
 				</div>

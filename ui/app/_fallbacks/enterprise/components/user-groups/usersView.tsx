@@ -499,17 +499,17 @@ export default function UsersView() {
 			<label className="text-muted-foreground text-sm font-medium">
 				Workspace Access{" "}
 				{isAdmin
-					? "(Full Access — deselect to limit)"
+					? "(Full Access — All features selected by default)"
 					: isSubAdmin
 						? "(Full Access for Selected Features)"
 						: "(View Only for Selected Features + Prompt Repository always on)"}
 			</label>
 			<p className="text-muted-foreground text-xs">
 				{isAdmin
-					? "By default every section is selected (unrestricted). Deselect sections to limit this admin. Selected sections get Full Access in Roles & Permissions (RBAC)."
+					? "All workspace features are selected by default (unrestricted). In Roles & Permissions (RBAC), admins have Full Access across all features. Admins can edit this."
 					: isSubAdmin
-						? "Select workspace sections for this Sub-Admin. Those sections get Full Access (View, Edit, Delete, Download) automatically in Roles & Permissions (RBAC)."
-						: "Prompt Repository is always enabled with full access. Any other section you select is View-only in RBAC by default; an admin can later raise Edit/Download for those same features in Roles & Permissions."}
+						? "Choose workspace features for this Sub-Admin. In Roles & Permissions (RBAC), they automatically receive Full Access (View, Create, Update, Delete, Download) for these selected features. Admins and sub-admins can edit this."
+						: "Choose workspace features for this User. Prompt Repository is always enabled with full access. For other selected features, only View is selected in Roles & Permissions (RBAC) by default (Create, Edit, Delete are unselected / off). Admins and sub-admins can edit this."}
 			</p>
 			<div className="relative">
 				<Search className="text-muted-foreground absolute left-2.5 top-2.5 size-3.5" />

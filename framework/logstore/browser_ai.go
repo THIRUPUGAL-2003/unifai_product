@@ -1462,10 +1462,10 @@ func (m *BrowserAIManager) GetControls(ctx context.Context) (*BrowserControlSett
 		ctrl.PolicyVersion = 1
 	}
 	if ctrl.ClipboardBlockMessage == "" {
-		ctrl.ClipboardBlockMessage = "Copy-paste is blocked on monitored AI platforms according to corporate data governance policy."
+		ctrl.ClipboardBlockMessage = "Copy paste not allowed"
 	}
 	if ctrl.DragDropBlockMessage == "" {
-		ctrl.DragDropBlockMessage = "Drag-and-drop file and data ingestion is not allowed on monitored AI tools."
+		ctrl.DragDropBlockMessage = "Drag and drop restricted"
 	}
 	if ctrl.DownloadBlockMessage == "" {
 		ctrl.DownloadBlockMessage = "File download and artifact export is blocked on monitored AI tools."

@@ -1315,15 +1315,16 @@ export default function BrowserAiPage() {
 		}
 	};
 
-	// Browser Settings Policy Accordion state (Upload, File Type, Retention, Clipboard, Drag-Drop, Download, Screenshot)
+	// Browser Settings Policy Accordion state (File Transfer, File Type, Retention, Clipboard, Drag-Drop, Screenshot)
 	const [expandedPolicies, setExpandedPolicies] = useState<Record<string, boolean>>({
-		upload: true,
-		file_type: true,
-		retention: true,
-		clipboard: true,
-		drag_drop: true,
-		download: true,
-		screenshot: true,
+		file_transfer: false,
+		upload: false,
+		file_type: false,
+		retention: false,
+		clipboard: false,
+		drag_drop: false,
+		download: false,
+		screenshot: false,
 	});
 
 	const togglePolicyExpanded = (key: string) => {
@@ -4386,132 +4387,285 @@ export default function BrowserAiPage() {
 
 					{/* Individual Data Loss Prevention Policies */}
 					<div className="space-y-4">
-						{/* POLICY 1: File Upload Policy */}
+						{/* POLICY 1: File Upload & Download Policy */}
 						<Card className="border border-border bg-card overflow-hidden">
 							<div
 								className="flex items-center justify-between p-4 cursor-pointer select-none hover:bg-muted/30 transition-colors"
-								onClick={() => togglePolicyExpanded("upload")}
+								onClick={() => togglePolicyExpanded("file_transfer")}
 							>
 								<div className="flex items-center gap-3.5 min-w-0">
 									<div className="p-2.5 rounded-lg border border-border bg-muted/40 text-muted-foreground">
-										<Upload className="h-5 w-5" />
+										<ArrowUpDown className="h-5 w-5" />
 									</div>
 									<div>
 										<div className="flex items-center gap-2">
-											<p className="text-sm font-semibold">1. File Upload Policy</p>
-											{controls.block_upload ? (
-												<Badge variant="outline" className="text-[10px] px-2 py-0.5 border-emerald-500/50 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10">Active</Badge>
+											<p className="text-sm font-semibold">1. File Upload &amp; Download Policy</p>
+											{controls.block_upload && controls.block_download ? (
+												<Badge variant="outline" className="text-[10px] px-2 py-0.5 border-emerald-500/50 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10">Upload &amp; Download Active</Badge>
+											) : controls.block_upload ? (
+												<Badge variant="outline" className="text-[10px] px-2 py-0.5 border-emerald-500/50 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10">Upload Active</Badge>
+											) : controls.block_download ? (
+												<Badge variant="outline" className="text-[10px] px-2 py-0.5 border-emerald-500/50 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10">Download Active</Badge>
 											) : (
 												<Badge variant="outline" className="text-[10px] text-muted-foreground">Disabled</Badge>
 											)}
 										</div>
 										<p className="text-xs text-muted-foreground mt-0.5">
-											When enabled, common in-page file upload paths are blocked where the extension can intercept them on selected AI tools.
+											Block file attachments, uploads, downloads, and exports on monitored AI platforms.
 										</p>
 									</div>
 								</div>
 								<div className="flex items-center gap-3 shrink-0" onClick={(e) => e.stopPropagation()}>
 									<Switch
-										checked={!!controls.block_upload}
+										checked={!!(controls.block_upload || controls.block_download)}
 										onCheckedChange={(val) => {
 											if (val) {
-												setExpandedPolicies((p) => ({ ...p, upload: true }));
-												void patchControlWithErrorToast({ block_upload: true }, "Could not enable file upload blocking");
+												setExpandedPolicies((p) => ({ ...p, file_transfer: true }));
+												void patchControlWithErrorToast({ block_upload: true, block_download: true }, "Could not enable file transfer controls");
 											} else {
-												void patchControlWithErrorToast({ block_upload: false }, "Could not disable file upload blocking");
+												void patchControlWithErrorToast({ block_upload: false, block_download: false }, "Could not disable file transfer controls");
 											}
 										}}
-										aria-label="Toggle file upload blocking"
+										aria-label="Toggle file upload and download blocking"
 									/>
 									<button
 										type="button"
-										onClick={() => togglePolicyExpanded("upload")}
+										onClick={() => togglePolicyExpanded("file_transfer")}
 										className="p-1 rounded-md text-muted-foreground hover:text-foreground transition-transform"
 									>
-										<ChevronDown className={`h-4 w-4 transition-transform duration-200 ${expandedPolicies.upload ? "rotate-180" : ""}`} />
+										<ChevronDown className={`h-4 w-4 transition-transform duration-200 ${expandedPolicies.file_transfer ? "rotate-180" : ""}`} />
 									</button>
 								</div>
 							</div>
 
-							{expandedPolicies.upload && (
+							{expandedPolicies.file_transfer && (
 								<div className="p-4 pt-0 border-t border-border/60 space-y-4 mt-2">
-									<div className="space-y-2 pt-3">
-										<div className="flex items-center justify-between">
-											<Label className="text-xs font-semibold">Upload Policy Warning Banner</Label>
-											{!uploadWarningEditing && (controls.upload_warning || "").trim() ? (
-												<Button
-													type="button"
-													size="sm"
-													variant="ghost"
-													className="h-7 text-xs text-muted-foreground hover:text-foreground"
-													onClick={() => {
-														setUploadWarningError("");
-														setUploadWarningDraft(controls.upload_warning || "");
-														setUploadWarningEditing(true);
+									{/* SUB-SECTION A: File Upload Blocking */}
+									<div className="rounded-lg border border-border/70 bg-muted/15 p-4 space-y-3.5 pt-3.5">
+										<div className="flex items-center justify-between pb-2 border-b border-border/40">
+											<div className="flex items-center gap-2.5">
+												<div className="p-1.5 rounded-md bg-primary/10 text-primary">
+													<Upload className="h-4 w-4" />
+												</div>
+												<div>
+													<p className="text-xs font-semibold text-foreground">File Upload Blocking</p>
+													<p className="text-[11px] text-muted-foreground">Block file attachments and uploads to AI sites.</p>
+												</div>
+											</div>
+											<div className="flex items-center gap-2">
+												{controls.block_upload ? (
+													<Badge variant="outline" className="text-[10px] px-2 py-0.5 border-emerald-500/50 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10">Active</Badge>
+												) : (
+													<Badge variant="outline" className="text-[10px] text-muted-foreground">Disabled</Badge>
+												)}
+												<Switch
+													checked={!!controls.block_upload}
+													onCheckedChange={(val) => {
+														void patchControlWithErrorToast({ block_upload: val }, val ? "Could not enable file upload blocking" : "Could not disable file upload blocking");
 													}}
-												>
-													<Pencil className="h-3 w-3 mr-1" />
-													Edit
-												</Button>
-											) : null}
-										</div>
-										{uploadWarningEditing || !(controls.upload_warning || "").trim() ? (
-											<>
-												<Textarea
-													placeholder="e.g. UPLOAD BLOCK — shown in Prompt Logs and to employees..."
-													value={uploadWarningDraft}
-													onChange={(e) => setUploadWarningDraft(e.target.value)}
-													rows={2}
-													className="text-xs font-sans"
+													aria-label="Toggle file upload blocking"
 												/>
-												<div className="flex items-center justify-between gap-2">
-													<p className="text-[11px] text-muted-foreground">
-														Message displayed when an employee attempts to upload a file to monitored AI sites.
-													</p>
-													<div className="flex items-center gap-2">
-														{uploadWarningEditing && (controls.upload_warning || "").trim() ? (
+											</div>
+										</div>
+
+										<div className="space-y-1.5">
+											<div className="flex items-center justify-between">
+												<Label className="text-xs font-semibold">Upload Warning Message</Label>
+												{!uploadWarningEditing && (controls.upload_warning || "").trim() ? (
+													<Button
+														type="button"
+														size="sm"
+														variant="ghost"
+														className="h-6 text-xs text-muted-foreground hover:text-foreground"
+														onClick={() => {
+															setUploadWarningError("");
+															setUploadWarningDraft(controls.upload_warning || "");
+															setUploadWarningEditing(true);
+														}}
+													>
+														<Pencil className="h-3 w-3 mr-1" />
+														Edit
+													</Button>
+												) : null}
+											</div>
+											{uploadWarningEditing || !(controls.upload_warning || "").trim() ? (
+												<div className="space-y-2">
+													<Input
+														placeholder="e.g. File uploads are blocked by corporate policy."
+														value={uploadWarningDraft}
+														onChange={(e) => setUploadWarningDraft(e.target.value)}
+														className="text-xs font-sans"
+														onKeyDown={(e) => {
+															if (e.key === "Enter") {
+																e.preventDefault();
+																void saveUploadWarning();
+															}
+														}}
+													/>
+													<div className="flex items-center justify-between gap-2">
+														<p className="text-[11px] text-muted-foreground">
+															Message shown when file upload is blocked.
+														</p>
+														<div className="flex items-center gap-2">
+															{uploadWarningEditing && (controls.upload_warning || "").trim() ? (
+																<Button
+																	type="button"
+																	size="sm"
+																	variant="ghost"
+																	className="h-7 text-xs"
+																	onClick={() => {
+																		setUploadWarningError("");
+																		setUploadWarningDraft(controls.upload_warning || "");
+																		setUploadWarningEditing(false);
+																	}}
+																>
+																	Cancel
+																</Button>
+															) : null}
 															<Button
 																type="button"
 																size="sm"
-																variant="ghost"
+																variant="outline"
 																className="h-7 text-xs"
-																onClick={() => {
-																	setUploadWarningError("");
-																	setUploadWarningDraft(controls.upload_warning || "");
-																	setUploadWarningEditing(false);
-																}}
+																disabled={uploadWarningSaving}
+																onClick={saveUploadWarning}
 															>
-																Cancel
+																<Save className="h-3 w-3 mr-1" />
+																{uploadWarningSaving ? "Saving..." : "Save"}
 															</Button>
-														) : null}
-														<Button
-															type="button"
-															size="sm"
-															variant="outline"
-															className="h-7 text-xs"
-															disabled={uploadWarningSaving}
-															onClick={saveUploadWarning}
-														>
-															<Save className="h-3 w-3 mr-1" />
-															{uploadWarningSaving ? "Saving..." : "Save warning"}
-														</Button>
+														</div>
 													</div>
 												</div>
-											</>
-										) : (
-											<div className="rounded-md border border-border bg-muted/30 px-3 py-2">
-												<p className="text-xs text-foreground whitespace-pre-wrap break-words font-mono">
-													{(controls.upload_warning || "").trim()}
-												</p>
-											</div>
-										)}
+											) : (
+												<div className="rounded-md border border-border bg-muted/30 px-3 py-2">
+													<p className="text-xs text-foreground whitespace-pre-wrap break-words font-mono">
+														{(controls.upload_warning || "").trim()}
+													</p>
+												</div>
+											)}
+										</div>
+
+										<div className="space-y-1 pt-1">
+											<Label className="text-xs font-semibold">Upload Target Websites</Label>
+											<PolicyTargetWebsitesSelector
+												value={controls.upload_target_websites || "all"}
+												targets={targets}
+												onChange={(val) => void patchControlWithErrorToast({ upload_target_websites: val }, "Could not save upload target websites")}
+											/>
+										</div>
 									</div>
 
-									<PolicyTargetWebsitesSelector
-										value={controls.upload_target_websites || "all"}
-										targets={targets}
-										onChange={(val) => void patchControlWithErrorToast({ upload_target_websites: val }, "Could not save target websites")}
-									/>
+									{/* SUB-SECTION B: File Download & Export Blocking */}
+									<div className="rounded-lg border border-border/70 bg-muted/15 p-4 space-y-3.5 pt-3.5">
+										<div className="flex items-center justify-between pb-2 border-b border-border/40">
+											<div className="flex items-center gap-2.5">
+												<div className="p-1.5 rounded-md bg-primary/10 text-primary">
+													<HardDriveDownload className="h-4 w-4" />
+												</div>
+												<div>
+													<p className="text-xs font-semibold text-foreground">File Download &amp; Export Blocking</p>
+													<p className="text-[11px] text-muted-foreground">Block page export actions and browser-managed downloads.</p>
+												</div>
+											</div>
+											<div className="flex items-center gap-2">
+												{controls.block_download ? (
+													<Badge variant="outline" className="text-[10px] px-2 py-0.5 border-emerald-500/50 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10">Active</Badge>
+												) : (
+													<Badge variant="outline" className="text-[10px] text-muted-foreground">Disabled</Badge>
+												)}
+												<Switch
+													checked={!!controls.block_download}
+													onCheckedChange={(val) => {
+														handleToggleDownloadGovernance(val);
+													}}
+													aria-label="Toggle download blocking"
+												/>
+											</div>
+										</div>
+
+										<div className="space-y-1.5">
+											<div className="flex items-center justify-between">
+												<Label className="text-xs font-semibold">Download &amp; Export Warning Message</Label>
+												{downloadMsgEditing || !(controls.download_block_message || "").trim() ? null : (
+													<Button
+														type="button"
+														size="sm"
+														variant="ghost"
+														className="h-6 text-xs text-muted-foreground hover:text-foreground"
+														onClick={() => {
+															setDownloadMsgDraft(controls.download_block_message || "");
+															setDownloadMsgEditing(true);
+														}}
+													>
+														<Pencil className="h-3 w-3 mr-1" />
+														Edit
+													</Button>
+												)}
+											</div>
+											{downloadMsgEditing || !(controls.download_block_message || "").trim() ? (
+												<div className="space-y-2">
+													<Input
+														placeholder="e.g. File downloads and exports are blocked by corporate policy."
+														value={downloadMsgDraft}
+														onChange={(e) => setDownloadMsgDraft(e.target.value)}
+														className="text-xs font-sans"
+														onKeyDown={(e) => {
+															if (e.key === "Enter") {
+																e.preventDefault();
+																void saveDownloadMsg();
+															}
+														}}
+													/>
+													<div className="flex items-center justify-between gap-2">
+														<p className="text-[11px] text-muted-foreground">
+															Message shown when file download or export is blocked.
+														</p>
+														<div className="flex items-center gap-2">
+															{downloadMsgEditing && (controls.download_block_message || "").trim() ? (
+																<Button
+																	type="button"
+																	size="sm"
+																	variant="ghost"
+																	className="h-7 text-xs"
+																	onClick={() => {
+																		setDownloadMsgDraft(controls.download_block_message || "");
+																		setDownloadMsgEditing(false);
+																	}}
+																>
+																	Cancel
+																</Button>
+															) : null}
+															<Button
+																type="button"
+																size="sm"
+																variant="outline"
+																className="h-7 text-xs"
+																onClick={saveDownloadMsg}
+															>
+																<Save className="h-3 w-3 mr-1" />
+																Save
+															</Button>
+														</div>
+													</div>
+												</div>
+											) : (
+												<div className="rounded-md border border-border bg-muted/30 px-3 py-2">
+													<p className="text-xs text-foreground whitespace-pre-wrap break-words font-mono">
+														{(controls.download_block_message || "").trim()}
+													</p>
+												</div>
+											)}
+										</div>
+
+										<div className="space-y-1 pt-1">
+											<Label className="text-xs font-semibold">Download Target Websites</Label>
+											<PolicyTargetWebsitesSelector
+												value={controls.download_target_websites || "all"}
+												targets={targets}
+												onChange={(val) => void patchControlWithErrorToast({ download_target_websites: val }, "Could not save download target websites")}
+											/>
+										</div>
+									</div>
 								</div>
 							)}
 						</Card>
@@ -4528,7 +4682,7 @@ export default function BrowserAiPage() {
 									</div>
 									<div>
 										<div className="flex items-center gap-2">
-											<p className="text-sm font-semibold">2. File Type &amp; Extension Filter Policy</p>
+											<p className="text-sm font-semibold">2. File Type Policy</p>
 											{controls.block_file_extension ? (
 												<Badge variant="outline" className="text-[10px] px-2 py-0.5 border-emerald-500/50 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10">
 													{controls.file_extension_mode === "allow_listed" ? "Allowlist Active" : "Blocklist Active"}
@@ -4538,7 +4692,7 @@ export default function BrowserAiPage() {
 											)}
 										</div>
 										<p className="text-xs text-muted-foreground mt-0.5">
-											Control and filter which file extensions can be imported, uploaded, or sent to monitored AI platforms.
+											Filter allowed or blocked file extensions on AI platforms.
 										</p>
 									</div>
 								</div>
@@ -4573,13 +4727,13 @@ export default function BrowserAiPage() {
 											<div className="flex items-center gap-1.5">
 												<Label className="text-xs font-semibold">Enforcement Mode</Label>
 												{controls.file_extension_mode === "allow_listed" ? (
-													<Badge variant="outline" className="text-[9px] px-1.5 py-0 border-blue-500/40 text-blue-500 bg-blue-500/10">Whitelist (Allow Only Selected)</Badge>
+													<Badge variant="outline" className="text-[9px] px-1.5 py-0 border-blue-500/40 text-blue-500 bg-blue-500/10">Allowlist</Badge>
 												) : (
-													<Badge variant="outline" className="text-[9px] px-1.5 py-0 border-amber-500/40 text-amber-500 bg-amber-500/10">Blacklist (Block Selected)</Badge>
+													<Badge variant="outline" className="text-[9px] px-1.5 py-0 border-amber-500/40 text-amber-500 bg-amber-500/10">Blocklist</Badge>
 												)}
 											</div>
 											<p className="text-[11px] text-muted-foreground">
-												Choose whether selected extensions should be strictly blocked, or if only selected extensions are permitted.
+												Choose whether to block or allow selected file extensions.
 											</p>
 										</div>
 										<div className="flex items-center gap-2 bg-muted/30 border border-border p-1 rounded-lg text-xs shrink-0">
@@ -4599,7 +4753,7 @@ export default function BrowserAiPage() {
 												className="h-6 text-[11px] px-2.5 py-0"
 												onClick={() => void patchControlWithErrorToast({ file_extension_mode: "allow_listed" }, "Could not save extension mode")}
 											>
-												Allow Only Selected
+												Allow Selected
 											</Button>
 										</div>
 									</div>
@@ -4607,7 +4761,7 @@ export default function BrowserAiPage() {
 									{/* File Extension Warning Banner */}
 									<div className="space-y-2 pt-1 border-t border-border/40">
 										<div className="flex items-center justify-between">
-											<Label className="text-xs font-semibold">File Restriction Warning Banner</Label>
+											<Label className="text-xs font-semibold">Warning Message</Label>
 											{!fileExtensionMsgEditing && (controls.file_extension_block_message || "").trim() ? (
 												<Button
 													type="button"
@@ -4627,7 +4781,7 @@ export default function BrowserAiPage() {
 										{fileExtensionMsgEditing || !(controls.file_extension_block_message || "").trim() ? (
 											<>
 												<Textarea
-													placeholder="e.g. Uploading files with this extension is prohibited by corporate policy..."
+													placeholder="e.g. Uploading this file type is restricted."
 													value={fileExtensionMsgDraft}
 													onChange={(e) => setFileExtensionMsgDraft(e.target.value)}
 													rows={2}
@@ -4635,7 +4789,7 @@ export default function BrowserAiPage() {
 												/>
 												<div className="flex items-center justify-between gap-2">
 													<p className="text-[11px] text-muted-foreground">
-														Custom notification banner displayed to the employee when a restricted file format is blocked.
+														Message shown when a restricted file format is blocked.
 													</p>
 													<div className="flex items-center gap-2">
 														{fileExtensionMsgEditing && (controls.file_extension_block_message || "").trim() ? (
@@ -4660,7 +4814,7 @@ export default function BrowserAiPage() {
 															onClick={saveFileExtensionMsg}
 														>
 															<Save className="h-3 w-3 mr-1" />
-															Save warning
+															Save
 														</Button>
 													</div>
 												</div>
@@ -4677,7 +4831,7 @@ export default function BrowserAiPage() {
 									{/* Quick Select Buttons & Custom Adder */}
 									<div className="space-y-3 bg-muted/20 border border-border/60 rounded-lg p-3.5">
 										<p className="text-[11px] font-medium text-muted-foreground">
-											Quick Select Standard Extensions:
+											Quick Presets:
 										</p>
 										<div className="flex flex-wrap gap-1.5">
 											{[
@@ -4714,7 +4868,7 @@ export default function BrowserAiPage() {
 										{/* Custom extension adder */}
 										<div className="flex items-center gap-2 pt-2 border-t border-border/40">
 											<Input
-												placeholder="Add custom extension (e.g. env, pem, key)..."
+												placeholder="Add extension (e.g. env, pem)..."
 												value={customFileExtensionInput}
 												onChange={(e) => setCustomFileExtensionInput(e.target.value)}
 												className="h-7 text-xs font-mono max-w-[240px]"
@@ -4732,7 +4886,7 @@ export default function BrowserAiPage() {
 												className="h-7 text-xs"
 												onClick={handleAddCustomFileExtension}
 											>
-												+ Add Extension
+												+ Add
 											</Button>
 										</div>
 
@@ -4740,7 +4894,7 @@ export default function BrowserAiPage() {
 										{((controls.file_extension_mode === "allow_listed" ? configuredAllowedExts : configuredRestrictedExts).length > 0) && (
 											<div className="flex items-center gap-1.5 flex-wrap pt-2">
 												<span className="text-[11px] text-muted-foreground">
-													{controls.file_extension_mode === "allow_listed" ? "Permitted only:" : "Restricted types:"}
+													{controls.file_extension_mode === "allow_listed" ? "Allowed:" : "Blocked:"}
 												</span>
 												{(controls.file_extension_mode === "allow_listed" ? configuredAllowedExts : configuredRestrictedExts).map((ext) => (
 													<Badge
@@ -4784,13 +4938,13 @@ export default function BrowserAiPage() {
 									</div>
 									<div>
 										<div className="flex items-center gap-2">
-											<p className="text-sm font-semibold">3. Temporary File Storage &amp; Retention Policy</p>
+											<p className="text-sm font-semibold">3. File Storage &amp; Retention</p>
 											<Badge variant="outline" className="text-[10px] px-2 py-0.5 border-emerald-500/50 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10">
 												Auto-Purge: {controls.attachment_retention || "1h"}
 											</Badge>
 										</div>
 										<p className="text-xs text-muted-foreground mt-0.5">
-											How long temporary uploaded files remain viewable/downloadable from disk. Filename and metadata in Prompt Logs are preserved permanently.
+											Retention period for temporary uploaded files on disk. Metadata in logs is kept permanently.
 										</p>
 									</div>
 								</div>
@@ -4810,11 +4964,11 @@ export default function BrowserAiPage() {
 									<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3">
 										<div className="space-y-0.5">
 											<div className="flex items-center gap-1.5">
-												<Label className="text-xs font-semibold">Binary Storage Retention Lifecycle</Label>
+												<Label className="text-xs font-semibold">Storage Retention Period</Label>
 												<Badge variant="outline" className="text-[9px] px-1.5 py-0 border-emerald-500/40 text-emerald-600 dark:text-emerald-400">Disk auto-purge</Badge>
 											</div>
 											<p className="text-[11px] text-muted-foreground">
-												Select how long temporary uploaded files and attachments stay cached on local disk before being permanently purged.
+												Set how long cached files stay on disk before auto-purge.
 											</p>
 										</div>
 										<Select
@@ -4837,7 +4991,7 @@ export default function BrowserAiPage() {
 									{/* Quick Select Retention Presets */}
 									<div className="space-y-2.5 bg-muted/20 border border-border/60 rounded-lg p-3.5">
 										<p className="text-[11px] font-medium text-muted-foreground">
-											Quick Select Retention Presets:
+											Presets:
 										</p>
 										<div className="flex flex-wrap gap-2">
 											{[
@@ -4870,9 +5024,9 @@ export default function BrowserAiPage() {
 											})}
 										</div>
 										<div className="rounded border border-border/50 bg-background/50 p-2.5 text-[11px] text-muted-foreground space-y-1">
-											<p className="font-medium text-foreground">Data Residency &amp; Compliance Guarantee:</p>
+											<p className="font-medium text-foreground">Data Compliance:</p>
 											<p>
-												When temporary storage expires, raw file binaries and attachment contents are automatically shredded from disk. File metadata, filenames, user identifiers, SHA256 cryptographic hashes, and security logs remain permanently in Prompt Logs for compliance and audits.
+												Expired files are shredded from disk. File metadata, hashes, and audit logs are preserved permanently.
 											</p>
 										</div>
 									</div>
@@ -4892,15 +5046,15 @@ export default function BrowserAiPage() {
 									</div>
 									<div>
 										<div className="flex items-center gap-2">
-											<p className="text-sm font-semibold">4. Copy-Paste Strict Blocking</p>
+											<p className="text-sm font-semibold">4. Copy-Paste Blocking</p>
 											{controls.block_clipboard ? (
-												<Badge variant="outline" className="text-[10px] px-2 py-0.5 border-emerald-500/50 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10">Deterrent Active</Badge>
+												<Badge variant="outline" className="text-[10px] px-2 py-0.5 border-emerald-500/50 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10">Active</Badge>
 											) : (
 												<Badge variant="outline" className="text-[10px] text-muted-foreground">Disabled</Badge>
 											)}
 										</div>
 										<p className="text-xs text-muted-foreground mt-0.5">
-										Blocks standard page copy, cut, and paste actions on selected monitored websites. Browser and operating-system clipboard routes may bypass extension controls.
+											Block copy, cut, and paste actions on monitored websites.
 										</p>
 									</div>
 								</div>
@@ -4927,7 +5081,7 @@ export default function BrowserAiPage() {
 								<div className="p-4 pt-3 border-t border-border/60 space-y-3">
 									<div className="space-y-1.5">
 										<div className="flex items-center justify-between">
-											<p className="text-xs font-semibold text-foreground">Copy-Paste Warning message</p>
+											<p className="text-xs font-semibold text-foreground">Warning Message</p>
 											{clipboardMsgEditing || !(controls.clipboard_block_message || "").trim() ? null : (
 												<Button
 													type="button"
@@ -4946,7 +5100,7 @@ export default function BrowserAiPage() {
 										{clipboardMsgEditing || !(controls.clipboard_block_message || "").trim() ? (
 											<div className="space-y-2">
 												<Input
-													placeholder="e.g. Copy-paste is blocked on monitored AI platforms according to corporate policy."
+													placeholder="e.g. Copy paste not allowed"
 													value={clipboardMsgDraft}
 													onChange={(e) => setClipboardMsgDraft(e.target.value)}
 													className="text-xs font-sans"
@@ -4959,7 +5113,7 @@ export default function BrowserAiPage() {
 												/>
 												<div className="flex items-center justify-between gap-2">
 													<p className="text-[11px] text-muted-foreground">
-														Custom message shown in the in-browser modal when copy or paste is blocked.
+														Message shown when copy or paste is blocked.
 													</p>
 													<div className="flex items-center gap-2">
 														{clipboardMsgEditing && (controls.clipboard_block_message || "").trim() ? (
@@ -4984,7 +5138,7 @@ export default function BrowserAiPage() {
 															onClick={saveClipboardMsg}
 														>
 															<Save className="h-3 w-3 mr-1" />
-															Save message
+															Save
 														</Button>
 													</div>
 												</div>
@@ -5019,15 +5173,15 @@ export default function BrowserAiPage() {
 									</div>
 									<div>
 										<div className="flex items-center gap-2">
-											<p className="text-sm font-semibold">5. Drag-and-Drop Ingestion Blocking</p>
+											<p className="text-sm font-semibold">5. Drag &amp; Drop Blocking</p>
 											{controls.block_drag_drop ? (
-												<Badge variant="outline" className="text-[10px] px-2 py-0.5 border-emerald-500/50 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10">Enforced</Badge>
+												<Badge variant="outline" className="text-[10px] px-2 py-0.5 border-emerald-500/50 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10">Active</Badge>
 											) : (
 												<Badge variant="outline" className="text-[10px] text-muted-foreground">Disabled</Badge>
 											)}
 										</div>
 										<p className="text-xs text-muted-foreground mt-0.5">
-											Prevents dragging and dropping confidential files, spreadsheets, source code, and PDFs into AI chat windows.
+											Block dragging and dropping files or text into AI tools.
 										</p>
 									</div>
 								</div>
@@ -5054,7 +5208,7 @@ export default function BrowserAiPage() {
 								<div className="p-4 pt-3 border-t border-border/60 space-y-3">
 									<div className="space-y-1.5">
 										<div className="flex items-center justify-between">
-											<p className="text-xs font-semibold text-foreground">Drag &amp; Drop Warning message</p>
+											<p className="text-xs font-semibold text-foreground">Warning Message</p>
 											{dragDropMsgEditing || !(controls.drag_drop_block_message || "").trim() ? null : (
 												<Button
 													type="button"
@@ -5073,7 +5227,7 @@ export default function BrowserAiPage() {
 										{dragDropMsgEditing || !(controls.drag_drop_block_message || "").trim() ? (
 											<div className="space-y-2">
 												<Input
-													placeholder="e.g. Drag-and-drop file and data ingestion is not allowed on this AI tool."
+													placeholder="e.g. Drag and drop restricted"
 													value={dragDropMsgDraft}
 													onChange={(e) => setDragDropMsgDraft(e.target.value)}
 													className="text-xs font-sans"
@@ -5086,7 +5240,7 @@ export default function BrowserAiPage() {
 												/>
 												<div className="flex items-center justify-between gap-2">
 													<p className="text-[11px] text-muted-foreground">
-														Custom message shown when dragging and dropping files or text is blocked.
+														Message shown when drag and drop is blocked.
 													</p>
 													<div className="flex items-center gap-2">
 														{dragDropMsgEditing && (controls.drag_drop_block_message || "").trim() ? (
@@ -5111,7 +5265,7 @@ export default function BrowserAiPage() {
 															onClick={saveDragDropMsg}
 														>
 															<Save className="h-3 w-3 mr-1" />
-															Save message
+															Save
 														</Button>
 													</div>
 												</div>
@@ -5134,134 +5288,7 @@ export default function BrowserAiPage() {
 							)}
 						</Card>
 
-						{/* POLICY 6: File Download & Export Blocking */}
-						<Card className="border border-border bg-card overflow-hidden">
-							<div
-								className="flex items-center justify-between p-4 cursor-pointer select-none hover:bg-muted/30 transition-colors"
-								onClick={() => togglePolicyExpanded("download")}
-							>
-								<div className="flex items-center gap-3.5 min-w-0">
-									<div className="p-2.5 rounded-lg border border-border bg-muted/40 text-muted-foreground">
-										<HardDriveDownload className="h-5 w-5" />
-									</div>
-									<div>
-										<div className="flex items-center gap-2">
-											<p className="text-sm font-semibold">6. File Download &amp; Export Blocking</p>
-											{controls.block_download ? (
-												<Badge variant="outline" className="text-[10px] px-2 py-0.5 border-emerald-500/50 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10">Enforced</Badge>
-											) : (
-												<Badge variant="outline" className="text-[10px] text-muted-foreground">Disabled</Badge>
-											)}
-										</div>
-										<p className="text-xs text-muted-foreground mt-0.5">
-										Blocks detected page export actions and cancels browser-managed downloads on selected monitored websites. A download may start before cancellation, and other browser or operating-system routes may bypass the extension.
-										</p>
-									</div>
-								</div>
-								<div className="flex items-center gap-3 shrink-0" onClick={(e) => e.stopPropagation()}>
-									<Switch
-										checked={!!controls.block_download}
-										onCheckedChange={(val) => {
-											if (val) setExpandedPolicies((p) => ({ ...p, download: true }));
-											handleToggleDownloadGovernance(val);
-										}}
-										aria-label="Toggle Download Blocking"
-									/>
-									<button
-										type="button"
-										onClick={() => togglePolicyExpanded("download")}
-										className="p-1 rounded-md text-muted-foreground hover:text-foreground transition-transform"
-									>
-										<ChevronDown className={`h-4 w-4 transition-transform duration-200 ${expandedPolicies.download ? "rotate-180" : ""}`} />
-									</button>
-								</div>
-							</div>
-
-							{expandedPolicies.download && (
-								<div className="p-4 pt-3 border-t border-border/60 space-y-3">
-									<div className="space-y-1.5">
-										<div className="flex items-center justify-between">
-											<p className="text-xs font-semibold text-foreground">Download &amp; Export Warning message</p>
-											{downloadMsgEditing || !(controls.download_block_message || "").trim() ? null : (
-												<Button
-													type="button"
-													size="sm"
-													variant="ghost"
-													className="h-6 text-xs text-muted-foreground hover:text-foreground"
-													onClick={() => {
-														setDownloadMsgDraft(controls.download_block_message || "");
-														setDownloadMsgEditing(true);
-													}}
-												>
-													Edit
-												</Button>
-											)}
-										</div>
-										{downloadMsgEditing || !(controls.download_block_message || "").trim() ? (
-											<div className="space-y-2">
-												<Input
-													placeholder="e.g. Downloading files and exporting artifacts from this AI tool is blocked."
-													value={downloadMsgDraft}
-													onChange={(e) => setDownloadMsgDraft(e.target.value)}
-													className="text-xs font-sans"
-													onKeyDown={(e) => {
-														if (e.key === "Enter") {
-															e.preventDefault();
-															void saveDownloadMsg();
-														}
-													}}
-												/>
-												<div className="flex items-center justify-between gap-2">
-													<p className="text-[11px] text-muted-foreground">
-														Custom message shown when downloading files or exporting code/chats is blocked.
-													</p>
-													<div className="flex items-center gap-2">
-														{downloadMsgEditing && (controls.download_block_message || "").trim() ? (
-															<Button
-																type="button"
-																size="sm"
-																variant="ghost"
-																className="h-7 text-xs"
-																onClick={() => {
-																	setDownloadMsgDraft(controls.download_block_message || "");
-																	setDownloadMsgEditing(false);
-																}}
-															>
-																Cancel
-															</Button>
-														) : null}
-														<Button
-															type="button"
-															size="sm"
-															variant="outline"
-															className="h-7 text-xs"
-															onClick={saveDownloadMsg}
-														>
-															<Save className="h-3 w-3 mr-1" />
-															Save message
-														</Button>
-													</div>
-												</div>
-											</div>
-										) : (
-											<div className="rounded-md border border-border bg-muted/30 px-3 py-2">
-												<p className="text-xs text-foreground whitespace-pre-wrap break-words font-mono">
-													{(controls.download_block_message || "").trim()}
-												</p>
-											</div>
-										)}
-									</div>
-
-									<PolicyTargetWebsitesSelector
-										value={controls.download_target_websites || "all"}
-										targets={targets}
-										onChange={(val) => void patchControlWithErrorToast({ download_target_websites: val }, "Could not save target websites")}
-									/>
-								</div>
-							)}
-						</Card>
-
-						{/* POLICY 7: Screenshot Capture Deterrent */}
+						{/* POLICY 6: Screenshot Capture Deterrent */}
 						<Card className="border border-border bg-card overflow-hidden">
 							<div
 								className="flex items-center justify-between p-4 cursor-pointer select-none hover:bg-muted/30 transition-colors"
@@ -5273,15 +5300,15 @@ export default function BrowserAiPage() {
 									</div>
 									<div>
 										<div className="flex items-center gap-2">
-										<p className="text-sm font-semibold">7. Screenshot Capture Deterrent</p>
+										<p className="text-sm font-semibold">6. Screenshot Deterrent</p>
 											{controls.block_screenshot ? (
-												<Badge variant="outline" className="text-[10px] px-2 py-0.5 border-emerald-500/50 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10">Enforced</Badge>
+												<Badge variant="outline" className="text-[10px] px-2 py-0.5 border-emerald-500/50 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10">Active</Badge>
 											) : (
 												<Badge variant="outline" className="text-[10px] text-muted-foreground">Disabled</Badge>
 											)}
 										</div>
 										<p className="text-xs text-muted-foreground mt-0.5">
-											Deters browser print and common screenshot shortcuts and hides page content in print view. Operating-system screenshots and recordings cannot be reliably blocked from a webpage.
+											Block print and screenshot capture shortcuts on monitored AI tools.
 										</p>
 									</div>
 								</div>
@@ -5308,7 +5335,7 @@ export default function BrowserAiPage() {
 								<div className="p-4 pt-3 border-t border-border/60 space-y-3">
 									<div className="space-y-1.5">
 										<div className="flex items-center justify-between">
-											<p className="text-xs font-semibold text-foreground">Anti-Screenshot Warning message</p>
+											<p className="text-xs font-semibold text-foreground">Warning Message</p>
 											{screenshotMsgEditing || !(controls.screenshot_block_message || "").trim() ? null : (
 												<Button
 													type="button"
@@ -5327,7 +5354,7 @@ export default function BrowserAiPage() {
 										{screenshotMsgEditing || !(controls.screenshot_block_message || "").trim() ? (
 											<div className="space-y-2">
 												<Input
-														placeholder="e.g. A browser capture shortcut was detected. Operating-system capture tools cannot be reliably blocked."
+														placeholder="e.g. Screen capture is restricted by corporate policy."
 													value={screenshotMsgDraft}
 													onChange={(e) => setScreenshotMsgDraft(e.target.value)}
 													className="text-xs font-sans"
@@ -5340,7 +5367,7 @@ export default function BrowserAiPage() {
 												/>
 												<div className="flex items-center justify-between gap-2">
 													<p className="text-[11px] text-muted-foreground">
-														Custom message shown when an employee attempts to capture or screenshot monitored AI workspaces.
+														Message shown when screen capture shortcut is detected.
 													</p>
 													<div className="flex items-center gap-2">
 														{screenshotMsgEditing && (controls.screenshot_block_message || "").trim() ? (
@@ -5365,7 +5392,7 @@ export default function BrowserAiPage() {
 															onClick={saveScreenshotMsg}
 														>
 															<Save className="h-3 w-3 mr-1" />
-															Save message
+															Save
 														</Button>
 													</div>
 												</div>

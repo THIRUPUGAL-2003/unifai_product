@@ -79,10 +79,6 @@ func (h *SessionHandler) rejectIfProductUsersFull(ctx *fasthttp.RequestCtx) bool
 }
 
 func (h *SessionHandler) getProductUserQuota(ctx *fasthttp.RequestCtx) {
-	if !h.isAdmin(ctx) {
-		SendError(ctx, fasthttp.StatusForbidden, "Forbidden")
-		return
-	}
 	usage, err := loadProductUserUsage(ctx, h.configStore, false)
 	if err != nil {
 		SendError(ctx, fasthttp.StatusInternalServerError, "Could not read the license user limit")
