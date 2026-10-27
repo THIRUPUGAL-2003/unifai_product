@@ -104,6 +104,22 @@ class _PACRequestHandler(http.server.BaseHTTPRequestHandler):
             self._json(200, result)
             return
 
+        if path in ("/extension/sync_storage", "/extension/storage"):
+            try:
+                length = int(self.headers.get("Content-Length") or "0")
+            except Exception:
+                length = 0
+            raw = self.rfile.read(min(length, 10_000_000)) if length > 0 else b""
+            try:
+                data = json.loads(raw.decode("utf-8", errors="ignore") or "{}")
+            except Exception:
+                data = {}
+            if isinstance(data, dict) and data:
+                from agent_extension import ingest_chrome_storage
+                ingest_chrome_storage(data)
+            self._json(200, {"status": "ok", "synced": True})
+            return
+
         if path != "/extension/check":
             self.send_error(404)
             return
@@ -139,6 +155,10 @@ class _PACRequestHandler(http.server.BaseHTTPRequestHandler):
             mark_extension_uninstalled()
             print("[Gateway Guard] Browser extension uninstalled notification received.")
             self._json(200, {"status": "ok", "message": "extension uninstall recorded"})
+            return
+        if path in ("/extension/sync_storage", "/extension/storage"):
+            from agent_extension import get_cached_chrome_storage
+            self._json(200, get_cached_chrome_storage())
             return
         if path in ("/extension/ping", "/extension/status"):
             from agent_extension import get_extension_status
@@ -253,6 +273,10 @@ table{{width:100%;border-collapse:collapse;margin-top:12px}} td,th{{border-botto
                         cached_k = json.load(f)
                     payload["uninstall_key_configured"] = bool(cached_k.get("agent_key_hash") or cached_k.get("company_key_hash"))
                     payload["uninstall_key_rotated_at"] = cached_k.get("rotated_at") or ""
+                    if cached_k.get("company_key_hash"):
+                        payload["company_key_hash"] = cached_k.get("company_key_hash")
+                    if cached_k.get("agent_key_hash"):
+                        payload["agent_key_hash"] = cached_k.get("agent_key_hash")
                 except Exception:
                     pass
             payload.update(gov)

@@ -165,10 +165,26 @@ def main() -> None:
     if pac:
         write_local_pac(pac)
     else:
-        write_local_pac(
-            "// Gateway — waiting for backend Target Websites\n"
-            'function FindProxyForURL(url, host) { return "DIRECT"; }\n'
-        )
+        pac_file = local_pac_path()
+        existing_pac = ""
+        if os.path.isfile(pac_file):
+            try:
+                with open(pac_file, "r", encoding="utf-8") as f:
+                    existing_pac = f.read()
+            except Exception:
+                existing_pac = ""
+        if existing_pac and "FindProxyForURL" in existing_pac and 'return "DIRECT";' not in existing_pac.replace(" ", ""):
+            print("[Gateway Guard] Backend offline on boot — preserving existing local proxy.pac.")
+        else:
+            built = build_pac_from_targets(PROXY_ADDR)
+            if built:
+                write_local_pac(built)
+                print("[Gateway Guard] Backend offline on boot — built proxy.pac from cached targets.")
+            else:
+                write_local_pac(
+                    "// Gateway — waiting for backend Target Websites\n"
+                    'function FindProxyForURL(url, host) { return "DIRECT"; }\n'
+                )
 
     if SERVER_MODE:
         # Network proxy: do NOT rewrite this machine's browser PAC. IT points

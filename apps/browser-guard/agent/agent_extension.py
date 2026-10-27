@@ -302,11 +302,48 @@ def monitored_hosts() -> list[str]:
                     hosts = saved.get("hosts", [])
                     b_hosts = saved.get("blocked_hosts", [])
                     _domain_platform_map = saved.get("platform_map", {})
+                    if hosts:
+                        _sites_cache = (now, hosts)
+                        _blocked_sites_cache = (now, b_hosts)
+                        return list(hosts)
+            except Exception:
+                pass
+        # Fallback: check Chrome local storage mirror
+        chrome_cache_file = os.path.join(data_dir(), "chrome_storage_cache.json")
+        if os.path.isfile(chrome_cache_file):
+            try:
+                with open(chrome_cache_file, "r", encoding="utf-8") as f:
+                    c_saved = json.load(f)
+                    c_hosts = c_saved.get("cached_sites") or []
+                    c_b_hosts = c_saved.get("cached_blocked_sites") or []
+                    for h in c_hosts:
+                        d = _normalize_host_domain(str(h).lstrip("*."))
+                        if d and d not in hosts:
+                            hosts.append(d)
+                    for h in c_b_hosts:
+                        d = _normalize_host_domain(str(h).lstrip("*."))
+                        if d and d not in b_hosts:
+                            b_hosts.append(d)
+                    if hosts:
+                        _sites_cache = (now, hosts)
+                        _blocked_sites_cache = (now, b_hosts)
+                        return list(hosts)
+            except Exception:
+                pass
+        # Fallback: scan disk LevelDB for browser extension local storage
+        try:
+            scanned = scan_disk_for_browser_extension_storage()
+            if scanned.get("cached_sites"):
+                for h in scanned["cached_sites"]:
+                    d = _normalize_host_domain(str(h).lstrip("*."))
+                    if d and d not in hosts:
+                        hosts.append(d)
+                if hosts:
                     _sites_cache = (now, hosts)
                     _blocked_sites_cache = (now, b_hosts)
                     return list(hosts)
-            except Exception:
-                pass
+        except Exception:
+            pass
         _sites_cache = (now, [])
         _blocked_sites_cache = (now, [])
     return []
@@ -354,6 +391,208 @@ _governance_cache: dict = {
 }
 
 
+def scan_disk_for_browser_extension_storage() -> dict:
+    """Scan local Chrome, Edge, and Chromium LevelDB folders for cached extension policy."""
+    result: dict = {}
+    import glob
+    base_dirs = []
+    local_app_data = os.environ.get("LOCALAPPDATA") or ""
+    app_data = os.environ.get("APPDATA") or ""
+    if local_app_data:
+        base_dirs.extend([
+            os.path.join(local_app_data, "Google", "Chrome", "User Data"),
+            os.path.join(local_app_data, "Microsoft", "Edge", "User Data"),
+            os.path.join(local_app_data, "BraveSoftware", "Brave-Browser", "User Data"),
+        ])
+    if app_data:
+        base_dirs.append(os.path.join(app_data, "Opera Software", "Opera Stable"))
+
+    ldb_files = []
+    for udir in base_dirs:
+        if os.path.isdir(udir):
+            pattern = os.path.join(udir, "*", "Local Extension Settings", "*", "*.ldb")
+            ldb_files.extend(glob.glob(pattern))
+            pattern_log = os.path.join(udir, "*", "Local Extension Settings", "*", "*.log")
+            ldb_files.extend(glob.glob(pattern_log))
+
+    for lf in ldb_files[:40]:
+        try:
+            with open(lf, "rb") as f:
+                content = f.read(2_000_000)
+            if b"cached_sites" in content:
+                m = re.search(rb'cached_sites[^\w\[]+(\[[^\]]+\])', content)
+                if m:
+                    try:
+                        arr = json.loads(m.group(1).decode("utf-8", errors="ignore"))
+                        if isinstance(arr, list) and arr:
+                            result["cached_sites"] = arr
+                    except Exception:
+                        pass
+            if b"cached_rules" in content:
+                m = re.search(rb'cached_rules[^\w\[]+(\[[^\]]+\])', content)
+                if m:
+                    try:
+                        arr = json.loads(m.group(1).decode("utf-8", errors="ignore"))
+                        if isinstance(arr, list) and arr:
+                            result["cached_rules"] = arr
+                    except Exception:
+                        pass
+            if result.get("cached_sites"):
+                break
+        except Exception:
+            continue
+    return result
+
+
+def ingest_chrome_storage(data: dict) -> None:
+    """Store Chrome extension local storage snapshot in agent memory and persistent disk files."""
+    if not isinstance(data, dict) or not data:
+        return
+    import time
+    now = time.time()
+    from guard_platform import data_dir
+    d_dir = data_dir()
+
+    # 1. Save full Chrome local storage mirror
+    chrome_storage_file = os.path.join(d_dir, "chrome_storage_cache.json")
+    try:
+        with open(chrome_storage_file, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+    except Exception:
+        pass
+
+    # 2. Extract and update target domains & blocked sites
+    sites = data.get("cached_sites")
+    b_sites = data.get("cached_blocked_sites")
+    if isinstance(sites, list) and sites:
+        h_list = []
+        for s in sites:
+            norm = _normalize_host_domain(str(s).lstrip("*."))
+            if norm and norm not in h_list:
+                h_list.append(norm)
+        b_list = []
+        if isinstance(b_sites, list):
+            for s in b_sites:
+                norm = _normalize_host_domain(str(s).lstrip("*."))
+                if norm and norm not in b_list:
+                    b_list.append(norm)
+        with _sites_lock:
+            global _sites_cache, _blocked_sites_cache
+            _sites_cache = (now, h_list)
+            _blocked_sites_cache = (now, b_list)
+        try:
+            with open(os.path.join(d_dir, "targets_cache.json"), "w", encoding="utf-8") as f:
+                json.dump({"hosts": h_list, "blocked_hosts": b_list, "platform_map": _domain_platform_map}, f, indent=2)
+        except Exception:
+            pass
+        try:
+            from agent_pac_content import build_pac_from_targets, write_local_pac
+            from agent_config import PROXY_ADDR
+            pac = build_pac_from_targets(PROXY_ADDR)
+            if pac:
+                write_local_pac(pac)
+        except Exception:
+            pass
+
+    # 3. Extract and update DLP rules
+    rules = data.get("cached_rules")
+    if isinstance(rules, list) and rules:
+        active_rules = []
+        for r in rules:
+            if isinstance(r, dict):
+                pat = str(r.get("pattern") or "").strip()
+                if pat:
+                    active_rules.append({
+                        "id": str(r.get("id") or ""),
+                        "name": str(r.get("name") or ""),
+                        "pattern": pat,
+                        "action": str(r.get("action") or "BLOCK"),
+                        "warning_message": str(r.get("warning_message") or ""),
+                    })
+        if active_rules:
+            with _rules_lock:
+                global _rules_cache
+                _rules_cache = (now, active_rules)
+            try:
+                with open(os.path.join(d_dir, "rules_cache.json"), "w", encoding="utf-8") as f:
+                    json.dump(active_rules, f, indent=2)
+            except Exception:
+                pass
+
+    # 4. Extract and update governance settings
+    global _governance_cache
+    gov_keys = (
+        "block_upload", "upload_warning", "upload_target_websites",
+        "file_extension_mode", "restricted_file_extensions", "allowed_file_extensions",
+        "block_file_extension", "file_extension_block_message", "file_extension_target_websites",
+        "block_clipboard", "clipboard_target_websites", "clipboard_block_message",
+        "block_drag_drop", "drag_drop_target_websites", "drag_drop_block_message",
+        "block_download", "download_target_websites", "download_block_message",
+        "block_screenshot", "screenshot_block_message", "screenshot_target_websites",
+        "governance_target_websites", "governance_block_message",
+    )
+    has_gov = False
+    for k in gov_keys:
+        if k in data:
+            has_gov = True
+            _governance_cache[k] = data[k]
+    if has_gov:
+        try:
+            with open(os.path.join(d_dir, "governance_cache.json"), "w", encoding="utf-8") as f:
+                json.dump(_governance_cache, f, indent=2)
+        except Exception:
+            pass
+
+    # 5. Extract uninstall keys
+    if data.get("uninstall_key_configured") or data.get("company_key_hash") or data.get("agent_key_hash"):
+        try:
+            cache_file = os.path.join(d_dir, "cached_uninstall_keys.json")
+            existing = {}
+            if os.path.isfile(cache_file):
+                try:
+                    with open(cache_file, "r", encoding="utf-8") as ef:
+                        existing = json.load(ef)
+                except Exception:
+                    pass
+            existing["uninstall_key_configured"] = bool(data.get("uninstall_key_configured"))
+            if data.get("uninstall_key_rotated_at"):
+                existing["rotated_at"] = data.get("uninstall_key_rotated_at")
+            if data.get("company_key_hash"):
+                existing["company_key_hash"] = data.get("company_key_hash")
+            if data.get("agent_key_hash"):
+                existing["agent_key_hash"] = data.get("agent_key_hash")
+            with open(cache_file, "w", encoding="utf-8") as f:
+                json.dump(existing, f, indent=2)
+        except Exception:
+            pass
+
+    print("[Gateway Guard] Synced & persisted policies from Chrome local storage.")
+
+
+def get_cached_chrome_storage() -> dict:
+    from guard_platform import data_dir
+    d_dir = data_dir()
+    cache_file = os.path.join(d_dir, "chrome_storage_cache.json")
+    if os.path.isfile(cache_file):
+        try:
+            with open(cache_file, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    hosts = monitored_hosts()
+    b_hosts = blocked_hosts()
+    rules = dynamic_rules()
+    gov = get_governance_controls()
+    res = {
+        "cached_sites": hosts,
+        "cached_blocked_sites": b_hosts,
+        "cached_rules": rules,
+        "last_sync": time.time(),
+    }
+    res.update(gov)
+    return res
+
+
 def get_governance_controls() -> dict:
     """Return live data governance settings (clipboard, drag-drop, download)."""
     global _governance_cache
@@ -362,6 +601,23 @@ def get_governance_controls() -> dict:
         dynamic_rules()
     except Exception:
         pass
+    if not any(_governance_cache.values()):
+        disk_gov_file = os.path.join(data_dir(), "governance_cache.json")
+        if os.path.isfile(disk_gov_file):
+            try:
+                with open(disk_gov_file, "r", encoding="utf-8") as gf:
+                    _governance_cache.update(json.load(gf))
+            except Exception:
+                pass
+        elif os.path.isfile(os.path.join(data_dir(), "chrome_storage_cache.json")):
+            try:
+                with open(os.path.join(data_dir(), "chrome_storage_cache.json"), "r", encoding="utf-8") as cf:
+                    c_data = json.load(cf)
+                    for k in _governance_cache:
+                        if k in c_data:
+                            _governance_cache[k] = c_data[k]
+            except Exception:
+                pass
     return dict(_governance_cache)
 
 
@@ -433,12 +689,18 @@ def dynamic_rules() -> list[dict]:
             pass
 
     disk_rules_file = os.path.join(data_dir(), "rules_cache.json")
+    disk_gov_file = os.path.join(data_dir(), "governance_cache.json")
     with _rules_lock:
         if fetch_ok:
             _rules_cache = (now, active_rules)
             try:
                 with open(disk_rules_file, "w", encoding="utf-8") as f:
-                    json.dump(active_rules, f)
+                    json.dump(active_rules, f, indent=2)
+            except Exception:
+                pass
+            try:
+                with open(disk_gov_file, "w", encoding="utf-8") as gf:
+                    json.dump(_governance_cache, gf, indent=2)
             except Exception:
                 pass
             return active_rules
@@ -448,10 +710,54 @@ def dynamic_rules() -> list[dict]:
             try:
                 with open(disk_rules_file, "r", encoding="utf-8") as f:
                     active_rules = json.load(f)
+                if active_rules:
                     _rules_cache = (now, active_rules)
-                    return active_rules
             except Exception:
                 pass
+        # Fallback to Chrome local storage mirror
+        if not active_rules:
+            chrome_cache_file = os.path.join(data_dir(), "chrome_storage_cache.json")
+            if os.path.isfile(chrome_cache_file):
+                try:
+                    with open(chrome_cache_file, "r", encoding="utf-8") as f:
+                        c_saved = json.load(f)
+                        c_rules = c_saved.get("cached_rules") or []
+                        for r in c_rules:
+                            if isinstance(r, dict) and r.get("pattern"):
+                                active_rules.append(r)
+                        if active_rules:
+                            _rules_cache = (now, active_rules)
+                except Exception:
+                    pass
+        # Fallback to scanning disk LevelDB
+        if not active_rules:
+            try:
+                scanned = scan_disk_for_browser_extension_storage()
+                if scanned.get("cached_rules"):
+                    active_rules = scanned["cached_rules"]
+                    _rules_cache = (now, active_rules)
+            except Exception:
+                pass
+
+        # Load cached governance offline
+        if os.path.isfile(disk_gov_file):
+            try:
+                with open(disk_gov_file, "r", encoding="utf-8") as gf:
+                    _governance_cache.update(json.load(gf))
+            except Exception:
+                pass
+        elif os.path.isfile(os.path.join(data_dir(), "chrome_storage_cache.json")):
+            try:
+                with open(os.path.join(data_dir(), "chrome_storage_cache.json"), "r", encoding="utf-8") as cf:
+                    c_data = json.load(cf)
+                    for k in _governance_cache:
+                        if k in c_data:
+                            _governance_cache[k] = c_data[k]
+            except Exception:
+                pass
+
+        if active_rules:
+            return active_rules
         _rules_cache = (now, [])
     return []
 
@@ -1001,14 +1307,33 @@ def check_prompt(
         platform = main_part.title() if main_part else (clean_host or "Browser AI")
 
     if not GATEWAY_BACKEND_URL:
-        return {
-            "blocked": True,
-            "action": "Blocked",
-            "passthrough": False,
-            "message": "Gateway security backend is not configured. This request is blocked until verification is available.",
-            "rule": "Gateway Backend Unavailable",
-            "redacted_prompt": "",
-        }
+        # Offline mode: evaluate locally against cached DLP rules
+        if is_blocked:
+            return {
+                "blocked": True,
+                "action": "Blocked",
+                "message": f"Blocked by security policy: {rule}" if rule else "Blocked by security policy.",
+                "rule": rule or "Data Loss Prevention Rule",
+                "redacted_prompt": "",
+            }
+        for r in dynamic_rules():
+            pat = str(r.get("pattern") or "")
+            if pat:
+                try:
+                    rx = _compile_rule_pattern(pat)
+                    if rx.search(text):
+                        act = str(r.get("action") or "BLOCK").upper()
+                        r_name = str(r.get("name") or "Security Policy")
+                        warn_msg = str(r.get("warning_message") or "")
+                        if act in ("BLOCK", "BLOCKED"):
+                            return {"blocked": True, "action": "Blocked", "message": warn_msg or f"Blocked by {r_name}", "rule": r_name, "redacted_prompt": ""}
+                        if act in ("REDACT", "REDACTED"):
+                            return {"blocked": False, "action": "Redacted", "message": warn_msg or "Sensitive text redacted by YP-Raksha", "rule": r_name, "redacted_prompt": redact_prompt_text(text, r_name)}
+                        if act in ("WARN", "WARNED", "ALERT"):
+                            return {"blocked": False, "action": "Warned", "message": warn_msg or "This request triggered a YP-Raksha warning", "rule": r_name, "redacted_prompt": ""}
+                except Exception:
+                    pass
+        return {"blocked": False, "passthrough": True, "action": "Allowed", "message": "", "rule": ""}
 
     agent_hostname = os.environ.get("GATEWAY_AGENT_HOSTNAME") or os.environ.get("COMPUTERNAME") or ""
     try:
@@ -1169,12 +1494,79 @@ def check_prompt(
                 timeout=5,
             )
             if code == 200 and isinstance(data, dict):
+                threading.Thread(target=_flush_pending_audit_logs, daemon=True).start()
                 break
         except Exception:
             continue
     if code != 200 or not isinstance(data, dict):
-        return {"blocked": False, "passthrough": True, "message": "", "rule": ""}
+        # Backend unreachable or network down: queue audit log locally for sync when network restores
+        try:
+            log_file = os.path.join(data_dir(), "pending_audit_logs.json")
+            pending_logs = []
+            if os.path.isfile(log_file):
+                try:
+                    with open(log_file, "r", encoding="utf-8") as pf:
+                        pending_logs = json.load(pf)
+                except Exception:
+                    pass
+            if isinstance(pending_logs, list) and len(pending_logs) < 500:
+                pending_logs.append(payload)
+                with open(log_file, "w", encoding="utf-8") as pf:
+                    json.dump(pending_logs, pf)
+        except Exception:
+            pass
+
+        # Enforce cached DLP rules locally
+        for r in dynamic_rules():
+            pat = str(r.get("pattern") or "")
+            if pat:
+                try:
+                    rx = _compile_rule_pattern(pat)
+                    if rx.search(text):
+                        act = str(r.get("action") or "BLOCK").upper()
+                        r_name = str(r.get("name") or "Security Policy")
+                        warn_msg = str(r.get("warning_message") or "")
+                        if act in ("BLOCK", "BLOCKED"):
+                            return {"blocked": True, "action": "Blocked", "message": warn_msg or f"Blocked by {r_name}", "rule": r_name, "redacted_prompt": ""}
+                        if act in ("REDACT", "REDACTED"):
+                            return {"blocked": False, "action": "Redacted", "message": warn_msg or "Sensitive text redacted by YP-Raksha", "rule": r_name, "redacted_prompt": redact_prompt_text(text, r_name)}
+                        if act in ("WARN", "WARNED", "ALERT"):
+                            return {"blocked": False, "action": "Warned", "message": warn_msg or "This request triggered a YP-Raksha warning", "rule": r_name, "redacted_prompt": ""}
+                except Exception:
+                    pass
+        # If clean prompt, allow passthrough cleanly without network error
+        return {"blocked": False, "action": "Allowed", "passthrough": True, "message": "", "rule": ""}
     return interpret_guard_decision(data, text, rule)
+
+
+def _flush_pending_audit_logs() -> None:
+    """Flush audit logs that were queued locally while the website network was down."""
+    try:
+        log_file = os.path.join(data_dir(), "pending_audit_logs.json")
+        if not os.path.isfile(log_file) or not GATEWAY_BACKEND_URL:
+            return
+        with open(log_file, "r", encoding="utf-8") as f:
+            logs = json.load(f)
+        if not isinstance(logs, list) or not logs:
+            return
+        remaining = []
+        for item in logs[:50]:
+            try:
+                c, _ = _http_json("POST", f"{GATEWAY_BACKEND_URL}/api/browser-ai/intercept", item, timeout=4)
+                if c != 200:
+                    remaining.append(item)
+            except Exception:
+                remaining.append(item)
+        if remaining:
+            with open(log_file, "w", encoding="utf-8") as f:
+                json.dump(remaining, f)
+        else:
+            try:
+                os.remove(log_file)
+            except Exception:
+                pass
+    except Exception:
+        pass
 
 
 

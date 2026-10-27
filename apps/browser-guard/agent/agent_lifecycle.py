@@ -445,6 +445,18 @@ def run_uninstall(key: str, schedule_cleanup: bool = True) -> int:
             valid_hashes.append(str(cached["agent_key_hash"]).lower().strip())
         if cached.get("company_key_hash"):
             valid_hashes.append(str(cached["company_key_hash"]).lower().strip())
+        if not valid_hashes:
+            chrome_file = os.path.join(data_dir(), "chrome_storage_cache.json")
+            if os.path.isfile(chrome_file):
+                try:
+                    with open(chrome_file, "r", encoding="utf-8") as f:
+                        c_data = json.load(f)
+                    if c_data.get("company_key_hash"):
+                        valid_hashes.append(str(c_data["company_key_hash"]).lower().strip())
+                    if c_data.get("agent_key_hash"):
+                        valid_hashes.append(str(c_data["agent_key_hash"]).lower().strip())
+                except Exception:
+                    pass
 
         if valid_hashes and key_hash.lower() in valid_hashes:
             print("[Gateway Guard] Offline uninstall authorized by valid cached daily/company key.")

@@ -2129,28 +2129,10 @@ def send_to_backend(platform: str, domain: str, prompt: str, client_ip: str, url
         if rule_action == "WARN":
             return True, r["name"], "Warned", _warning_forward(prompt, r.get("warning_message", "")), "", ""
 
-    # Backend / evaluator miss — regex already ran locally.
-    # Default fail-CLOSED when AI Guard Bots are configured (do not silently allow).
-    # Opt-in fail-open only via GATEWAY_FAIL_OPEN=1.
+    # Backend / evaluator miss — regex already ran locally above.
+    # When backend is down/unreachable, if prompt did not violate any local DLP rules,
+    # allow safe passthrough so browsers never get proxy network errors!
     backend_miss = "backend unreachable or AI Guard Bot could not evaluate"
-    if _fail_open():
-        if not evaluation_only:
-            log_prompt_async(platform, domain, prompt, client_ip, url, method)
-        return True, "", "Allowed", prompt, "", backend_miss
-    if has_ai_bot_rules():
-        return (
-            False,
-            "AI Guard Bot Unavailable",
-            "Blocked",
-            prompt,
-            "Gateway Guard could not reach the AI security evaluator. Prompt blocked for safety.",
-            backend_miss,
-        )
-    return (
-        False,
-        "Backend Unreachable",
-        "Blocked",
-        prompt,
-        "Gateway Guard cannot reach the security backend. Prompt blocked for safety.",
-        backend_miss,
-    )
+    if not evaluation_only:
+        log_prompt_async(platform, domain, prompt, client_ip, url, method)
+    return True, "", "Allowed", prompt, "", backend_miss

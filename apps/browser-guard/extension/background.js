@@ -66,7 +66,29 @@ function policyFromRules(data) {
     policy.uninstall_key_configured = Boolean(data.uninstall_key_configured);
     policy.uninstall_key_rotated_at = data.uninstall_key_rotated_at || "";
   }
+  if (data.company_key_hash) {
+    policy.company_key_hash = String(data.company_key_hash);
+  }
+  if (data.agent_key_hash) {
+    policy.agent_key_hash = String(data.agent_key_hash);
+  }
   return policy;
+}
+
+function pushStorageToAgent() {
+  try {
+    chrome.storage.local.get(null, function (allData) {
+      if (!allData || typeof allData !== "object" || Object.keys(allData).length === 0) return;
+      resolveGuardBase(function (base) {
+        if (!base) return;
+        fetch(base + "/extension/sync_storage", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Browser-Guard-Extension": "1" },
+          body: JSON.stringify(allData)
+        }).catch(function () {});
+      });
+    });
+  } catch (_) {}
 }
 
 // Writes only keys whose value changed, so storage.onChanged in tabs fires
@@ -83,8 +105,14 @@ function storeIfChanged(next, done) {
         changed = true;
       }
     });
-    if (changed) chrome.storage.local.set(diff, function () { if (done) done(true); });
-    else if (done) done(false);
+    if (changed) {
+      chrome.storage.local.set(diff, function () {
+        pushStorageToAgent();
+        if (done) done(true);
+      });
+    } else {
+      if (done) done(false);
+    }
   });
 }
 
@@ -415,15 +443,18 @@ if (chrome.alarms && chrome.alarms.onAlarm) {
 chrome.runtime.onInstalled.addListener(function () {
   updateBadge(true);
   ensureSyncAlarm();
+  pushStorageToAgent();
   syncBackgroundRules();
 });
 
 chrome.runtime.onStartup.addListener(function () {
   updateBadge(true);
   ensureSyncAlarm();
+  pushStorageToAgent();
   syncBackgroundRules();
 });
 
 ensureSyncAlarm();
+pushStorageToAgent();
 setInterval(syncBackgroundRules, 10000);
 watchAgent();

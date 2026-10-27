@@ -643,15 +643,34 @@ def _apply_targets_from_data(data: dict) -> None:
 
 
 def _refresh_targets_from_backend() -> None:
-    if not GATEWAY_BACKEND_URL:
-        return
-    data = _fetch_json(f"{GATEWAY_BACKEND_URL}/api/browser-ai/targets?for=agent")
-    if data is None:
-        data = _fetch_json(f"{GATEWAY_BACKEND_URL}/api/browser-ai/targets")
+    data = None
+    if GATEWAY_BACKEND_URL:
+        data = _fetch_json(f"{GATEWAY_BACKEND_URL}/api/browser-ai/targets?for=agent")
+        if data is None:
+            data = _fetch_json(f"{GATEWAY_BACKEND_URL}/api/browser-ai/targets")
     if data is not None:
         _apply_targets_from_data(data)
     elif not _cached_domains:
-        print("[Gateway Proxy] WARNING: target domains empty — monitoring idle until backend targets fetch succeeds.")
+        # Offline fallback: load targets from targets_cache.json or chrome_storage_cache.json
+        from guard_platform import data_dir
+        for cf in ("targets_cache.json", "chrome_storage_cache.json"):
+            fp = os.path.join(data_dir(), cf)
+            if os.path.isfile(fp):
+                try:
+                    with open(fp, "r", encoding="utf-8") as f:
+                        c_data = json.load(f)
+                    if cf == "targets_cache.json" and isinstance(c_data, dict):
+                        b_set = set(c_data.get("blocked_hosts", []))
+                        _apply_targets_from_data({"targets": [{"domain": h, "monitored": True, "block_site": h in b_set} for h in c_data.get("hosts", [])]})
+                        break
+                    elif cf == "chrome_storage_cache.json" and isinstance(c_data, dict) and c_data.get("cached_sites"):
+                        b_set = set(c_data.get("cached_blocked_sites", []))
+                        _apply_targets_from_data({"targets": [{"domain": h, "monitored": True, "block_site": h in b_set} for h in c_data.get("cached_sites", [])]})
+                        break
+                except Exception:
+                    pass
+        if not _cached_domains:
+            print("[Gateway Proxy] WARNING: target domains empty — monitoring idle until backend targets fetch succeeds.")
 
 
 def _ensure_background_config_refresh() -> None:
@@ -921,7 +940,47 @@ def get_guard_rules(force_network: bool = False) -> list:
         print(f"[Gateway Proxy] Refreshed {len(compiled)} regex rules, {len(catalog)} active rules from backend.")
         return _cached_rules
 
-    # Backend down: keep last cache; allow cold-start retry.
+    # Backend down: fallback to rules_cache.json or chrome_storage_cache.json
+    if not _cached_rules:
+        from guard_platform import data_dir
+        for rf in ("rules_cache.json", "chrome_storage_cache.json"):
+            fp = os.path.join(data_dir(), rf)
+            if os.path.isfile(fp):
+                try:
+                    with open(fp, "r", encoding="utf-8") as f:
+                        c_rules_data = json.load(f)
+                    r_list = c_rules_data if isinstance(c_rules_data, list) else c_rules_data.get("cached_rules", [])
+                    if isinstance(r_list, list) and r_list:
+                        compiled = []
+                        catalog = {}
+                        for r in r_list:
+                            name = (r.get("name") or "").strip()
+                            pattern = (r.get("pattern") or "").strip()
+                            action = (r.get("action") or "BLOCK").upper()
+                            if action == "ALERT": action = "WARN"
+                            if not pattern: continue
+                            try:
+                                compiled.append({
+                                    "name": name or "Unknown Rule",
+                                    "pattern": pattern,
+                                    "regex": _compile_guard_regex(pattern),
+                                    "action": action,
+                                    "severity": r.get("severity", "HIGH"),
+                                    "warning_message": (r.get("warning_message") or "").strip(),
+                                })
+                                catalog[name] = {"name": name, "rule_type": "regex", "action": action, "warning_message": (r.get("warning_message") or "").strip(), "pattern": pattern}
+                            except Exception:
+                                pass
+                        if compiled:
+                            with _cache_lock:
+                                _cached_rules = compiled
+                                _cached_rule_catalog = catalog
+                                _rules_fetch_ok = True
+                                _rules_fetched_at = time.time()
+                            print(f"[Gateway Proxy] Loaded {len(compiled)} offline cached DLP rules.")
+                            return _cached_rules
+                except Exception:
+                    pass
     if not _cached_rules and not _rules_fetch_ok:
         print("[Gateway Proxy] WARNING: guard rules empty — regex DLP idle until backend rules fetch succeeds.")
     return _cached_rules
@@ -1207,7 +1266,25 @@ def get_control_settings(force_network: bool = False) -> dict:
             f"enabled={_cached_controls['enabled']} "
             f"upload={_cached_controls['block_upload']}"
         )
-    # Controls fetch failed — allow retry.
+    # Controls fetch failed — fallback to offline governance caches
+    if not _controls_from_backend:
+        from guard_platform import data_dir
+        for gf in ("governance_cache.json", "chrome_storage_cache.json"):
+            fp = os.path.join(data_dir(), gf)
+            if os.path.isfile(fp):
+                try:
+                    with open(fp, "r", encoding="utf-8") as f:
+                        c_gov = json.load(f)
+                    with _cache_lock:
+                        _cached_controls = {
+                            "enabled": True,
+                            "block_upload": bool(c_gov.get("block_upload", False)),
+                            "upload_warning": (c_gov.get("upload_warning") or "").strip(),
+                        }
+                        _controls_from_backend = True
+                    break
+                except Exception:
+                    pass
     return _cached_controls
 
 

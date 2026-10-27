@@ -183,14 +183,18 @@ def run_health_check(proxy_port: int | None = None) -> dict:
         details.append("PAC is all-DIRECT while proxy is up — browsers bypass Guard (Prompt Logs stay 0)")
         checks["pac_strict"] = False
 
-    critical = ("backend_targets", "local_pac", "proxy_script")
+    critical = ("local_pac", "proxy_script")
     if (
         all(checks.get(k) for k in critical)
+        and checks.get("backend_targets")
         and checks.get("ca_trusted")
         and checks.get("proxy_port")
         and pac_mode == "strict_proxy"
     ):
         status = "ok"
+    elif checks.get("proxy_port") and checks.get("local_pac"):
+        # Local proxy and PAC are operational (offline cached mode)
+        status = "degraded"
     elif checks.get("backend_targets") and checks.get("proxy_script"):
         status = "degraded"
     else:

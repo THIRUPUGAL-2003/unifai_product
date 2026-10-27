@@ -90,13 +90,16 @@ def build_pac_from_targets(proxy_addr: str) -> str | None:
             break
 
     if not body:
-        cache_file = os.path.join(data_dir(), "targets_cache.json")
-        if os.path.isfile(cache_file):
-            try:
-                with open(cache_file, "r", encoding="utf-8") as f:
-                    body = f.read()
-            except Exception:
-                body = None
+        for cname in ("targets_cache.json", "chrome_storage_cache.json"):
+            cache_file = os.path.join(data_dir(), cname)
+            if os.path.isfile(cache_file):
+                try:
+                    with open(cache_file, "r", encoding="utf-8") as f:
+                        body = f.read()
+                    if body and ("targets" in body or "hosts" in body or "cached_sites" in body):
+                        break
+                except Exception:
+                    body = None
 
     if not body:
         return None
@@ -108,9 +111,9 @@ def build_pac_from_targets(proxy_addr: str) -> str | None:
 
     targets = data.get("targets") if isinstance(data, dict) else None
     if not isinstance(targets, list) and isinstance(data, dict):
-        # agent_extension.monitored_hosts persists this cache shape while offline.
-        cached_hosts = data.get("hosts")
-        cached_blocked = data.get("blocked_hosts")
+        # agent_extension.monitored_hosts or chrome_storage_cache persists this cache shape while offline.
+        cached_hosts = data.get("hosts") or data.get("cached_sites")
+        cached_blocked = data.get("blocked_hosts") or data.get("cached_blocked_sites")
         if isinstance(cached_hosts, list) or isinstance(cached_blocked, list):
             blocked = {
                 _normalize_domain(str(host))
