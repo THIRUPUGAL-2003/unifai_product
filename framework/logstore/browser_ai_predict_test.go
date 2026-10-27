@@ -56,6 +56,10 @@ func TestInterceptPromptPrediction(t *testing.T) {
 		{"block beats warn", "confidential card 4111-1111-1111-1111", nil, "Blocked", "CRITICAL", "SECURITY_POLICY_VIOLATION", "Card Number"},
 		{"proxy block without reason stays critical", "anything", map[string]any{"is_blocked": true}, "Blocked", "CRITICAL", "SECURITY_POLICY_VIOLATION", ""},
 		{"site lock", "[SITE BLOCKED] chat.example.com", map[string]any{"is_blocked": true, "blocked_reason": "Block Entire Website"}, "Blocked", "CRITICAL", "SITE_BLOCK", "Block Entire Website"},
+		{"drag drop block", "--drag drop [DRAG & DROP BLOCKED] Files: test.pdf", map[string]any{"is_blocked": true, "blocked_reason": "Drag & Drop Policy"}, "Blocked", "CRITICAL", "DRAG_DROP_GOVERNANCE", "Drag & Drop Policy"},
+		{"clipboard paste block", "--copy paste [CLIPBOARD PASTE BLOCKED] test text", map[string]any{"is_blocked": true, "blocked_reason": "Clipboard Policy"}, "Blocked", "CRITICAL", "CLIPBOARD_GOVERNANCE", "Clipboard Policy"},
+		{"screenshot block", "--screenshot [SCREEN CAPTURE RESTRICTED] Capture Shortcut Detected", map[string]any{"is_blocked": true, "blocked_reason": "Screen Capture Policy"}, "Blocked", "CRITICAL", "SCREENSHOT_RESTRICTION", "Screen Capture Policy"},
+		{"download block", "--download [DOWNLOAD BLOCKED] confidential.xlsx", map[string]any{"is_blocked": true, "blocked_reason": "Download Policy"}, "Blocked", "CRITICAL", "DOWNLOAD_GOVERNANCE", "Download Policy"},
 		{"long unmatched prompt bumps to medium", strings.Repeat("word ", 400), nil, "Allowed", "MEDIUM", "SAFE", ""},
 	}
 	for _, tc := range cases {

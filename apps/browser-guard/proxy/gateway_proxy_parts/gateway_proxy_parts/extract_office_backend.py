@@ -1676,8 +1676,17 @@ def extract_batchexecute_prompt(content: str) -> str:
         if any(bad in low for bad in (
             "bard activity", "generic", "batchexecute", "wrb.fr",
             "assistant.lamda", "bardfrontendservice", "google account",
-            "model_metadata", "conversation_turn", "workspace_id", "count=", "&ofs="
+            "model_metadata", "conversation_turn", "workspace_id", "count=", "&ofs=",
+            "/contrib_service", "contrib_service", "/contrib/", "upload_attachment",
         )):
+            return False
+        if low in ("@ upload_attachment", "@upload_attachment", "upload_attachment") or low.startswith(("@ upload_attachment", "@upload_attachment", "upload_attachment")):
+            return False
+        if re.fullmatch(r"(?:gemini|gpt|claude|llama|mistral)[-\d\.]+[a-z0-9\-]*", low):
+            return False
+        if low.startswith(("gemini-1.", "gemini-2.", "gemini-pro", "gemini-flash")):
+            return False
+        if any(m in low for m in ("openxmlformats", "wordprocessingml", "spreadsheetml", "presentationml", "2fvnd.")):
             return False
         return len(s) >= 1
 

@@ -463,3 +463,17 @@ ensureSyncAlarm();
 pushStorageToAgent();
 setInterval(syncBackgroundRules, 10000);
 watchAgent();
+
+if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onSuspend) {
+  chrome.runtime.onSuspend.addListener(function () {
+    try {
+      resolveGuardBase(function (base) {
+        if (typeof navigator !== "undefined" && navigator.sendBeacon) {
+          navigator.sendBeacon(base + "/extension/disconnected");
+        } else {
+          fetch(base + "/extension/disconnected", { method: "POST", keepalive: true }).catch(function () {});
+        }
+      });
+    } catch (_) {}
+  });
+}

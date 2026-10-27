@@ -340,7 +340,7 @@ export function CorporateAIWorkspaceCard({
 
 				{/* 3. Target Websites Selector */}
 				<PolicyTargetWebsitesSelector
-					value={controls.corporate_target_websites || "all"}
+					value={controls.corporate_target_websites || "none"}
 					targets={targets}
 					onChange={(val) => void handleTargetWebsitesChange(val)}
 				/>

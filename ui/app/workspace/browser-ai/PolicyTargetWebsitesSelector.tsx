@@ -62,8 +62,8 @@ export const PolicyTargetWebsitesSelector: React.FC<PolicyTargetWebsitesSelector
 
 	const selectedValues = useMemo<string[]>(() => {
 		const raw = (value || "").trim().toLowerCase();
-		if (raw === "none") return [];
-		if (!raw || raw === "all" || raw === "*") {
+		if (!raw || raw === "none") return [];
+		if (raw === "all" || raw === "*") {
 			return options.map((o) => o.value);
 		}
 		const tokens = raw
@@ -89,17 +89,26 @@ export const PolicyTargetWebsitesSelector: React.FC<PolicyTargetWebsitesSelector
 			onChange("none");
 			return;
 		}
-		if (next.length === options.length) {
-			onChange("all");
-			return;
-		}
+		// Always persist the explicit list of domains so newly added target domains
+		// in the future are never accidentally auto-selected into this policy!
 		const allDomains = next.flatMap((val) => optionValueToDomains.get(val) || [val]);
 		onChange(Array.from(new Set(allDomains)).join(", "));
 	};
 
 	return (
 		<div className={cn("flex flex-col gap-1.5 pt-3 border-t border-border/40", className)}>
-			<Label className="text-xs font-semibold text-foreground">Target Websites</Label>
+			<div className="flex items-center justify-between">
+				<Label className="text-xs font-semibold text-foreground">Target Websites</Label>
+				{selectedValues.length > 0 ? (
+					<button
+						type="button"
+						onClick={() => onChange("none")}
+						className="text-[11px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+					>
+						Deselect all
+					</button>
+				) : null}
+			</div>
 			<div className="w-full sm:max-w-md">
 				<ComboboxSelect
 					multiple
@@ -108,7 +117,7 @@ export const PolicyTargetWebsitesSelector: React.FC<PolicyTargetWebsitesSelector
 					value={selectedValues}
 					onValueChange={handleValueChange}
 					disabled={disabled || options.length === 0}
-					placeholder="Select target websites..."
+					placeholder="Select target websites (None selected)..."
 					searchPlaceholder="Search target websites..."
 					emptyMessage="No matching target websites found."
 					selectAllValue="*"

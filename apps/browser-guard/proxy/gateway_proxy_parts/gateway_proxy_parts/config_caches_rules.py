@@ -875,6 +875,120 @@ def make_site_blocked_response(flow: http.HTTPFlow, domain: str, platform: str) 
     )
 
 
+def is_monitored_ai_site(host: str) -> tuple[bool, str, str]:
+    """Return (is_monitored, canonical_domain, platform) if host matches any monitored target domain."""
+    get_target_domains()
+    host_lower = _normalize_domain(host)
+    if not host_lower:
+        return False, "", ""
+    with _cache_lock:
+        domains_map = dict(_cached_domains)
+        families = dict(_cached_families)
+
+    for domain, platform in sorted(domains_map.items(), key=lambda x: len(x[0])):
+        d = _normalize_domain(domain)
+        if not d:
+            continue
+        if host_lower == d or host_lower.endswith("." + d) or d.endswith("." + host_lower):
+            canon = canonical_target_domain(domain) or domain
+            return True, canon, platform or canon
+
+    for domain, platform in domains_map.items():
+        fam = families.get(domain) or set()
+        for f in fam:
+            fd = _normalize_domain(f)
+            if fd and (host_lower == fd or host_lower.endswith("." + fd) or fd.endswith("." + host_lower)):
+                canon = canonical_target_domain(domain) or domain
+                return True, canon, platform or canon
+
+    return False, "", ""
+
+
+_last_ext_status = "unknown"
+_last_ext_status_checked_at = 0.0
+
+
+def is_guard_extension_active() -> bool:
+    """Check if YP-Raksha browser extension is currently active and paired."""
+    global _last_ext_status, _last_ext_status_checked_at
+    now = time.time()
+    if now - _last_ext_status_checked_at < 2.0:
+        return _last_ext_status == "connected"
+    _last_ext_status_checked_at = now
+
+    try:
+        from guard_platform import data_dir
+        d = data_dir()
+        if os.path.isfile(os.path.join(d, "extension_uninstalled.flag")):
+            _last_ext_status = "uninstalled"
+            return False
+        seen_file = os.path.join(d, "extension_last_seen.txt")
+        if os.path.isfile(seen_file):
+            with open(seen_file, "r", encoding="utf-8") as f:
+                content = f.read().strip()
+            if content in ("uninstalled", "disconnected", "off", "disabled"):
+                _last_ext_status = content
+                return False
+            if content in ("installed", "install", "not_connected"):
+                _last_ext_status = "installed"
+                return False
+            ts = float(content)
+            if (now - ts) <= 25.0:
+                _last_ext_status = "connected"
+                return True
+            else:
+                _last_ext_status = "off"
+                return False
+    except Exception:
+        pass
+    _last_ext_status = "installed"
+    return False
+
+
+def make_extension_required_response(flow: http.HTTPFlow, domain: str, platform: str) -> None:
+    """Render full Guard Agent warning screen when extension is disabled/missing on target AI websites."""
+    title = platform or domain or "this website"
+    body = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>YP-Raksha Extension Required | UnifAI</title>
+  <style>
+    * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+    body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0b1220; color: #e2e8f0; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 24px; }}
+    .card {{ max-width: 540px; width: 100%; padding: 40px 32px; border: 1px solid #334155; border-radius: 16px; background: #111827; text-align: center; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.7); }}
+    .icon {{ width: 64px; height: 64px; margin: 0 auto 20px; background: rgba(245, 158, 11, 0.15); border: 2px solid #f59e0b; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #f59e0b; font-size: 30px; font-weight: bold; }}
+    h1 {{ margin: 0 0 14px; font-size: 22px; color: #fbbf24; font-weight: 700; }}
+    p {{ margin: 0 0 12px; line-height: 1.6; color: #cbd5e1; font-size: 15px; }}
+    code {{ background: #1e293b; color: #93c5fd; padding: 3px 8px; border-radius: 6px; font-size: 13px; font-weight: 600; word-break: break-all; }}
+    .btn {{ display: inline-block; margin-top: 18px; padding: 10px 24px; background: #2563eb; color: #ffffff; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; border: none; transition: background 0.2s; }}
+    .btn:hover {{ background: #1d4ed8; }}
+    .footer {{ margin-top: 28px; padding-top: 16px; border-top: 1px solid #1e293b; font-size: 12px; color: #64748b; }}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">⚠️</div>
+    <h1>YP-Raksha Extension Disabled or Missing</h1>
+    <p>Access to <strong>{title}</strong> (<code>{domain}</code>) is protected by enterprise security policy.</p>
+    <p>The <strong>YP-Raksha Browser Extension</strong> is currently turned off or uninstalled. You must enable the extension in your browser to access this AI workspace.</p>
+    <button class="btn" onclick="location.reload()">Reload Page after Enabling Extension</button>
+    <div class="footer">UnifAI YP-Raksha Enterprise Security Guard</div>
+  </div>
+</body>
+</html>"""
+    flow.response = http.Response.make(
+        403,
+        body.encode("utf-8"),
+        {
+            "Content-Type": "text/html; charset=utf-8",
+            "Cache-Control": "no-store",
+            "X-Gateway-Guard": "extension-required",
+        },
+    )
+
+
 def get_guard_rules(force_network: bool = False) -> list:
     """
     Fetch active DLP guard rules from Gateway backend.
@@ -1100,6 +1214,9 @@ def is_already_handled_by_extension(domain: str, prompt: str = "", file_name: st
             if not isinstance(item, dict):
                 continue
             item_time = float(item.get("time") or 0)
+            if now - item_time > 60.0:
+                continue
+
             item_host = (item.get("host") or "").lower().strip(".")
             if item_host.startswith("www."):
                 item_host = item_host[4:]
@@ -1117,24 +1234,36 @@ def is_already_handled_by_extension(domain: str, prompt: str = "", file_name: st
             item_p = " ".join(item_p_raw.strip().split()).lower()[:100]
             item_files = [str(x).lower().strip() for x in (item.get("files") or [])]
 
-            # 2. Prompt match: require tight 3.0s window and EXACT match (not substring!)
-            if p_clean and item_p and (now - item_time <= 3.0):
+            # 2. Prompt match: match exact, normalized, or caption substring within 60s
+            if p_clean and item_p:
                 p_core = re.sub(r'\[(?:file|extracted file):.*?\]', '', p_clean).strip()
                 item_p_core = re.sub(r'\[(?:file|extracted file):.*?\]', '', item_p).strip()
-                if p_clean == item_p or (p_core and item_p_core and p_core == item_p_core):
+                item_caption = item_p.split(" -- ", 1)[-1].strip() if " -- " in item_p else ""
+                matched = (
+                    p_clean == item_p
+                    or (p_core and item_p_core and p_core == item_p_core)
+                    or (item_caption and (p_clean == item_caption or p_clean in item_caption or item_caption in p_clean))
+                    or (len(p_clean) >= 4 and p_clean in item_p)
+                    or (len(item_p) >= 4 and item_p in p_clean)
+                )
+                if matched:
                     sig = f"{item_host}|p:{item_p}|{item_time:.2f}"
                     with _consumed_evals_lock:
-                        if sig not in _consumed_eval_sigs:
-                            _consumed_eval_sigs.add(sig)
-                            return True
-
-            # 3. File upload match: require tight 5.0s window and exact filename match
-            if fn_clean and (now - item_time <= 5.0) and fn_clean in item_files:
-                sig = f"{item_host}|f:{fn_clean}|{item_time:.2f}"
-                with _consumed_evals_lock:
-                    if sig not in _consumed_eval_sigs:
                         _consumed_eval_sigs.add(sig)
-                        return True
+                    return True
+
+            # 3. File upload match: match exact or partial filename or presence in item_p within 60s
+            if fn_clean:
+                file_matched = (
+                    fn_clean in item_files
+                    or any(fn_clean in f or f in fn_clean for f in item_files if f)
+                    or fn_clean in item_p
+                )
+                if file_matched:
+                    sig = f"{item_host}|f:{fn_clean}|{item_time:.2f}"
+                    with _consumed_evals_lock:
+                        _consumed_eval_sigs.add(sig)
+                    return True
     except Exception:
         pass
     return False
@@ -1144,6 +1273,9 @@ def evaluate_prompt_coalesced(
     platform: str, domain: str, prompt: str, client_ip: str, url: str, method: str,
 ) -> tuple[bool, str, str, str, str]:
     """One evaluate per domain+prompt; parallel ChatGPT retries reuse the same decision."""
+    if is_already_handled_by_extension(domain, prompt):
+        return True, "", "Allowed", prompt, ""
+
     cached = get_remembered_guard_decision(domain, prompt)
     if cached is not None:
         return cached
@@ -1180,6 +1312,31 @@ def evaluate_prompt(platform: str, domain: str, prompt: str, client_ip: str, url
     At 1000+ rules/domains: regex BLOCK returns immediately (no LLM wait).
     AI bot runs only when local regex did not already block.
     """
+    if is_already_handled_by_extension(domain, prompt):
+        return True, "", "Allowed", prompt, ""
+
+    p_strip = (prompt or "").strip()
+    p_low = p_strip.lower()
+    if (
+        not p_strip
+        or "/contrib_service" in p_low
+        or "contrib_service" in p_low
+        or "/contrib/" in p_low
+        or p_low in ("@ upload_attachment", "@upload_attachment", "upload_attachment")
+        or p_low.startswith(("@ upload_attachment", "@upload_attachment", "upload_attachment"))
+        or re.fullmatch(r"(?:gemini|gpt|claude|llama|mistral|deepseek|qwen|grok)[-\d\.]+[a-z0-9\-]*", p_low)
+        or p_low.startswith(("gemini-1.", "gemini-2.", "gemini-pro", "gemini-flash"))
+        or any(m in p_low for m in ("openxmlformats", "wordprocessingml", "spreadsheetml", "presentationml", "2fvnd."))
+        or "ic3product" in p_low
+        or "copilotconsumer" in p_low
+        or "getuserproperties" in p_low
+        or "getmigrationstatus" in p_low
+        or "getispicassouser" in p_low
+        or p_low.startswith('{"action"')
+        or (p_low.startswith("{") and any(k in p_low for k in ('"action":', '"action" :', '"target":', '"ic3product"', '"useglobalendpoint"')))
+    ):
+        return True, "", "Allowed", prompt, ""
+
     get_guard_rules()
     local = decide_prompt_locally(prompt)
     local_allowed, local_rt, local_action, local_fwd, local_reply = local
@@ -1767,6 +1924,9 @@ def is_batchexecute_chat_submit(path: str, body: str = "") -> bool:
                     and len(p.strip()) >= 3
                     and p.strip().lower() not in ("null", "me", "true", "false", "undefined", "none", "ok", "set", "ping", "pong")
                     and not globals().get("_is_google_wire_blob", lambda x: False)(p)
+                    and not p.strip().lower().startswith(("gemini-1.", "gemini-2.", "gemini-pro", "gemini-flash"))
+                    and "/contrib" not in p.strip().lower()
+                    and "contrib_service" not in p.strip().lower()
                 ):
                     return True
         except Exception:
@@ -1780,9 +1940,21 @@ def _is_google_wire_blob(text: str) -> bool:
     t = (text or "").strip()
     if not t:
         return False
+    low_t = t.lower()
+    if "/contrib_service" in low_t or "contrib_service" in low_t or "/contrib/" in low_t:
+        return True
+    if re.fullmatch(r"gemini[-\d\.]+[a-z0-9\-]*", low_t) or low_t.startswith(("gemini-1.", "gemini-2.", "gemini-pro", "gemini-flash", "gemini-ultra", "gemini-nano")):
+        return True
+    if low_t in ("@ upload_attachment", "@upload_attachment", "upload_attachment") or low_t.startswith(("@ upload_attachment", "@upload_attachment", "upload_attachment")):
+        return True
+    if any(m in low_t for m in ("openxmlformats", "wordprocessingml", "spreadsheetml", "presentationml", "2fvnd.")):
+        return True
     if (
         t.startswith(("[null,", '[[["', "[[[", "[[null,", '["[["', '["[', '["contrib', '["/contrib'))
         or "f.req=" in t
+        or "/contrib_service" in t
+        or "contrib_service" in t
+        or "/contrib/" in t
         or "/contrib service" in t
         or "/contrib service/ttl id" in t
         or "[null,[[" in t
@@ -2095,6 +2267,8 @@ def is_event_send_chat_submit(path: str, body: str = "") -> bool:
     if fn_persistent and fn_persistent(path) and ("\x1e" in (body or "") or '"target":' in body_l or '"invocationid"' in body_l):
         return False
     if not path_l:
+        return False
+    if any(k in body_l for k in ('"action":"getuserproperties"', '"action":"getmigrationstatus"', '"action":"getispicassouser"', 'ic3product', 'copilotconsumer')):
         return False
     markers = (
         "getresponse", "createconversation", "/api/copilot",

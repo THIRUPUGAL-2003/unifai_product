@@ -229,7 +229,7 @@ def collect_agent_info(agent_id: str, status: str = "active") -> dict:
         from agent_extension import get_extension_status
         ext_status = get_extension_status()
     except Exception:
-        ext_status = "not_installed"
+        ext_status = "installed"
     return {
         "id": agent_id,
         "hostname": hostname,
@@ -244,7 +244,7 @@ def collect_agent_info(agent_id: str, status: str = "active") -> dict:
         "health_status": hs or "unknown",
         "health_detail": detail_s,
         "pac_mode": pac_mode or "unknown",
-        "extension_status": ext_status or "not_installed",
+        "extension_status": ext_status or "installed",
         "status": status or "active",
         "is_domain_joined": ad.get("is_domain_joined", False),
         "ad_domain": ad.get("ad_domain", ""),

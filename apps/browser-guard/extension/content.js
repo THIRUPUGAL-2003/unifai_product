@@ -167,27 +167,47 @@
 
   function clipboardPolicyApplies() {
     if (!clipboardPolicy.enabled) return false;
-    // The governance selector only applies to registered monitored targets.
-    // Keep this guard aligned with page_hook.js so a stale per-control target
-    // cannot keep blocking a site after it has been removed from Target Websites.
     if (isServerHost(location.hostname)) return false;
     var raw = String(clipboardPolicy.targetSites || "").trim();
-    if (raw && raw.toLowerCase() !== "all" && raw !== "*") {
-      return hostInConfiguredSites(location.hostname, raw);
+    if (!raw || raw.toLowerCase() === "none") return false;
+    if (raw.toUpperCase() === "ALL" || raw === "*") {
+      var monitoredSites = clipboardPolicy.monitoredSites || monitoredSitesForPolicy;
+      if (Array.isArray(monitoredSites) && monitoredSites.length > 0) {
+        return hostMatches(location.hostname, monitoredSites);
+      }
+      return true;
     }
-    var monitoredSites = clipboardPolicy.monitoredSites || monitoredSitesForPolicy;
-    if (Array.isArray(monitoredSites) && monitoredSites.length > 0) {
-      return hostMatches(location.hostname, monitoredSites);
+    return hostInConfiguredSites(location.hostname, raw);
+  }
+
+  function cleanNoticeMessage(msg, fallback) {
+    var s = (msg || "").trim();
+    if (!s) return fallback || "Action restricted by corporate security policy.";
+    s = s.replace(/^\[?custom\]?\s*[:\-–—]?\s*/i, "");
+    if (/^drag\s*(&|and)?\s*drop\s*block\s*active$/i.test(s) || /^drag\s*(&|and)?\s*drop\s*restricted$/i.test(s)) {
+      return "File drag and drop is restricted by corporate security policy.";
     }
-    return true;
+    if (/^clipboard\s*protection\s*active$/i.test(s) || /^copy\s*paste\s*not\s*allowed$/i.test(s)) {
+      return "Clipboard copy-paste into AI tools is restricted by corporate security policy.";
+    }
+    if (/^download\s*block\s*active$/i.test(s)) {
+      return "Downloading files, artifacts, and exports from this AI tool is restricted by corporate security policy.";
+    }
+    if (/^screenshot\s*block\s*active$/i.test(s)) {
+      return "Screen capture and recording is restricted on this AI workspace by corporate security policy.";
+    }
+    if (!s || /^block active$/i.test(s) || /^protection active$/i.test(s)) {
+      return fallback || "Action restricted by corporate security policy.";
+    }
+    return s;
   }
 
   var clipboardNoticeAt = 0;
-  function showClipboardBlockedNotice() {
+  function showClipboardBlockedNotice(customTitle, customMessage) {
     var now = Date.now();
     if (now - clipboardNoticeAt < 1000) return;
     clipboardNoticeAt = now;
-    if (document.getElementById("yp-raksha-alert-card")) return;
+    if (document.getElementById("yp-raksha-alert-card") || document.getElementById("yp-screenshot-shield") || document.getElementById("yp-blur-curtain")) return;
     try {
       var old = document.getElementById("yp-raksha-isolated-clipboard-notice");
       if (old) old.remove();
@@ -200,20 +220,22 @@
         "z-index:2147483647;background:rgba(15,23,42,0.96);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);" +
         "color:#f9fafb;border:1px solid #ef4444;border-radius:12px;padding:9px 14px;box-shadow:0 10px 30px rgba(0,0,0,0.5);" +
         "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;transition:opacity 0.2s ease;pointer-events:none;";
+      var heading = customTitle || "Clipboard Restricted";
+      var bodyMsg = customMessage || cleanNoticeMessage(clipboardPolicy.message, "Clipboard copy-paste into or from AI tools is restricted by corporate security policy.");
       box.innerHTML =
         '<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">' +
           '<span style="font-size:13px;line-height:1;">🛡️</span>' +
-          '<strong style="font-size:11px;font-weight:700;letter-spacing:0.03em;text-transform:uppercase;color:#f87171;">Clipboard Paste Restricted</strong>' +
+          '<strong style="font-size:11px;font-weight:700;letter-spacing:0.03em;text-transform:uppercase;color:#f87171;">' + heading + '</strong>' +
         '</div>' +
         '<div style="font-size:12.5px;line-height:1.4;color:#e2e8f0;font-weight:400;">' +
-          (clipboardPolicy.message || "Pasting into AI inputs is restricted") +
+          bodyMsg +
         '</div>';
       shadow.appendChild(box);
       (document.documentElement || document).appendChild(host);
       setTimeout(function () {
         try {
           box.style.opacity = "0";
-          setTimeout(function () { try { host.remove(); } catch (_) {} }, 200);
+          setTimeout(function () { try { host.remove(); } catch (_) {} }, 150);
         } catch (e) {}
       }, 1000);
     } catch (e) {}
@@ -221,8 +243,23 @@
 
   var _lastGovLogSig = "";
   var _lastGovLogTime = 0;
+  var _lastClipboardBlockLoggedAt = 0;
+  var _lastDragDropBlockLoggedAt = 0;
+  var _lastScreenshotBlockLoggedAt = 0;
   function recordIsolatedGovernanceLog(promptText, ruleName) {
     var now = Date.now();
+    if (ruleName === "Clipboard Policy" || (promptText && promptText.indexOf("--copy paste") === 0)) {
+      if (now - _lastClipboardBlockLoggedAt < 2000) return;
+      _lastClipboardBlockLoggedAt = now;
+    }
+    if (ruleName === "Drag & Drop Policy" || (promptText && promptText.indexOf("--drag drop") === 0)) {
+      if (now - _lastDragDropBlockLoggedAt < 2000) return;
+      _lastDragDropBlockLoggedAt = now;
+    }
+    if (ruleName === "Screen Capture Policy" || (promptText && (promptText.indexOf("--screenshot") === 0 || promptText.indexOf("[SCREEN CAPTURE") === 0))) {
+      if (now - _lastScreenshotBlockLoggedAt < 2000) return;
+      _lastScreenshotBlockLoggedAt = now;
+    }
     var sig = promptText + "||" + ruleName;
     if (sig === _lastGovLogSig && (now - _lastGovLogTime < 2500)) return;
     _lastGovLogSig = sig;
@@ -266,6 +303,57 @@
     });
   }
 
+  function enforceActiveElementRollback() {
+    try {
+      var activeEl = document.activeElement;
+      if (!activeEl) return;
+      var isInput = activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA";
+      var isContentEditable = activeEl.isContentEditable || activeEl.getAttribute("contenteditable") === "true";
+      if (!isInput && !isContentEditable) {
+        var editableParent = activeEl.closest ? activeEl.closest("[contenteditable='true'], textarea, input, [role='textbox']") : null;
+        if (editableParent) {
+          activeEl = editableParent;
+          isInput = activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA";
+          isContentEditable = true;
+        }
+      }
+      if (!isInput && !isContentEditable) return;
+
+      var prevVal = isInput ? activeEl.value : activeEl.innerHTML;
+      var prevText = isInput ? activeEl.value : (activeEl.innerText || activeEl.textContent || "");
+
+      var delays = [0, 4, 16, 40, 100];
+      for (var d = 0; d < delays.length; d++) {
+        (function (delay) {
+          setTimeout(function () {
+            try {
+              if (isInput) {
+                if (activeEl.value !== prevVal) {
+                  activeEl.value = prevVal;
+                  activeEl.dispatchEvent(new Event("input", { bubbles: true }));
+                }
+              } else if (isContentEditable) {
+                var currText = activeEl.innerText || activeEl.textContent || "";
+                if (currText !== prevText) {
+                  try { document.execCommand("undo", false, null); } catch (_) {}
+                  var postUndoText = activeEl.innerText || activeEl.textContent || "";
+                  if (postUndoText !== prevText) {
+                    activeEl.innerHTML = prevVal;
+                    try {
+                      activeEl.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "deleteContentBackward" }));
+                    } catch (_) {
+                      activeEl.dispatchEvent(new Event("input", { bubbles: true }));
+                    }
+                  }
+                }
+              }
+            } catch (_) {}
+          }, delay);
+        })(delays[d]);
+      }
+    } catch (_) {}
+  }
+
   function blockClipboardEvent(ev) {
     if (!clipboardPolicyApplies()) return;
     if (document.getElementById("yp-blur-curtain") || document.getElementById("yp-screenshot-shield")) {
@@ -274,46 +362,147 @@
       ev.stopImmediatePropagation();
       return;
     }
-    // Only intercept PASTE events (prevent exfiltration into AI input boxes).
-    // Allow COPY so users can seamlessly copy AI answers and code snippets without errors.
-    var isPaste = ev.type && ev.type.indexOf("paste") >= 0;
-    if (!isPaste) return;
+    var type = (ev.type || "").toLowerCase();
+    var isPaste = type.indexOf("paste") >= 0;
+    var isCopy = type.indexOf("copy") >= 0 || type.indexOf("cut") >= 0;
+    if (!isPaste && !isCopy) return;
 
-    if (ev.clipboardData) {
-      try { ev.clipboardData.clearData(); } catch (_) {}
+    if (isCopy && ev.clipboardData) {
+      try {
+        ev.clipboardData.clearData();
+        ev.clipboardData.setData("text/plain", "");
+        ev.clipboardData.setData("text/html", "");
+      } catch (_) {}
     }
+    try {
+      var sel = window.getSelection();
+      if (sel) sel.removeAllRanges();
+    } catch (_) {}
     ev.preventDefault();
     ev.stopPropagation();
     ev.stopImmediatePropagation();
-    showClipboardBlockedNotice();
-    recordIsolatedGovernanceLog("--copy paste [CLIPBOARD PASTE]", "Clipboard Policy");
+    if (isPaste) {
+      enforceActiveElementRollback();
+    }
+    if (!document.getElementById("yp-raksha-alert-card")) {
+      if (isCopy) {
+        showClipboardBlockedNotice("Clipboard Copy Restricted", cleanNoticeMessage(clipboardPolicy.message, "Clipboard copying from this AI tool is restricted by corporate security policy."));
+      } else {
+        showClipboardBlockedNotice("Clipboard Paste Restricted", cleanNoticeMessage(clipboardPolicy.message, "Clipboard pasting into this AI tool is restricted by corporate security policy."));
+      }
+    }
+    var logPrompt = isCopy ? "--copy paste [CLIPBOARD COPY]" : "--copy paste [CLIPBOARD PASTE]";
+    recordIsolatedGovernanceLog(logPrompt, "Clipboard Policy");
+  }
+
+  function handleBeforeInputEvent(ev) {
+    if (!clipboardPolicyApplies()) return;
+    if (document.getElementById("yp-blur-curtain") || document.getElementById("yp-screenshot-shield")) return;
+    var inputType = (ev.inputType || "").toLowerCase();
+    var isPasteInput =
+      inputType === "insertfrompaste" ||
+      inputType === "insertfrompasteasquotation" ||
+      inputType === "insertreplacementtext" ||
+      inputType === "insertfromdrop" ||
+      inputType === "insertfromyank" ||
+      inputType.indexOf("paste") >= 0;
+
+    if (isPasteInput) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      ev.stopImmediatePropagation();
+      enforceActiveElementRollback();
+      if (!document.getElementById("yp-raksha-alert-card")) {
+        showClipboardBlockedNotice("Clipboard Paste Restricted", cleanNoticeMessage(clipboardPolicy.message, "Clipboard pasting into this AI tool is restricted by corporate security policy."));
+      }
+      recordIsolatedGovernanceLog("--copy paste [CLIPBOARD PASTE]", "Clipboard Policy");
+    }
   }
 
   function handleClipboardKeys(e) {
     if (!clipboardPolicyApplies()) return;
+    if (document.getElementById("yp-blur-curtain") || document.getElementById("yp-screenshot-shield")) return;
     var isCtrlOrMeta = e.ctrlKey || e.metaKey;
-    // Only intercept PASTE shortcuts (Ctrl+V, Shift+Insert).
-    // Allow COPY shortcuts (Ctrl+C, Ctrl+Insert) so copying is fast, smooth, and error-free.
     var isPaste = (isCtrlOrMeta && (e.key === "v" || e.key === "V" || e.code === "KeyV")) ||
                   (e.shiftKey && (e.key === "Insert" || e.code === "Insert"));
+    var isCopy = (isCtrlOrMeta && (e.key === "c" || e.key === "C" || e.code === "KeyC" || e.key === "x" || e.key === "X" || e.code === "KeyX")) ||
+                 (isCtrlOrMeta && (e.key === "Insert" || e.code === "Insert"));
 
-    if (isPaste) {
+    if (isPaste || isCopy) {
       try {
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
       } catch (_) {}
-      showClipboardBlockedNotice();
-      recordIsolatedGovernanceLog("--copy paste [CLIPBOARD PASTE KEY]", "Clipboard Policy");
+      if (isPaste) {
+        enforceActiveElementRollback();
+      }
+      if (!document.getElementById("yp-raksha-alert-card")) {
+        if (isCopy) {
+          showClipboardBlockedNotice("Clipboard Copy Restricted", cleanNoticeMessage(clipboardPolicy.message, "Clipboard copying from this AI tool is restricted by corporate security policy."));
+        } else {
+          showClipboardBlockedNotice("Clipboard Paste Restricted", cleanNoticeMessage(clipboardPolicy.message, "Clipboard pasting into this AI tool is restricted by corporate security policy."));
+        }
+      }
+      var logPrompt = isCopy ? "--copy paste [CLIPBOARD COPY KEY]" : "--copy paste [CLIPBOARD PASTE KEY]";
+      recordIsolatedGovernanceLog(logPrompt, "Clipboard Policy");
     }
   }
 
-  ["paste", "beforepaste"].forEach(function (type) {
+  ["paste", "beforepaste", "copy", "beforecopy", "cut", "beforecut"].forEach(function (type) {
     window.addEventListener(type, blockClipboardEvent, true);
     document.addEventListener(type, blockClipboardEvent, true);
   });
+  window.addEventListener("beforeinput", handleBeforeInputEvent, true);
+  document.addEventListener("beforeinput", handleBeforeInputEvent, true);
   window.addEventListener("keydown", handleClipboardKeys, true);
   document.addEventListener("keydown", handleClipboardKeys, true);
+
+  // Intercept clicks on AI "Copy" and "Copy code" buttons in isolated world
+  document.addEventListener("click", function (ev) {
+    if (!clipboardPolicyApplies()) return;
+    var target = (ev.composedPath && ev.composedPath()[0]) || ev.target;
+    var el = (target && target.closest) ? target.closest("button, [role='button'], a, [data-tooltip], [data-testid]") : null;
+    if (!el) return;
+    var aria = (el.getAttribute("aria-label") || "").toLowerCase();
+    var title = (el.getAttribute("title") || "").toLowerCase();
+    var testid = (el.getAttribute("data-testid") || "").toLowerCase();
+    var tooltip = (el.getAttribute("data-tooltip") || el.getAttribute("data-tooltip-id") || el.getAttribute("mattooltip") || "").toLowerCase();
+    var biId = (el.getAttribute("data-bi-id") || "").toLowerCase();
+    var text = (el.innerText || el.textContent || "").toLowerCase().trim();
+    var hasCopySvg = !!(el.querySelector && el.querySelector("svg[class*='copy' i], svg[aria-label*='copy' i], [class*='copy-icon' i], [class*='icon-copy' i]"));
+    var isCopyBtn =
+      aria.includes("copy") ||
+      title.includes("copy") ||
+      testid.includes("copy") ||
+      tooltip.includes("copy") ||
+      biId.includes("copy") ||
+      hasCopySvg ||
+      text === "copy" ||
+      text === "copy code" ||
+      text === "copy text" ||
+      text === "copy response" ||
+      text === "copy prompt" ||
+      text === "copy to clipboard";
+    if (isCopyBtn) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      ev.stopImmediatePropagation();
+      try {
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+          navigator.clipboard.writeText("").catch(function () {});
+        }
+      } catch (_) {}
+      try {
+        var sel = window.getSelection();
+        if (sel) sel.removeAllRanges();
+      } catch (_) {}
+      if (!document.getElementById("yp-raksha-alert-card")) {
+        showClipboardBlockedNotice("Clipboard Copy Restricted", cleanNoticeMessage(clipboardPolicy.message, "Clipboard copying from this AI tool is restricted by corporate security policy."));
+      }
+      recordIsolatedGovernanceLog("--copy paste [CLIPBOARD COPY BUTTON]", "Clipboard Policy");
+    }
+  }, true);
 
   function applyClipboardPolicyState(state) {
     state = state || {};
@@ -328,6 +517,35 @@
     };
     applyScreenshotPolicyState(state);
     applyDragDropPolicyState(state);
+    applyCorporatePolicyState(state);
+  }
+
+  var corporatePolicy = { enabled: false, targetSites: "", emailDomains: "", blockMessage: "", monitoredSites: [] };
+  function corporatePolicyApplies() {
+    if (!corporatePolicy.enabled) return false;
+    if (isServerHost(location.hostname)) return false;
+    var raw = String(corporatePolicy.targetSites || "").trim();
+    if (raw && raw.toLowerCase() !== "all" && raw !== "*") {
+      return hostInConfiguredSites(location.hostname, raw);
+    }
+    var monitoredSites = corporatePolicy.monitoredSites || monitoredSitesForPolicy;
+    if (Array.isArray(monitoredSites) && monitoredSites.length > 0) {
+      return hostMatches(location.hostname, monitoredSites);
+    }
+    return true;
+  }
+
+  function applyCorporatePolicyState(state) {
+    state = state || {};
+    corporatePolicy = {
+      enabled: typeof state.enforce_corporate_domains === "boolean" ? state.enforce_corporate_domains : corporatePolicy.enabled,
+      targetSites: typeof state.corporate_target_websites === "string" ? state.corporate_target_websites : corporatePolicy.targetSites,
+      emailDomains: typeof state.corporate_email_domains === "string" ? state.corporate_email_domains : corporatePolicy.emailDomains,
+      blockMessage: typeof state.corporate_block_message === "string"
+        ? state.corporate_block_message
+        : (typeof state.governance_block_message === "string" ? state.governance_block_message : corporatePolicy.blockMessage),
+      monitoredSites: monitoredSitesForPolicy
+    };
   }
 
   var dragDropPolicy = { enabled: false, targetSites: "", message: "", monitoredSites: [] };
@@ -335,14 +553,15 @@
     if (!dragDropPolicy.enabled) return false;
     if (isServerHost(location.hostname)) return false;
     var raw = String(dragDropPolicy.targetSites || "").trim();
-    if (raw && raw.toLowerCase() !== "all" && raw !== "*") {
-      return hostInConfiguredSites(location.hostname, raw);
+    if (!raw || raw.toLowerCase() === "none") return false;
+    if (raw.toUpperCase() === "ALL" || raw === "*") {
+      var monitoredSites = dragDropPolicy.monitoredSites || monitoredSitesForPolicy;
+      if (Array.isArray(monitoredSites) && monitoredSites.length > 0) {
+        return hostMatches(location.hostname, monitoredSites);
+      }
+      return true;
     }
-    var monitoredSites = dragDropPolicy.monitoredSites || monitoredSitesForPolicy;
-    if (Array.isArray(monitoredSites) && monitoredSites.length > 0) {
-      return hostMatches(location.hostname, monitoredSites);
-    }
-    return true;
+    return hostInConfiguredSites(location.hostname, raw);
   }
 
   function applyDragDropPolicyState(state) {
@@ -360,53 +579,88 @@
   var dragDropNoticeAt = 0;
   function showDragDropBlockedNotice() {
     var now = Date.now();
-    if (now - dragDropNoticeAt < 1200) return;
+    if (now - dragDropNoticeAt < 1000) return;
     dragDropNoticeAt = now;
-    if (document.getElementById("yp-raksha-alert-card")) return;
+    if (document.getElementById("yp-raksha-alert-card") || document.getElementById("yp-screenshot-shield") || document.getElementById("yp-blur-curtain")) return;
     try {
-      var host = document.getElementById("yp-raksha-isolated-dragdrop-notice");
-      if (!host) {
-        host = document.createElement("div");
-        host.id = "yp-raksha-isolated-dragdrop-notice";
-        var shadow = host.attachShadow ? host.attachShadow({ mode: "closed" }) : host;
-        var box = document.createElement("div");
-        box.textContent = dragDropPolicy.message || "Drag and drop restricted";
-        box.style.cssText = "position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:2147483647;background:#7f1d1d;color:white;padding:10px 22px;border-radius:10px;font:600 13px Segoe UI,Arial,sans-serif;box-shadow:0 8px 28px #0008;max-width:80vw;text-align:center;transition:opacity 0.2s ease;";
-        shadow.appendChild(box);
-        (document.documentElement || document).appendChild(host);
-        setTimeout(function () {
-          try {
-            box.style.opacity = "0";
-            setTimeout(function () { try { host.remove(); } catch (_) {} }, 200);
-          } catch (e) {}
-        }, 1000);
-      }
+      var old = document.getElementById("yp-raksha-isolated-dragdrop-notice");
+      if (old) old.remove();
+      var host = document.createElement("div");
+      host.id = "yp-raksha-isolated-dragdrop-notice";
+      var shadow = host.attachShadow ? host.attachShadow({ mode: "closed" }) : host;
+      var box = document.createElement("div");
+      box.style.cssText =
+        "position:fixed;bottom:95px;left:50%;transform:translateX(-50%);max-width:460px;width:fit-content;min-width:280px;" +
+        "z-index:2147483647;background:rgba(15,23,42,0.96);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);" +
+        "color:#f9fafb;border:1px solid #ef4444;border-radius:12px;padding:9px 14px;box-shadow:0 10px 30px rgba(0,0,0,0.5);" +
+        "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;transition:opacity 0.2s ease;pointer-events:none;";
+      var bodyMsg = cleanNoticeMessage(dragDropPolicy.message, "File drag and drop is restricted by corporate security policy.");
+      box.innerHTML =
+        '<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">' +
+          '<span style="font-size:13px;line-height:1;">🛡️</span>' +
+          '<strong style="font-size:11px;font-weight:700;letter-spacing:0.03em;text-transform:uppercase;color:#f87171;">Drag & Drop Restricted</strong>' +
+        '</div>' +
+        '<div style="font-size:12.5px;line-height:1.4;color:#e2e8f0;font-weight:400;">' +
+          bodyMsg +
+        '</div>';
+      shadow.appendChild(box);
+      (document.documentElement || document).appendChild(host);
+      setTimeout(function () {
+        try {
+          box.style.opacity = "0";
+          setTimeout(function () { try { host.remove(); } catch (_) {} }, 150);
+        } catch (e) {}
+      }, 1000);
     } catch (e) {}
   }
 
   function blockDragDropEvent(ev) {
     if (!dragDropPolicyApplies()) return;
+    var dt = ev.dataTransfer;
+    var hasFiles = dt && dt.files && dt.files.length > 0;
+    var hasItems = dt && dt.items && dt.items.length > 0;
     var droppedSummary = "";
-    if (ev.dataTransfer) {
-      if (ev.dataTransfer.files && ev.dataTransfer.files.length) {
-        var names = [];
-        for (var i = 0; i < ev.dataTransfer.files.length; i++) names.push(ev.dataTransfer.files[i].name);
+    if (dt) {
+      var names = [];
+      if (dt.files && dt.files.length > 0) {
+        for (var i = 0; i < dt.files.length; i++) {
+          if (dt.files[i] && dt.files[i].name) names.push(dt.files[i].name);
+        }
+      }
+      if (!names.length && dt.items && dt.items.length > 0) {
+        for (var j = 0; j < dt.items.length; j++) {
+          var item = dt.items[j];
+          if (item && item.kind === "file") {
+            try {
+              var f = typeof item.getAsFile === "function" ? item.getAsFile() : null;
+              if (f && f.name) names.push(f.name);
+            } catch (_) {}
+          }
+        }
+      }
+      if (names.length) {
         droppedSummary = "Files: " + names.join(", ");
       } else {
         try {
-          var t = ev.dataTransfer.getData("text/plain");
+          var t = dt.getData("text/plain") || dt.getData("text/uri-list");
           if (t) droppedSummary = "Text: " + t.trim().slice(0, 300);
         } catch (_) {}
       }
-      ev.dataTransfer.dropEffect = "none";
-      try { ev.dataTransfer.clearData(); } catch (_) {}
+    }
+    if (!hasFiles && !hasItems && !droppedSummary && ev.type !== "drop") return;
+    if (dt) {
+      dt.dropEffect = "none";
+      try { dt.clearData(); } catch (_) {}
     }
     ev.preventDefault();
     ev.stopPropagation();
     ev.stopImmediatePropagation();
     if (ev.type === "drop") {
-      showDragDropBlockedNotice();
-      recordIsolatedGovernanceLog("--drag drop [DRAG & DROP BLOCKED]" + (droppedSummary ? " " + droppedSummary : ""), "Drag & Drop Policy");
+      if (!document.getElementById("yp-raksha-alert-card")) {
+        showDragDropBlockedNotice();
+      }
+      var sum = droppedSummary || (hasFiles ? "Files" : (hasItems ? "Items" : "Data"));
+      recordIsolatedGovernanceLog("--drag drop [DRAG & DROP BLOCKED] " + sum, "Drag & Drop Policy");
     }
   }
 
@@ -420,14 +674,15 @@
     if (!screenshotPolicy.enabled) return false;
     if (isServerHost(location.hostname)) return false;
     var raw = String(screenshotPolicy.targetSites || "").trim();
-    if (raw && raw.toLowerCase() !== "all" && raw !== "*") {
-      return hostInConfiguredSites(location.hostname, raw);
+    if (!raw || raw.toLowerCase() === "none") return false;
+    if (raw.toUpperCase() === "ALL" || raw === "*") {
+      var monitoredSites = screenshotPolicy.monitoredSites || monitoredSitesForPolicy;
+      if (Array.isArray(monitoredSites) && monitoredSites.length > 0) {
+        return hostMatches(location.hostname, monitoredSites);
+      }
+      return true;
     }
-    var monitoredSites = screenshotPolicy.monitoredSites || monitoredSitesForPolicy;
-    if (Array.isArray(monitoredSites) && monitoredSites.length > 0) {
-      return hostMatches(location.hostname, monitoredSites);
-    }
-    return true;
+    return hostInConfiguredSites(location.hostname, raw);
   }
 
   function applyScreenshotPolicyState(state) {
@@ -442,8 +697,26 @@
     };
   }
 
+  function dismissAllClipboardNotices() {
+    _lastClipboardBlockLoggedAt = Date.now();
+    _lastDragDropBlockLoggedAt = Date.now();
+    try {
+      var oldBubble = document.getElementById("yp-raksha-alert-card");
+      if (oldBubble) oldBubble.remove();
+    } catch (_) {}
+    try {
+      var clipNotice = document.getElementById("yp-raksha-isolated-clipboard-notice");
+      if (clipNotice) clipNotice.remove();
+    } catch (_) {}
+    try {
+      var dragNotice = document.getElementById("yp-raksha-isolated-dragdrop-notice");
+      if (dragNotice) dragNotice.remove();
+    } catch (_) {}
+  }
+
   function applyIsolatedCurtain() {
     if (!screenshotPolicyApplies()) return;
+    dismissAllClipboardNotices();
     var curtain = document.getElementById("yp-blur-curtain");
     if (!curtain) {
       curtain = document.createElement("div");
@@ -474,15 +747,14 @@
     var isPrint = (e.ctrlKey || e.metaKey) && (e.key === "p" || e.key === "P" || e.code === "KeyP");
 
     if (isPrtScn || isWinShiftS || isMacCapture || isPrint) {
+      dismissAllClipboardNotices();
       try {
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
       } catch (_) {}
-      // NOTE: Do NOT call navigator.clipboard.writeText("") here.
-      // Doing so fires a clipboard event which triggers the clipboard
-      // blocked banner simultaneously with the screenshot curtain.
       applyIsolatedCurtain();
+      recordIsolatedGovernanceLog("--screenshot [SCREEN CAPTURE RESTRICTED] Capture Shortcut Detected", "Screen Capture Policy");
       setTimeout(removeIsolatedCurtain, 2500);
     }
   }
@@ -498,7 +770,13 @@
   }, true);
 
   if (chrome.storage && chrome.storage.local) {
-    chrome.storage.local.get(["cached_sites", "block_clipboard", "clipboard_target_websites", "clipboard_block_message", "governance_block_message", "block_screenshot", "screenshot_target_websites", "screenshot_block_message"], applyClipboardPolicyState);
+    chrome.storage.local.get([
+      "cached_sites", "block_clipboard", "clipboard_target_websites", "clipboard_block_message", "governance_block_message",
+      "block_screenshot", "screenshot_target_websites", "screenshot_block_message",
+      "block_drag_drop", "drag_drop_target_websites", "drag_drop_block_message",
+      "enforce_corporate_domains", "corporate_email_domains", "allowed_workspace_ids", "corporate_target_websites", "corporate_block_message",
+      "governance_target_websites"
+    ], applyClipboardPolicyState);
   }
 
   // Accurate client-side browser detector across Chrome, Edge, Safari, Firefox, Brave, Opera, Vivaldi
@@ -562,7 +840,9 @@
   var CLIPBOARD_KEYS = [
     "cached_sites", "block_clipboard", "clipboard_target_websites", "clipboard_block_message", "governance_block_message",
     "block_screenshot", "screenshot_target_websites", "screenshot_block_message",
-    "block_drag_drop", "drag_drop_target_websites", "drag_drop_block_message"
+    "block_drag_drop", "drag_drop_target_websites", "drag_drop_block_message",
+    "enforce_corporate_domains", "corporate_email_domains", "allowed_workspace_ids", "corporate_target_websites", "corporate_block_message",
+    "governance_target_websites"
   ];
 
   var armedHere = false;
@@ -580,7 +860,11 @@
     };
     POLICY_KEYS.forEach(function (key) {
       if (key === "cached_rules" || key === "cached_exts" || key === "file_extension_mode") return;
-      msg[key] = key.indexOf("block_") === 0 && key.slice(-8) !== "_message" ? Boolean(res[key]) : (res[key] || "");
+      if (key === "enforce_corporate_domains" || (key.indexOf("block_") === 0 && key.slice(-8) !== "_message")) {
+        msg[key] = Boolean(res[key]);
+      } else {
+        msg[key] = res[key] || "";
+      }
     });
     return msg;
   }
@@ -619,7 +903,7 @@
       return;
     }
     var sites = Array.isArray(state.cached_sites) ? state.cached_sites : [];
-    var isTarget = hostMatches(location.hostname, sites) || clipboardPolicyApplies() || dragDropPolicyApplies() || screenshotPolicyApplies();
+    var isTarget = hostMatches(location.hostname, sites) || clipboardPolicyApplies() || dragDropPolicyApplies() || screenshotPolicyApplies() || corporatePolicyApplies();
     if (!isTarget) {
       // Not a Target Website or Governance Policy site: stay passive.
       disarmPage();
@@ -796,9 +1080,41 @@
       (Array.isArray(msg.files) && msg.files.length) ||
       (Array.isArray(msg.upload_images) && msg.upload_images.length)
     );
-    if (!base || !hasContent) {
+    if (!hasContent) {
       window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "decision", id: msg.id, decision: { blocked: false, passthrough: true } }, "*");
       return;
+    }
+
+    if (msg.id && (
+      String(msg.id).indexOf("paste_block_") === 0 ||
+      String(msg.id).indexOf("paste_beforeinput_") === 0 ||
+      String(msg.id).indexOf("paste_api_block_") === 0 ||
+      String(msg.id).indexOf("clip_key_block_") === 0 ||
+      String(msg.id).indexOf("copy_block_") === 0 ||
+      String(msg.id).indexOf("copy_btn_block_") === 0 ||
+      String(msg.id).indexOf("copy_api_block_") === 0
+    )) {
+      var nowClip = Date.now();
+      if (nowClip - _lastClipboardBlockLoggedAt < 2000) {
+        return;
+      }
+      _lastClipboardBlockLoggedAt = nowClip;
+    }
+
+    if (msg.id && (String(msg.id).indexOf("drag_block_") === 0 || String(msg.id).indexOf("upload_drop_block_") === 0)) {
+      var nowDrag = Date.now();
+      if (nowDrag - _lastDragDropBlockLoggedAt < 2000) {
+        return;
+      }
+      _lastDragDropBlockLoggedAt = nowDrag;
+    }
+
+    if (msg.id && String(msg.id).indexOf("screenshot_block_") === 0) {
+      var nowSs = Date.now();
+      if (nowSs - _lastScreenshotBlockLoggedAt < 2000) {
+        return;
+      }
+      _lastScreenshotBlockLoggedAt = nowSs;
     }
 
     var checkPayload = {
@@ -831,32 +1147,50 @@
     var reqHost = msg.host || location.hostname;
     function doCheck() {
       withBase(function () {
-        fetch(base + "/extension/check", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "X-Browser-Guard-Extension": "1" },
-          body: JSON.stringify(checkPayload)
-        })
-          .then(function (r) { return r.json(); })
-          .then(function (decision) {
-            var dec = decision || { blocked: false };
-            // Save EXE evaluation decision into chrome.storage.local
-            if (chrome.storage && chrome.storage.local) {
-              chrome.storage.local.set({
-                last_decision: {
-                  timestamp: Date.now(),
-                  host: checkPayload.host,
-                  blocked: Boolean(dec.blocked),
-                  action: dec.action || (dec.blocked ? "Blocked" : "Allowed"),
-                  rule: dec.rule || "",
-                  message: dec.message || ""
-                }
-              });
-            }
-            window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "decision", id: msg.id, decision: dec }, "*");
+        if (base) {
+          fetch(base + "/extension/check", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "X-Browser-Guard-Extension": "1" },
+            body: JSON.stringify(checkPayload)
           })
-          .catch(function () {
-            window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "decision", id: msg.id, decision: { blocked: false, passthrough: true } }, "*");
-          });
+            .then(function (r) { return r.json(); })
+            .then(function (decision) {
+              var dec = decision || { blocked: false };
+              // Save EXE evaluation decision into chrome.storage.local
+              if (chrome.storage && chrome.storage.local) {
+                chrome.storage.local.set({
+                  last_decision: {
+                    timestamp: Date.now(),
+                    host: checkPayload.host,
+                    blocked: Boolean(dec.blocked),
+                    action: dec.action || (dec.blocked ? "Blocked" : "Allowed"),
+                    rule: dec.rule || "",
+                    message: dec.message || ""
+                  }
+                });
+              }
+              window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "decision", id: msg.id, decision: dec }, "*");
+            })
+            .catch(function () {
+              if (serverHost) {
+                fetch("https://" + serverHost + "/api/browser-ai/intercept", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(checkPayload)
+                }).catch(function () {});
+              }
+              window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "decision", id: msg.id, decision: { blocked: false, passthrough: true } }, "*");
+            });
+        } else if (serverHost) {
+          fetch("https://" + serverHost + "/api/browser-ai/intercept", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(checkPayload)
+          }).catch(function () {});
+          window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "decision", id: msg.id, decision: { blocked: false, passthrough: true } }, "*");
+        } else {
+          window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "decision", id: msg.id, decision: { blocked: false, passthrough: true } }, "*");
+        }
       });
     }
 

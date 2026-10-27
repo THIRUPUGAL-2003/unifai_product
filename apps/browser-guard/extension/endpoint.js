@@ -1,3 +1,3 @@
-/* Build-time endpoint values are generated from the root .env. */
+/* Auto-synchronized from root .env by sync_all_from_env.py */
 var GATEWAY_GUARD_BASE = "http://127.0.0.1:18195";
-var GATEWAY_SERVER_HOST = "";
+var GATEWAY_SERVER_HOST = "localhost";

@@ -890,8 +890,8 @@ def _record_extension_eval(host: str, prompt: str, files: list | None = None, pl
 
         with _RECENT_EXTENSION_EVALS_LOCK:
             global _RECENT_EXTENSION_EVALS
-            # Prune entries older than 30 seconds
-            _RECENT_EXTENSION_EVALS = [e for e in _RECENT_EXTENSION_EVALS if now - float(e.get("time") or 0) < 30]
+            # Prune entries older than 60 seconds
+            _RECENT_EXTENSION_EVALS = [e for e in _RECENT_EXTENSION_EVALS if now - float(e.get("time") or 0) < 60]
             for h in hosts_to_record:
                 entry = {
                     "host": h,
@@ -953,7 +953,7 @@ def _post_intercept_file(
 ) -> bool:
     """Post single file upload to /api/browser-ai/intercept-file so backend stores attachment and activates View."""
     dedupe_key = f"{platform}|{file_name}|{len(file_payload)}|{prompt[:100]}"
-    if _is_duplicate_file_post(dedupe_key, ttl=15.0):
+    if _is_duplicate_file_post(dedupe_key, ttl=30.0):
         print(f"[agent_extension] Skipping duplicate file post for {file_name}")
         return True
     try:
@@ -1093,11 +1093,47 @@ def check_prompt(
 
     prompt = re.sub(r'[\u200B-\u200F\uFEFF\u202A-\u202E\u2060-\u206F]', '', prompt or '').replace('\u00A0', ' ').strip()
     text = prompt
-    files_list = files if isinstance(files, list) else []
+    raw_files_list = files if isinstance(files, list) else []
     images_list = upload_images if isinstance(upload_images, list) else []
+
+    # Clean and deduplicate files_list, ignoring truncated DOM artifacts (containing "..." or ellipsis)
+    cleaned_files = []
+    seen_fnames = set()
+    for f in raw_files_list:
+        fn = (f.get("name") if isinstance(f, dict) else str(f)).strip()
+        if not fn:
+            continue
+        fn_lower = fn.lower()
+        if fn_lower in seen_fnames or "..." in fn or "\u2026" in fn:
+            continue
+        seen_fnames.add(fn_lower)
+        cleaned_files.append(f)
+    files_list = cleaned_files
+
+    # Instant check deduplication for identical requests within 10 seconds (bypass for explicit governance actions)
+    is_governance_action = bool(
+        prompt.startswith("--drag drop")
+        or prompt.startswith("--copy paste")
+        or prompt.startswith("--download")
+        or prompt.startswith("--screenshot")
+        or prompt.startswith("--corporate account")
+        or "[screenshot" in prompt.lower()
+        or "[screen capture" in prompt.lower()
+        or is_blocked
+    )
+    file_sig = ",".join(sorted(seen_fnames))
+    prompt_req_key = f"{clean_h}|{file_sig}|{prompt[:150]}"
+    now_ts = time.time()
+    if not is_governance_action:
+        with _RECENT_FILE_POSTS_LOCK:
+            cached_dec = _RECENT_FILE_POSTS.get("decision|" + prompt_req_key)
+            cached_ts = _RECENT_FILE_POSTS.get("ts|" + prompt_req_key, 0)
+            if cached_dec and (now_ts - cached_ts < 10.0):
+                return dict(cached_dec)
 
     file_names = []
     file_extracted_texts = []
+    file_text_map = {}
     for f in files_list:
         if isinstance(f, dict):
             fname = str(f.get("name") or "").strip()
@@ -1182,12 +1218,12 @@ def check_prompt(
                         else:
                             extracted = extra_str
 
-            if extracted:
-                f["extracted_text"] = extracted
-                file_extracted_texts.append(extracted)
-            elif ftext:
-                f["extracted_text"] = ftext
-                file_extracted_texts.append(ftext)
+            f_content = extracted or ftext or ""
+            if f_content:
+                f["extracted_text"] = f_content
+                file_extracted_texts.append(f_content)
+                if fname:
+                    file_text_map[fname] = f_content
 
             if ftext and len(ftext.strip()) > 0:
                 text += f"\n[File: {fname}]\n" + ftext[:50000]
@@ -1245,17 +1281,33 @@ def check_prompt(
     if file_names and not text.strip():
         text = f"[FILE UPLOAD] {', '.join(file_names)}"
 
-    # Instant in-memory DLP regex match on prompt + extracted file text
-    if text and not is_blocked:
+    violating_files = []
+    prompt_violated = False
+    block_message = ""
+    raw_prompt_text = (prompt or "").strip()
+
+    # Instant in-memory DLP regex match on prompt and individual files
+    if (text or file_text_map) and not is_blocked:
         try:
             p_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "proxy"))
             if p_dir not in sys.path:
                 sys.path.insert(0, p_dir)
             import browser_ai_proxy
-            m_matched, m_rule, m_act = getattr(browser_ai_proxy, "match_guard_rules_on_text", lambda *a: (False, "", ""))(text)
-            if m_matched and m_act.upper() in ("BLOCK", "BLOCKED"):
-                is_blocked = True
-                rule = m_rule
+            if raw_prompt_text:
+                m_matched, m_rule, m_act = getattr(browser_ai_proxy, "match_guard_rules_on_text", lambda *a: (False, "", ""))(raw_prompt_text)
+                if m_matched and m_act.upper() in ("BLOCK", "BLOCKED"):
+                    is_blocked = True
+                    rule = m_rule
+                    prompt_violated = True
+            for fn, fcontent in file_text_map.items():
+                if fcontent:
+                    fm_matched, fm_rule, fm_act = getattr(browser_ai_proxy, "match_guard_rules_on_text", lambda *a: (False, "", ""))(fcontent)
+                    if fm_matched and fm_act.upper() in ("BLOCK", "BLOCKED"):
+                        is_blocked = True
+                        if not rule:
+                            rule = fm_rule
+                        if fn not in violating_files:
+                            violating_files.append(fn)
         except Exception:
             pass
 
@@ -1265,14 +1317,41 @@ def check_prompt(
                 if pat:
                     try:
                         rx = _compile_rule_pattern(pat)
-                        if rx.search(text):
+                        p_match = bool(raw_prompt_text and rx.search(raw_prompt_text))
+                        f_matches = []
+                        for fn, fcontent in file_text_map.items():
+                            if fcontent and rx.search(fcontent):
+                                if fn not in f_matches:
+                                    f_matches.append(fn)
+                        if not p_match and not f_matches and rx.search(text):
+                            p_match = True
+
+                        if p_match or f_matches:
                             act = str(r.get("action") or "BLOCK").upper()
                             if act in ("BLOCK", "BLOCKED"):
                                 is_blocked = True
                                 rule = str(r.get("name") or "Security Policy")
+                                prompt_violated = p_match
+                                violating_files = f_matches
                                 break
                     except Exception:
                         pass
+
+    if is_blocked:
+        r_name = rule or "Restricted Content"
+        if violating_files and prompt_violated:
+            f_str = ", ".join(f"'{fn}'" for fn in violating_files)
+            block_message = f"Prompt and file(s) {f_str} contain restricted content ({r_name}). Request blocked by security policy."
+        elif violating_files:
+            if len(violating_files) == 1:
+                block_message = f"File '{violating_files[0]}' contains restricted content ({r_name}). Upload blocked by security policy."
+            else:
+                f_str = ", ".join(f"'{fn}'" for fn in violating_files)
+                block_message = f"Files {f_str} contain restricted content ({r_name}). Upload blocked by security policy."
+        elif prompt_violated:
+            block_message = f"Prompt contains restricted content ({r_name}). Request blocked by security policy."
+        else:
+            block_message = f"Blocked by security policy: {r_name}."
 
     if not text and not images_list and not files_list:
         return {"blocked": False, "message": "", "rule": ""}
@@ -1324,8 +1403,9 @@ def check_prompt(
             return {
                 "blocked": True,
                 "action": "Blocked",
-                "message": f"Blocked by security policy: {rule}" if rule else "Blocked by security policy.",
+                "message": block_message or (f"Blocked by security policy: {rule}" if rule else "Blocked by security policy."),
                 "rule": rule or "Data Loss Prevention Rule",
+                "violating_files": violating_files,
                 "redacted_prompt": "",
             }
         for r in dynamic_rules():
@@ -1333,16 +1413,34 @@ def check_prompt(
             if pat:
                 try:
                     rx = _compile_rule_pattern(pat)
-                    if rx.search(text):
+                    p_match = bool(raw_prompt_text and rx.search(raw_prompt_text))
+                    f_matches = []
+                    for fn, fcontent in file_text_map.items():
+                        if fcontent and rx.search(fcontent):
+                            if fn not in f_matches:
+                                f_matches.append(fn)
+                    if not p_match and not f_matches and rx.search(text):
+                        p_match = True
+
+                    if p_match or f_matches:
                         act = str(r.get("action") or "BLOCK").upper()
                         r_name = str(r.get("name") or "Security Policy")
-                        warn_msg = str(r.get("warning_message") or "")
+                        warn_msg = ""
+                        if f_matches and p_match:
+                            warn_msg = f"Prompt and file(s) {', '.join(repr(x) for x in f_matches)} contain restricted content ({r_name}). Request blocked by security policy."
+                        elif f_matches:
+                            if len(f_matches) == 1:
+                                warn_msg = f"File '{f_matches[0]}' contains restricted content ({r_name}). Upload blocked by security policy."
+                            else:
+                                warn_msg = f"Files {', '.join(repr(x) for x in f_matches)} contain restricted content ({r_name}). Upload blocked by security policy."
+                        elif p_match:
+                            warn_msg = f"Prompt contains restricted content ({r_name}). Request blocked by security policy."
                         if act in ("BLOCK", "BLOCKED"):
-                            return {"blocked": True, "action": "Blocked", "message": warn_msg or f"Blocked by {r_name}", "rule": r_name, "redacted_prompt": ""}
+                            return {"blocked": True, "action": "Blocked", "message": warn_msg or f"Blocked by {r_name}", "rule": r_name, "violating_files": f_matches, "redacted_prompt": ""}
                         if act in ("REDACT", "REDACTED"):
-                            return {"blocked": False, "action": "Redacted", "message": warn_msg or "Sensitive text redacted by YP-Raksha", "rule": r_name, "redacted_prompt": redact_prompt_text(text, r_name)}
+                            return {"blocked": False, "action": "Redacted", "message": warn_msg or "Sensitive text redacted by YP-Raksha", "rule": r_name, "violating_files": f_matches, "redacted_prompt": redact_prompt_text(text, r_name)}
                         if act in ("WARN", "WARNED", "ALERT"):
-                            return {"blocked": False, "action": "Warned", "message": warn_msg or "This request triggered a YP-Raksha warning", "rule": r_name, "redacted_prompt": ""}
+                            return {"blocked": False, "action": "Warned", "message": warn_msg or "This request triggered a YP-Raksha warning", "rule": r_name, "violating_files": f_matches, "redacted_prompt": ""}
                 except Exception:
                     pass
         return {"blocked": False, "passthrough": True, "action": "Allowed", "message": "", "rule": ""}
@@ -1373,77 +1471,140 @@ def check_prompt(
     if is_blocked:
         meta["is_blocked"] = True
         meta["blocked_reason"] = rule or "Client Security Rule"
+    if prompt.startswith("--drag drop") or "[drag" in prompt.lower():
+        meta["is_blocked"] = True
+        meta["blocked_reason"] = rule or "Drag & Drop Policy"
+        meta["status"] = "Blocked (Drag & Drop Restricted)"
+        is_blocked = True
+    elif prompt.startswith("--copy paste") or "[clipboard" in prompt.lower():
+        meta["is_blocked"] = True
+        is_copy = "copy" in prompt.lower() and "paste" not in prompt.lower()
+        if "[clipboard copy" in prompt.lower():
+            is_copy = True
+        elif "[clipboard paste" in prompt.lower():
+            is_copy = False
+        action_name = "Clipboard Copy Restricted" if is_copy else "Clipboard Paste Restricted"
+        meta["blocked_reason"] = action_name
+        meta["status"] = f"Blocked ({action_name})"
+        meta["predicted_category"] = "CLIPBOARD_GOVERNANCE"
+        rule = action_name
+        is_blocked = True
+    elif prompt.startswith("--screenshot") or "[screenshot" in prompt.lower() or "[screen capture" in prompt.lower():
+        meta["is_blocked"] = True
+        meta["blocked_reason"] = rule or "Screen Capture Policy"
+        meta["status"] = "Blocked (Screen Capture Restricted)"
+        is_blocked = True
+    elif prompt.startswith("--download") or "[download" in prompt.lower():
+        meta["is_blocked"] = True
+        meta["blocked_reason"] = rule or "Download Policy"
+        meta["status"] = "Blocked (Download Restricted)"
+        is_blocked = True
+    elif prompt.startswith("--corporate account") or "[unauthorized domain]" in prompt.lower() or "[corporate workspace" in prompt.lower():
+        meta["is_blocked"] = True
+        meta["blocked_reason"] = rule or "Unauthorized Personal Account"
+        meta["status"] = "Blocked (Unauthorized Personal Account)"
+        meta["predicted_category"] = "CORPORATE_WORKSPACE_BLOCKED"
+        rule = "Corporate AI Workspace Policy"
+        is_blocked = True
 
     _record_extension_eval(clean_host or host, user_caption or text, file_names, platform=platform, eval_id=eval_id)
 
-    # Multi-file support: If files are attached, post each file individually to /api/browser-ai/intercept-file
+    candidates = [GATEWAY_BACKEND_URL.rstrip("/")] if GATEWAY_BACKEND_URL else []
+    seen_bases = set()
+    unique_candidates = []
+    for b in candidates:
+        if b not in seen_bases:
+            seen_bases.add(b)
+            unique_candidates.append(b)
+
+    # Multi-file support: If files are attached, post EXACTLY ONE consolidated record to Prompt Logs
     if files_list:
-        total_files = len(files_list)
-        for idx, f in enumerate(files_list):
-            fname = ""
-            raw_b = b""
-            ctype = "application/octet-stream"
-            ftext = ""
+        unified_file_label = ", ".join(file_names) if file_names else "attachment"
+        unified_prompt = f"{unified_file_label} -- {user_caption}" if user_caption else f"[FILE UPLOAD] {unified_file_label}"
+
+        primary_file_bytes = b""
+        primary_content_type = "application/octet-stream"
+        for f in files_list:
             if isinstance(f, dict):
-                fname = str(f.get("name") or "").strip()
-                ctype = str(f.get("type") or "application/octet-stream").strip()
-                ftext = str(f.get("text") or "").strip()
                 fb64 = str(f.get("base64") or "").strip()
                 if fb64:
                     try:
                         import base64
-                        raw_b = base64.b64decode(fb64)
+                        primary_file_bytes = base64.b64decode(fb64)
+                        primary_content_type = str(f.get("type") or "application/octet-stream").strip()
+                        break
                     except Exception:
                         pass
-                elif ftext:
-                    raw_b = ftext.encode("utf-8")
-            elif isinstance(f, str) and f.strip():
-                fname = f.strip()
+                elif f.get("text"):
+                    primary_file_bytes = str(f["text"]).encode("utf-8")
+                    primary_content_type = str(f.get("type") or "text/plain").strip()
+                    break
 
-            if not fname:
-                fname = f"file_{idx+1}"
+        file_key = ",".join(file_names) if file_names else ""
+        prompt_dedupe_key = f"{platform}|{file_key}|{(user_caption or text)[:100]}"
 
-            file_label = f"{fname}({idx+1}/{total_files})" if total_files > 1 else fname
-            row_prompt = f"{file_label} -- {user_caption}" if user_caption else f"[FILE UPLOAD] {file_label}"
-
-            f_meta = dict(meta)
-            f_meta["file_name"] = fname
-            f_meta["user_caption"] = user_caption
-            f_meta["upload_scan"] = True
-            f_ext_text = ""
-            if isinstance(f, dict):
-                f_ext_text = str(f.get("extracted_text") or f.get("text") or "").strip()
-            if f_ext_text:
-                f_meta["extracted_text"] = f_ext_text[:100000]
-            if is_blocked:
-                f_meta["is_blocked"] = True
-                f_meta["blocked_reason"] = rule or "Client Security Rule"
-
-            # Post file attachment asynchronously in background thread so file is stored in backend
-            threading.Thread(
-                target=_post_intercept_file,
-                kwargs=dict(
-                    platform=platform,
-                    prompt=row_prompt,
-                    file_name=fname,
-                    content_type=ctype,
-                    file_payload=raw_b,
-                    metadata=f_meta,
-                    client_ip="127.0.0.1",
-                    agent_id=agent_id,
-                    agent_hostname=agent_hostname,
-                ),
-                daemon=True,
-            ).start()
+        if not _is_duplicate_file_post("prompt|" + prompt_dedupe_key, ttl=8.0):
+            if primary_file_bytes:
+                threading.Thread(
+                    target=_post_intercept_file,
+                    kwargs=dict(
+                        platform=platform,
+                        prompt=unified_prompt,
+                        file_name=unified_file_label,
+                        content_type=primary_content_type,
+                        file_payload=primary_file_bytes,
+                        metadata=meta,
+                        client_ip="127.0.0.1",
+                        agent_id=agent_id,
+                        agent_hostname=agent_hostname,
+                    ),
+                    daemon=True,
+                ).start()
+            else:
+                payload = {
+                    "platform": platform,
+                    "prompt": unified_prompt,
+                    "client_ip": "127.0.0.1",
+                    "agent_id": agent_id,
+                    "agent_hostname": agent_hostname,
+                    "upload_images": images_list[:5],
+                    "metadata": meta,
+                }
+                for base in unique_candidates:
+                    threading.Thread(
+                        target=_http_json,
+                        args=("POST", f"{base}/api/browser-ai/intercept", payload),
+                        kwargs=dict(timeout=5),
+                        daemon=True,
+                    ).start()
+                    break
 
         if is_blocked:
-            return {
+            res = {
                 "blocked": True,
                 "action": "Blocked",
-                "message": f"Blocked by security policy: {rule}" if rule else "Blocked by security policy.",
+                "message": block_message or (f"Blocked by security policy: {rule}" if rule else "Blocked by security policy."),
                 "rule": rule or "Data Loss Prevention Rule",
+                "violating_files": violating_files,
                 "redacted_prompt": "",
             }
+            with _RECENT_FILE_POSTS_LOCK:
+                _RECENT_FILE_POSTS["decision|" + prompt_req_key] = res
+                _RECENT_FILE_POSTS["ts|" + prompt_req_key] = time.time()
+            return res
+        else:
+            action_str = "Redacted" if is_redacted else ("Warned" if is_warned else "Allowed")
+            res = {
+                "blocked": False,
+                "action": action_str,
+                "message": "",
+                "rule": rule or "",
+                "redacted_prompt": redacted_text if is_redacted else "",
+            }
+            with _RECENT_FILE_POSTS_LOCK:
+                _RECENT_FILE_POSTS["decision|" + prompt_req_key] = res
+                _RECENT_FILE_POSTS["ts|" + prompt_req_key] = time.time()
+            return res
 
     if file_extracted_texts:
         meta["extracted_text"] = "\n\n".join(file_extracted_texts)[:100000]
@@ -1466,21 +1627,27 @@ def check_prompt(
             unique_candidates.append(b)
 
     if is_blocked:
-        for base in unique_candidates:
-            threading.Thread(
-                target=_http_json,
-                args=("POST", f"{base}/api/browser-ai/intercept", payload),
-                kwargs=dict(timeout=5),
-                daemon=True,
-            ).start()
-            break
-        return {
+        if not files_list:
+            for base in unique_candidates:
+                threading.Thread(
+                    target=_http_json,
+                    args=("POST", f"{base}/api/browser-ai/intercept", payload),
+                    kwargs=dict(timeout=5),
+                    daemon=True,
+                ).start()
+                break
+        res = {
             "blocked": True,
             "action": "Blocked",
-            "message": f"Blocked by security policy: {rule}" if rule else "Blocked by security policy.",
+            "message": block_message or (f"Blocked by security policy: {rule}" if rule else "Blocked by security policy."),
             "rule": rule or "Data Loss Prevention Rule",
+            "violating_files": violating_files,
             "redacted_prompt": "",
         }
+        with _RECENT_FILE_POSTS_LOCK:
+            _RECENT_FILE_POSTS["decision|" + prompt_req_key] = res
+            _RECENT_FILE_POSTS["ts|" + prompt_req_key] = time.time()
+        return res
 
     # Filter out noise prompts and internal RPC protobuf blobs
     t_clean = text.strip()
@@ -2407,8 +2574,21 @@ def authorize_ai_session(payload: dict) -> dict:
     page_url = str(payload.get("page_url") or "").lower()
     provider = str(payload.get("provider") or "").lower()
     if corp_targets and corp_targets not in ("all", "*"):
-        parts = [p.strip().replace("*.", "").replace(".", "") for p in corp_targets.replace(";", ",").split(",") if p.strip()]
-        matched_target = any(p in page_url or p == provider for p in parts)
+        from urllib.parse import urlparse
+        page_host = ""
+        try:
+            page_host = urlparse(page_url).hostname or ""
+        except Exception:
+            page_host = page_url
+        page_host = page_host.lower().replace("www.", "")
+        parts = [p.strip().lstrip("*.").strip().lower().replace("www.", "") for p in corp_targets.replace(";", ",").split(",") if p.strip()]
+        matched_target = False
+        for p in parts:
+            if not p:
+                continue
+            if p == provider or (page_host and (page_host == p or page_host.endswith("." + p) or p in page_host)):
+                matched_target = True
+                break
         if not matched_target:
             return {
                 "decision": "allow",
@@ -2475,6 +2655,7 @@ def record_extension_activity() -> None:
     global _last_extension_ping
     now = time.time()
     with _extension_status_lock:
+        was_off = (now - _last_extension_ping) > 25 if _last_extension_ping > 0 else True
         _last_extension_ping = now
     try:
         flag_file = os.path.join(data_dir(), "extension_uninstalled.flag")
@@ -2488,6 +2669,14 @@ def record_extension_activity() -> None:
             f.write(str(int(now)))
     except Exception:
         pass
+    if was_off:
+        try:
+            import threading
+            from agent_identity import get_or_create_agent_id
+            from agent_heartbeat import send_heartbeat
+            threading.Thread(target=lambda: send_heartbeat(get_or_create_agent_id()), daemon=True).start()
+        except Exception:
+            pass
 
 
 def mark_extension_uninstalled() -> None:
@@ -2507,18 +2696,80 @@ def mark_extension_uninstalled() -> None:
             f.write(str(int(time.time())))
     except Exception:
         pass
+    try:
+        import threading
+        from agent_identity import get_or_create_agent_id
+        from agent_heartbeat import send_heartbeat
+        threading.Thread(target=lambda: send_heartbeat(get_or_create_agent_id()), daemon=True).start()
+    except Exception:
+        pass
+
+
+def mark_extension_disconnected() -> None:
+    """Record that the browser extension was turned off or disconnected."""
+    global _last_extension_ping
+    with _extension_status_lock:
+        _last_extension_ping = 0.0
+    try:
+        seen_file = os.path.join(data_dir(), "extension_last_seen.txt")
+        with open(seen_file, "w", encoding="utf-8") as f:
+            f.write("off")
+    except Exception:
+        pass
+    try:
+        import threading
+        from agent_identity import get_or_create_agent_id
+        from agent_heartbeat import send_heartbeat
+        threading.Thread(target=lambda: send_heartbeat(get_or_create_agent_id()), daemon=True).start()
+    except Exception:
+        pass
+
+
+_last_reported_ext_status: str | None = None
+_watcher_thread_started = False
+
+
+def _ext_status_watcher_loop() -> None:
+    global _last_reported_ext_status
+    while True:
+        try:
+            time.sleep(3)
+            current = get_extension_status()
+            if _last_reported_ext_status is not None and current != _last_reported_ext_status:
+                _last_reported_ext_status = current
+                try:
+                    from agent_identity import get_or_create_agent_id
+                    from agent_heartbeat import send_heartbeat
+                    send_heartbeat(get_or_create_agent_id())
+                except Exception:
+                    pass
+            else:
+                _last_reported_ext_status = current
+        except Exception:
+            pass
+
+
+def ensure_status_watcher() -> None:
+    global _watcher_thread_started
+    if not _watcher_thread_started:
+        _watcher_thread_started = True
+        try:
+            t = threading.Thread(target=_ext_status_watcher_loop, daemon=True, name="ExtensionStatusWatcher")
+            t.start()
+        except Exception:
+            pass
 
 
 def get_extension_status() -> str:
     """Determine browser extension connection status for the agent heartbeat.
 
     Returns:
-      'connected': Extension actively polling/checking in (within last 90s).
-      'disconnected': Extension was active, but currently inactive or turned off (>90s).
+      'connected': Extension actively polling/checking in (within last 25s).
+      'off': Extension was connected before, but is now turned off or disconnected (>25s).
+      'installed': Extension / Guard agent installed on device, but not yet connected to browser.
       'uninstalled': Extension was uninstalled or removed by user.
-      'installed': Extension installed on machine (standby).
-      'not_installed': No extension activity or installation detected.
     """
+    ensure_status_watcher()
     global _last_extension_ping
     now = time.time()
     with _extension_status_lock:
@@ -2532,7 +2783,7 @@ def get_extension_status() -> str:
         pass
 
     # Check in-memory ping
-    if last > 0 and (now - last) <= 90:
+    if last > 0 and (now - last) <= 25:
         return "connected"
 
     # Check persisted last seen file
@@ -2541,35 +2792,26 @@ def get_extension_status() -> str:
         if os.path.isfile(seen_file):
             with open(seen_file, "r", encoding="utf-8") as f:
                 content = f.read().strip()
-                if content == "uninstalled":
-                    return "uninstalled"
+            if content == "uninstalled":
+                return "uninstalled"
+            if content in ("disconnected", "off", "disabled"):
+                return "off"
+            if content in ("installed", "install", "not_connected"):
+                return "installed"
+            try:
                 ts = float(content)
-                if (now - ts) <= 90:
+                if (now - ts) <= 25:
                     with _extension_status_lock:
                         _last_extension_ping = ts
                     return "connected"
-                # If seen within the last 7 days, it was connected but is now disconnected (turned off or browser closed)
-                if (now - ts) <= 7 * 86400:
-                    return "disconnected"
+                return "off"
+            except (ValueError, TypeError):
+                return "off"
     except Exception:
         pass
 
-    # Check enterprise policy or common unpacked extension presence
-    try:
-        ext_id = get_extension_id() if callable(globals().get("get_extension_id")) else ""
-        if ext_id and _machine_policy_installed(ext_id):
-            return "installed"
-    except Exception:
-        pass
+    return "installed"
 
-    try:
-        comm_dir = common_extension_dir() if callable(globals().get("common_extension_dir")) else ""
-        if comm_dir and os.path.isfile(os.path.join(comm_dir, "manifest.json")):
-            return "installed"
-    except Exception:
-        pass
-
-    return "not_installed"
 
 
 

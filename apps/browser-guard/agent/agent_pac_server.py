@@ -28,6 +28,8 @@ def html_escape(s: str) -> str:
 
 def _check_and_record_extension_activity(handler: object, path: str) -> None:
     try:
+        if path in ("/extension/uninstalled", "/extension/uninstall", "/extension/disconnected", "/extension/disabled"):
+            return
         headers = getattr(handler, "headers", None)
         get_hdr = getattr(headers, "get", None) if headers is not None else None
         if not callable(get_hdr):
@@ -120,6 +122,13 @@ class _PACRequestHandler(http.server.BaseHTTPRequestHandler):
             self._json(200, {"status": "ok", "synced": True})
             return
 
+        if path in ("/extension/disconnected", "/extension/disabled"):
+            from agent_extension import mark_extension_disconnected
+            mark_extension_disconnected()
+            print("[Gateway Guard] Browser extension disconnected notification received.")
+            self._json(200, {"status": "ok", "message": "extension disconnect recorded"})
+            return
+
         if path != "/extension/check":
             self.send_error(404)
             return
@@ -150,6 +159,12 @@ class _PACRequestHandler(http.server.BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         path = (self.path or "/").split("?", 1)[0]
         _check_and_record_extension_activity(self, path)
+        if path in ("/extension/disconnected", "/extension/disabled"):
+            from agent_extension import mark_extension_disconnected
+            mark_extension_disconnected()
+            print("[Gateway Guard] Browser extension disconnected notification received.")
+            self._json(200, {"status": "ok", "message": "extension disconnect recorded"})
+            return
         if path in ("/extension/uninstalled", "/extension/uninstall"):
             from agent_extension import mark_extension_uninstalled
             mark_extension_uninstalled()

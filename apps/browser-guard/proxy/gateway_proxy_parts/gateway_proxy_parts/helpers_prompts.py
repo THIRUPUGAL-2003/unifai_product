@@ -178,6 +178,11 @@ def _signalr_control_frame(obj) -> bool:
     keys = {str(k).lower() for k in obj.keys()}
     if keys <= {"protocol", "version"}:
         return True
+    if any(k in keys for k in ("action", "ic3product", "useglobalendpoint")):
+        return True
+    act = str(obj.get("action") or "").lower()
+    if act in ("getuserproperties", "getmigrationstatus", "getispicassouser", "ispicassouser") or act.startswith(("get", "set", "update", "log", "report")):
+        return True
     target = str(obj.get("target") or "").lower()
     if target in (
         "metrics", "ping", "pong", "attachtosession", "challengeproof",
@@ -258,6 +263,11 @@ def is_event_sync_noise_content(content: str) -> bool:
         '"event":"typing"', '"event": "typing"',
         '"event":"ping"', '"event": "ping"',
         '"messagetype":"internal"', '"messagetype": "internal"',
+        '"action":"getuserproperties"', '"action": "getuserproperties"',
+        '"action":"getmigrationstatus"', '"action": "getmigrationstatus"',
+        '"action":"getispicassouser"', '"action": "getispicassouser"',
+        'getuserproperties', 'getmigrationstatus', 'getispicassouser',
+        'ic3product', 'copilotconsumer', 'useglobalendpoint',
     )):
         frames = _signalr_dicts(content)
         if frames and any(_signalr_user_frame(f) for f in frames):
@@ -597,9 +607,18 @@ def looks_like_user_prompt(text: str) -> bool:
     if (
         t.startswith(("[null,", '[[["', "[[[", "[[null,", '["[["', '["[', '["contrib', '["/contrib'))
         or "f.req=" in t
+        or "/contrib_service" in t
+        or "contrib_service" in t
+        or "/contrib/" in t
         or "/contrib service" in t
         or (t.startswith('{"type":"action"') and "_dd" in t)
         or (t.startswith("{") and '"_dd":' in t)
+        or (t.startswith("{") and any(k in t for k in ('"action":', '"action" :', '"target":', '"ic3Product"', '"useGlobalEndpoint"', '"getUserProperties"', '"getMigrationStatus"', '"getIsPicassoUser"')))
+        or "ic3Product" in t
+        or "CopilotConsumer" in t
+        or "getUserProperties" in t
+        or "getMigrationStatus" in t
+        or "getIsPicassoUser" in t
         or t.startswith(('{"0":{"json"', '{"0": {"json"', '{"0":{'))
         or bool(re.match(r'^\s*\{\s*"0"\s*:\s*\{\s*"json"\s*:', t))
         or bool(re.match(r'^\d+(?:/[^,]*,\s*)?[\[\{]', t))
@@ -614,14 +633,28 @@ def looks_like_user_prompt(text: str) -> bool:
             handshake = json.loads(t.rstrip("\x1e"))
         except Exception:
             handshake = None
-        if isinstance(handshake, dict) and _signalr_control_frame(handshake):
-            return False
+        if isinstance(handshake, dict):
+            if _signalr_control_frame(handshake):
+                return False
+            h_keys = {str(k).lower() for k in handshake.keys()}
+            if any(k in h_keys for k in ("action", "target", "type", "event", "method", "rpc", "command", "ic3product", "useglobalendpoint")):
+                if not any(k in h_keys for k in ("prompt", "text", "query", "message", "content", "user_input", "input")):
+                    return False
     if _is_opaque_wire_blob(t):
         return False
     if _is_internal_wire_text(t):
         return False
     # Claude Connect-RPC / protobuf crumbs must never become Prompt Logs mid-send.
     if _is_claude_wire_noise(t):
+        return False
+    low_full = t.lower()
+    if low_full in ("@ upload_attachment", "@upload_attachment", "upload_attachment") or low_full.startswith(("@ upload_attachment", "@upload_attachment", "upload_attachment")):
+        return False
+    if re.fullmatch(r"(?:gemini|gpt|claude|llama|mistral|deepseek|qwen|grok|dall-e|whisper|o1|o3)[-\d\.]+[a-z0-9\.\-]*", low_full):
+        return False
+    if low_full.startswith(("gemini-1.", "gemini-2.", "gemini-pro", "gemini-flash", "gemini-ultra", "gemini-nano")):
+        return False
+    if any(m in low_full for m in ("openxmlformats", "wordprocessingml", "spreadsheetml", "presentationml", "2fvnd.", "application/vnd.")):
         return False
     # Pure hex hash tokens (SHA256, MD5, action tokens e.g. 89721075028dcbd210651b465dc1...)
     if re.fullmatch(r"[0-9a-fA-F]{32,128}", t):
@@ -991,6 +1024,8 @@ _CHAT_METADATA_JUNK = frozenset({
     "parts", "author", "metadata", "recipient", "client", "server", "ping", "pong",
     "chatgpt", "gpt-4", "gpt-4o", "gpt-3.5", "o1", "o3", "thinking", "standard",
     "claude", "haiku", "sonnet", "opus", "claude-3-5-sonnet", "claude-3-5-haiku", "claude-3-7-sonnet",
+    "gemini", "gemini-1.5-pro-preview", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash", "gemini-2.0-pro",
+    "upload_attachment", "@ upload_attachment",
 })
 
 _TIMEZONE_RE = re.compile(
@@ -1011,7 +1046,11 @@ def _is_chat_metadata_token(text: str) -> bool:
         return False
     if t_l in _CHAT_METADATA_JUNK:
         return True
-    if re.fullmatch(r"gpt[-\d\.]+[a-z]*", t_l) or re.fullmatch(r"claude[-\d\.]+[a-z]*", t_l):
+    if re.fullmatch(r"(?:gemini|gpt|claude|llama|mistral|deepseek|qwen|grok)[-\d\.]+[a-z0-9\-]*", t_l):
+        return True
+    if t_l.startswith(("gemini-1.", "gemini-2.", "gemini-pro", "gemini-flash")):
+        return True
+    if t_l in ("@ upload_attachment", "@upload_attachment", "upload_attachment") or t_l.startswith(("@ upload_attachment", "@upload_attachment", "upload_attachment")):
         return True
     if any(ord(c) < 32 and c not in "\n\r\t" for c in t):
         return True
@@ -2440,9 +2479,19 @@ def extract_protobuf_strings(data: bytes) -> list[str]:
     return strings
 
 
+_POSITIONAL_NAME_RE = re.compile(
+    r"^[^\\/\r\n\"]{1,150}\.(?:pdf|docx?|xlsx?|xlsm|pptx?|csv|tsv|txt|md|rtf|json|zip|7z|rar|"
+    r"png|jpe?g|gif|webp|bmp|tiff?|heic|svg|mp3|wav|m4a|aac|ogg|flac|webm|mp4|mov|py|ipynb)$",
+    re.I,
+)
+
+
 def _is_claude_wire_noise(s: str) -> bool:
     t = (s or "").strip()
     if not t:
+        return True
+    low_t = t.lower()
+    if low_t in ("@ upload_attachment", "@upload_attachment", "upload_attachment") or low_t.startswith(("@ upload_attachment", "@upload_attachment", "upload_attachment")):
         return True
     if _is_chat_metadata_token(t):
         return True
@@ -2834,6 +2883,8 @@ def _extract_from_binary_stream_heuristics(body_bytes: bytes) -> str | None:
         s = r.strip()
         if (
             len(s) >= 2
+            and not (s.startswith("{") and s.endswith("}"))
+            and not (s.startswith("[") and s.endswith("]"))
             and looks_like_user_prompt(s)
             and not _is_claude_wire_noise(s)
             and not _is_google_wire_blob(s)
@@ -2898,6 +2949,17 @@ _BASE64ISH_RE = re.compile(r"[A-Za-z0-9+/=_-]{40,}")
 def _struct_value_ok(s: str) -> bool:
     t = (s or "").strip()
     if not t or len(t) > 200_000:
+        return False
+    low = t.lower()
+    if "/contrib_service" in low or "contrib_service" in low or "/contrib/" in low:
+        return False
+    if low in ("@ upload_attachment", "@upload_attachment", "upload_attachment") or low.startswith(("@ upload_attachment", "@upload_attachment", "upload_attachment")):
+        return False
+    if re.fullmatch(r"(?:gemini|gpt|claude|llama|mistral|deepseek|qwen|grok)[-\d\.]+[a-z0-9\-]*", low):
+        return False
+    if low.startswith(("gemini-1.", "gemini-2.", "gemini-pro", "gemini-flash")):
+        return False
+    if any(m in low for m in ("openxmlformats", "wordprocessingml", "spreadsheetml", "presentationml", "2fvnd.")):
         return False
     if " " not in t:
         if _UUID_LIKE_RE.fullmatch(t) or _BASE64ISH_RE.fullmatch(t):

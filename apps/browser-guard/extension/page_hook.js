@@ -54,31 +54,76 @@
     stagedFiles.push(item);
   }
 
-  function getAllFreshStagedFiles() {
-    var now = Date.now();
-    var map = {};
-    for (var s = 0; s < stagedFiles.length; s++) {
-      var item = stagedFiles[s];
-      if (item && item.name && (now - (item.timestamp || 0) < 180000)) {
-        map[String(item.name).toLowerCase().trim()] = item;
-      }
+  function clearAllStagedFiles() {
+    stagedFiles = [];
+    stagedFilesCache = {};
+    stagedImages = [];
+    _lastAskSig = "";
+    _lastAskTime = 0;
+    _lastAskDecision = null;
+    lastDecisionCache = { text: "", time: 0, decision: null };
+  }
+
+  function removeStagedFile(name) {
+    if (!name) return;
+    var key = String(name).toLowerCase().trim();
+    delete stagedFilesCache[key];
+    delete stagedFilesCache[name];
+    stagedFiles = stagedFiles.filter(function (f) {
+      return f.name !== name && String(f.name).toLowerCase().trim() !== key;
+    });
+    removeFilePillFromDom(name);
+    if (stagedFiles.length === 0) {
+      clearAllStagedFiles();
     }
-    var keys = Object.keys(stagedFilesCache);
-    for (var k = 0; k < keys.length; k++) {
-      var entry = stagedFilesCache[keys[k]];
-      if (entry && entry.name && (now - (entry.timestamp || 0) < 180000)) {
-        var ckey = String(entry.name).toLowerCase().trim();
-        if (!map[ckey]) {
-          map[ckey] = entry;
-        } else if ((!map[ckey].base64 && !map[ckey].text) && (entry.base64 || entry.text)) {
-          map[ckey] = entry;
+  }
+
+  var _isRemovingPill = false;
+  function removeFilePillFromDom(fileName) {
+    if (_isRemovingPill) return;
+    _isRemovingPill = true;
+    try {
+      var inputs = document.querySelectorAll("input[type='file']");
+      for (var i = 0; i < inputs.length; i++) {
+        try { inputs[i].value = ""; } catch (_) {}
+      }
+      var buttons = document.querySelectorAll("button, [role='button']");
+      for (var b = 0; b < buttons.length; b++) {
+        var btn = buttons[b];
+        var aria = (btn.getAttribute("aria-label") || "").toLowerCase();
+        var title = (btn.getAttribute("title") || "").toLowerCase();
+        var isDismiss =
+          aria.includes("remove") || aria.includes("delete") || aria.includes("clear") || aria.includes("dismiss") || aria.includes("close") ||
+          title.includes("remove") || title.includes("delete") || title.includes("clear") || title.includes("dismiss") || title.includes("close");
+        if (isDismiss) {
+          var container = btn.closest("div, span, li, section");
+          if (container && (fileName === "" || container.textContent.toLowerCase().includes(String(fileName).toLowerCase()))) {
+            passClick = true;
+            try { btn.click(); } catch (_) {}
+            finally { passClick = false; }
+          }
         }
       }
+    } catch (_) {}
+    finally {
+      _isRemovingPill = false;
     }
+  }
+
+  function getAllFreshStagedFiles() {
+    var now = Date.now();
     var result = [];
-    var mkeys = Object.keys(map);
-    for (var m = 0; m < mkeys.length; m++) {
-      result.push(map[mkeys[m]]);
+    var seen = {};
+    for (var s = 0; s < stagedFiles.length; s++) {
+      var item = stagedFiles[s];
+      // Only keep files active for current prompt within 60s
+      if (item && item.name && (now - (item.timestamp || 0) < 60000)) {
+        var key = String(item.name).toLowerCase().trim();
+        if (!seen[key]) {
+          seen[key] = true;
+          result.push(item);
+        }
+      }
     }
     return result;
   }
@@ -125,6 +170,8 @@
   var _lastHandledPromptTime = 0;
   var _lastHandledPromptText = "";
   var _lastHandledPromptId = "";
+  var _lastBlockedPromptTime = 0;
+  var _lastBlockedPromptText = "";
   var lastDecisionCache = { text: "", time: 0, decision: null };
 
   function stripInvisible(str) {
@@ -288,6 +335,21 @@
       if (typeof ev.data.screenshot_target_websites === "string") {
         govScreenshotTargetWebsites = ev.data.screenshot_target_websites;
       }
+      if (typeof ev.data.enforce_corporate_domains !== "undefined") {
+        govEnforceCorporateDomains = Boolean(ev.data.enforce_corporate_domains);
+      }
+      if (typeof ev.data.corporate_email_domains === "string") {
+        govCorporateEmailDomains = ev.data.corporate_email_domains;
+      }
+      if (typeof ev.data.allowed_workspace_ids === "string") {
+        govAllowedWorkspaceIds = ev.data.allowed_workspace_ids;
+      }
+      if (typeof ev.data.corporate_target_websites === "string") {
+        govCorporateTargetWebsites = ev.data.corporate_target_websites;
+      }
+      if (typeof ev.data.corporate_block_message === "string") {
+        govCorporateBlockMessage = ev.data.corporate_block_message;
+      }
     }
     if (ev.data.type === "session_authorization_result") {
       handleSessionAuthDecision(ev.data.result || {});
@@ -298,7 +360,7 @@
     }
   });
 
-  // --- Data Governance Controls (Uploads, File Types, Clipboard, Drag & Drop, Downloads, Screenshots) ---
+  // --- Data Governance Controls (Uploads, File Types, Clipboard, Drag & Drop, Downloads, Screenshots, Corporate Domains) ---
   var govBlockUpload = false;
   var govUploadWarning = "";
   var govUploadTargetWebsites = "";
@@ -322,6 +384,11 @@
   var govBlockScreenshot = false;
   var govScreenshotBlockMessage = "";
   var govScreenshotTargetWebsites = "";
+  var govEnforceCorporateDomains = false;
+  var govCorporateEmailDomains = "";
+  var govAllowedWorkspaceIds = "";
+  var govCorporateTargetWebsites = "";
+  var govCorporateBlockMessage = "";
 
   function parseExtensionList(str) {
     if (!str || typeof str !== "string") return [];
@@ -363,10 +430,10 @@
   function isControlActiveForSite(configuredSites) {
     if (isProductOrServerHost(location.hostname)) return false;
     var raw = (configuredSites && typeof configuredSites === "string") ? configuredSites.trim() : "";
-    if (!raw || raw.toUpperCase() === "ALL" || raw === "*") {
+    if (!raw || raw.toLowerCase() === "none") return false;
+    if (raw.toUpperCase() === "ALL" || raw === "*") {
       return true;
     }
-    if (raw.toLowerCase() === "none") return false;
     var currentHost = normalizeDomainHost(location.hostname);
     var parts = raw.toLowerCase().split(/[,\s;]+/);
     for (var i = 0; i < parts.length; i++) {
@@ -442,6 +509,28 @@
     return "";
   }
 
+  function bodyContainsActualFile(body) {
+    if (!body) return false;
+    if (typeof File !== "undefined" && body instanceof File) return true;
+    if (typeof Blob !== "undefined" && body instanceof Blob && !(typeof File !== "undefined" && body instanceof File)) {
+      if (body.size > 256) return true;
+    }
+    if (typeof FormData !== "undefined" && body instanceof FormData) {
+      try {
+        var hasFile = false;
+        body.forEach(function (val) {
+          if (typeof File !== "undefined" && val instanceof File) {
+            hasFile = true;
+          } else if (typeof Blob !== "undefined" && val instanceof Blob && val.size > 256) {
+            hasFile = true;
+          }
+        });
+        return hasFile;
+      } catch (_) {}
+    }
+    return false;
+  }
+
   function checkFileUploadAllowed(file, sniffedType) {
     if (!file) return true;
     var fileName = file.name || "";
@@ -491,20 +580,46 @@
   }
 
   // --- Anti-Screenshot & Screen Capture Protection ---
-  var _screenshotShieldEl = null;
-  function triggerScreenshotAlert() {
-    if (!armed || !govBlockScreenshot || !isControlActiveForSite(govScreenshotTargetWebsites)) return;
-
-    // NOTE: Do NOT call navigator.clipboard.writeText("") here.
-    // That fires a clipboard event which triggers the clipboard blocked banner
-    // simultaneously with the screenshot shield — two banners collide on screen.
-    // The full-screen overlay already blacks out the content, no clipboard clear needed.
-
-    // Remove any existing clipboard notice so it doesn't overlap the screenshot shield
+  function dismissAllClipboardNotices() {
+    try {
+      var oldBubble = document.getElementById("yp-raksha-alert-card");
+      if (oldBubble) oldBubble.remove();
+    } catch (_) {}
     try {
       var clipNotice = document.getElementById("yp-raksha-isolated-clipboard-notice");
       if (clipNotice) clipNotice.remove();
     } catch (_) {}
+  }
+
+  var _screenshotShieldEl = null;
+  var _lastScreenshotAlertLoggedAt = 0;
+  function triggerScreenshotAlert(detail) {
+    if (!armed || !govBlockScreenshot || !isControlActiveForSite(govScreenshotTargetWebsites)) return;
+    dismissAllClipboardNotices();
+
+    // 1. Audit / Log event via extension pipeline to Prompt Logs
+    var nowSs = Date.now();
+    if (nowSs - _lastScreenshotAlertLoggedAt > 2500) {
+      _lastScreenshotAlertLoggedAt = nowSs;
+      var promptLogText = "--screenshot [SCREEN CAPTURE RESTRICTED]";
+      if (detail && typeof detail === "string") {
+        promptLogText += " -- " + detail;
+      } else {
+        promptLogText += " -- Capture Shortcut Detected";
+      }
+      window.postMessage({
+        source: "gateway-guard-page",
+        nonce: guardNonce,
+        id: "screenshot_block_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2),
+        prompt: promptLogText,
+        host: location.hostname,
+        url: location.href,
+        is_blocked: true,
+        rule: "Screen Capture Policy",
+        blocked_reason: "Screen Capture Restricted",
+        status: "Blocked (Screen Capture Restricted)"
+      }, "*");
+    }
 
     // 2. Display full-screen Privacy Shield overlay
     if (!_screenshotShieldEl) {
@@ -519,7 +634,7 @@
         '<div style="width:72px;height:72px;border-radius:50%;background:rgba(239,68,68,0.18);border:2px solid #ef4444;display:flex;align-items:center;justify-content:center;font-size:36px;margin-bottom:16px;">🛡️</div>' +
         '<h2 style="font-size:22px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#f87171;margin:0 0 8px 0;">CAPTURE SHORTCUT DETECTED</h2>' +
         '<p style="font-size:14px;color:#cbd5e1;max-width:440px;line-height:1.5;margin:0 0 16px 0;">' +
-        (govScreenshotBlockMessage || "A browser print or common screenshot shortcut was detected. Operating-system capture tools cannot be reliably blocked from a webpage.") +
+        (govScreenshotBlockMessage || "Screen capture and recording is restricted on this AI workspace by corporate security policy.") +
         '</p>' +
         '<div style="font-size:11px;color:#94a3b8;border:1px solid rgba(148,163,184,0.3);padding:4px 12px;border-radius:6px;background:rgba(30,41,59,0.6);">' +
         'Monitored &amp; Protected by YP-Raksha Browser Guard' +
@@ -567,6 +682,7 @@
 
   function applyScreenshotBlur() {
     if (!armed || !govBlockScreenshot || !isControlActiveForSite(govScreenshotTargetWebsites)) return;
+    dismissAllClipboardNotices();
     if (!document.getElementById(_blurShieldStyleId)) {
       var bs = document.createElement("style");
       bs.id = _blurShieldStyleId;
@@ -605,7 +721,7 @@
       var _origGetDisplayMedia = navigator.mediaDevices.getDisplayMedia.bind(navigator.mediaDevices);
       navigator.mediaDevices.getDisplayMedia = function () {
         if (armed && govBlockScreenshot && isControlActiveForSite(govScreenshotTargetWebsites)) {
-          triggerScreenshotAlert();
+          triggerScreenshotAlert("Screen Sharing / Recording API (getDisplayMedia)");
           return Promise.reject(new DOMException("Screen capture and recording are blocked by corporate security policy.", "NotAllowedError"));
         }
         return _origGetDisplayMedia.apply(this, arguments);
@@ -622,12 +738,14 @@
     var isPrint = (e.ctrlKey || e.metaKey) && (e.key === "p" || e.key === "P" || e.code === "KeyP");
 
     if (isPrtScn || isWinShiftS || isMacCapture || isPrint) {
+      dismissAllClipboardNotices();
       try {
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
       } catch (_) {}
-      triggerScreenshotAlert();
+      var shortcutDesc = isPrtScn ? "PrintScreen Shortcut" : (isWinShiftS ? "Win+Shift+S Snipping Shortcut" : (isMacCapture ? "Mac Screen Capture Shortcut" : "Print Shortcut"));
+      triggerScreenshotAlert(shortcutDesc);
     }
   }
 
@@ -636,7 +754,7 @@
   window.addEventListener("keyup", function (e) {
     if (!armed || !govBlockScreenshot || !isControlActiveForSite(govScreenshotTargetWebsites)) return;
     if (e.key === "PrintScreen" || e.keyCode === 44 || e.code === "PrintScreen") {
-      triggerScreenshotAlert();
+      triggerScreenshotAlert("PrintScreen Shortcut");
     }
   }, true);
 
@@ -647,12 +765,29 @@
   var detectedWorkspace = "";
   var lastCheckedKey = "";
 
+  var _lastCorpAuthLoggedAt = 0;
   function handleSessionAuthDecision(authRes) {
     if (!authRes) return;
     if (authRes.decision === "block") {
       sessionBlocked = true;
       sessionBlockedReason = authRes.message || "Personal accounts are blocked by corporate security policy.";
       renderCorporateBanner(true, sessionBlockedReason, detectedEmail);
+      var nowCorp = Date.now();
+      if (nowCorp - _lastCorpAuthLoggedAt > 8000) {
+        _lastCorpAuthLoggedAt = nowCorp;
+        window.postMessage({
+          source: "gateway-guard-page",
+          nonce: guardNonce,
+          id: "corp_block_" + Date.now().toString(36),
+          prompt: "--corporate account [UNAUTHORIZED DOMAIN] User: " + (detectedEmail || "Personal Account"),
+          host: location.hostname,
+          url: location.href,
+          is_blocked: true,
+          rule: "Corporate AI Workspace Policy",
+          blocked_reason: "Unauthorized Personal Account",
+          status: "Blocked (Unauthorized Personal Account)"
+        }, "*");
+      }
     } else {
       sessionBlocked = false;
       sessionBlockedReason = "";
@@ -673,11 +808,11 @@
     } catch (_) {}
     var h = (location.hostname || "").toLowerCase();
     if (h.includes("chatgpt.com") || h.includes("openai.com")) {
-      location.href = "https://chatgpt.com/api/auth/signout";
+      location.href = "https://chatgpt.com/auth/logout";
     } else if (h.includes("claude.ai")) {
-      location.href = "https://claude.ai/api/auth/logout";
-    } else if (h.includes("gemini.google.com") || h.includes("aistudio.google.com")) {
-      location.href = "https://accounts.google.com/AccountChooser?continue=" + encodeURIComponent(location.href);
+      location.href = "https://claude.ai/login";
+    } else if (h.includes("gemini.google.com") || h.includes("aistudio.google.com") || h.includes("google.com")) {
+      location.href = "https://accounts.google.com/Logout?continue=" + encodeURIComponent("https://accounts.google.com/AccountChooser?continue=" + encodeURIComponent(location.href));
     } else if (h.includes("deepseek.com")) {
       location.href = "https://chat.deepseek.com/sign_in";
     } else if (h.includes("copilot.microsoft.com")) {
@@ -708,6 +843,14 @@
       if (msgEl && message) msgEl.textContent = message;
       var emailEl = existing.querySelector(".yp-corp-email");
       if (emailEl && email) emailEl.textContent = email;
+      var exBtn = existing.querySelector("#yp-btn-signout");
+      if (exBtn && !exBtn._bound) {
+        exBtn._bound = true;
+        exBtn.addEventListener("click", function (e) {
+          if (e) { e.preventDefault(); e.stopPropagation(); }
+          performAutoLogout();
+        }, true);
+      }
       return;
     }
 
@@ -749,11 +892,22 @@
 
     (document.body || document.documentElement).appendChild(overlay);
 
-    var btnSignout = document.getElementById("yp-btn-signout");
+    var btnSignout = overlay.querySelector("#yp-btn-signout");
     if (btnSignout) {
-      btnSignout.addEventListener("click", function () {
+      btnSignout._bound = true;
+      btnSignout.addEventListener("click", function (e) {
+        if (e) { e.preventDefault(); e.stopPropagation(); }
         performAutoLogout();
-      });
+      }, true);
+      btnSignout.addEventListener("pointerdown", function (e) {
+        if (e) { e.preventDefault(); e.stopPropagation(); }
+        performAutoLogout();
+      }, true);
+      btnSignout.onclick = function (e) {
+        if (e) { e.preventDefault(); e.stopPropagation(); }
+        performAutoLogout();
+        return false;
+      };
       btnSignout.addEventListener("mouseenter", function () {
         btnSignout.style.background = "#dc2626";
         btnSignout.style.transform = "translateY(-1px)";
@@ -808,6 +962,34 @@
     lastCheckedAt = now;
     detectedEmail = email;
     detectedWorkspace = ws;
+
+    // Fast client-side check if corporate domain enforcement is active
+    if (govEnforceCorporateDomains && isControlActiveForSite(govCorporateTargetWebsites || govTargetWebsites)) {
+      var rawAllowed = (govCorporateEmailDomains || "").toLowerCase().split(/[,\s;]+/);
+      var allowedList = [];
+      for (var ai = 0; ai < rawAllowed.length; ai++) {
+        var cleanDom = rawAllowed[ai].replace(/^@/, "").trim();
+        if (cleanDom) allowedList.push(cleanDom);
+      }
+      if (allowedList.length > 0) {
+        var domainMatched = false;
+        for (var aj = 0; aj < allowedList.length; aj++) {
+          if (domain === allowedList[aj] || domain.endsWith("." + allowedList[aj])) {
+            domainMatched = true;
+            break;
+          }
+        }
+        if (!domainMatched) {
+          var blockMsg = govCorporateBlockMessage || ("Corporate policy restricts access to authorized domains (@" + allowedList.join(", @") + "). Personal account (@" + domain + ") is blocked.");
+          handleSessionAuthDecision({
+            decision: "block",
+            message: blockMsg
+          });
+        } else {
+          handleSessionAuthDecision({ decision: "allow" });
+        }
+      }
+    }
 
     window.postMessage({
       source: "gateway-guard-page",
@@ -1012,14 +1194,73 @@
       if (typeof window.__INITIAL_STATE__ === "object" && window.__INITIAL_STATE__ !== null) {
         scanObjectForSession(window.__INITIAL_STATE__, 0);
       }
+      // 1. Google Account / Gemini Dedicated Scanner
+      var gAccountEls = querySelectorAllDeep(
+        "a[href*='accounts.google.com'], [aria-label*='Google Account'], [aria-label*='Google-Konto'], [aria-label*='Compte Google'], [aria-label*='Cuenta de Google']"
+      );
+      for (var gi = 0; gi < gAccountEls.length; gi++) {
+        var gLabel = (gAccountEls[gi].getAttribute("aria-label") || "") + " " + (gAccountEls[gi].getAttribute("title") || "");
+        var gParenMatch = gLabel.match(/\(([^()@\s]+@[^()@\s]+)\)/);
+        if (gParenMatch && gParenMatch[1]) {
+          var gEm = gParenMatch[1].toLowerCase().trim();
+          if (!gEm.includes("google.com/") && !gEm.endsWith("@google.com")) {
+            triggerSessionAuth(gEm, "");
+            return;
+          }
+        }
+        var gAnyMatch = gLabel.match(emailRegex);
+        if (gAnyMatch && gAnyMatch[0]) {
+          var gEm2 = gAnyMatch[0].toLowerCase().trim();
+          if (!gEm2.includes("google.com/") && !gEm2.endsWith("@google.com")) {
+            triggerSessionAuth(gEm2, "");
+            return;
+          }
+        }
+      }
+
+      // 2. Microsoft Copilot MeControl & Account Widget Scanner
+      var msEls = querySelectorAllDeep("#meControl, #mectrl_currentAccount_secondary, [aria-label*='Account manager'], [id*='mectrl']");
+      for (var mi = 0; mi < msEls.length; mi++) {
+        var msTxt = (msEls[mi].getAttribute("aria-label") || "") + " " + (msEls[mi].innerText || "") + " " + (msEls[mi].textContent || "");
+        var msMatch = msTxt.match(emailRegex);
+        if (msMatch && msMatch[0]) {
+          var msEm = msMatch[0].toLowerCase().trim();
+          if (!msEm.includes("microsoft.com/") && !msEm.includes("example.com")) {
+            triggerSessionAuth(msEm, "");
+            return;
+          }
+        }
+      }
+
+      // 3. Claude React Server Components Streaming Chunks (__next_f)
+      if (Array.isArray(window.__next_f)) {
+        for (var nfi = 0; nfi < window.__next_f.length; nfi++) {
+          var nfChunk = window.__next_f[nfi];
+          var nfStr = typeof nfChunk === "string" ? nfChunk : (Array.isArray(nfChunk) && typeof nfChunk[1] === "string" ? nfChunk[1] : "");
+          if (nfStr && nfStr.includes("@")) {
+            var nfMatches = nfStr.match(new RegExp(emailRegex.source, "g")) || [];
+            for (var nfm = 0; nfm < nfMatches.length; nfm++) {
+              var emCand = nfMatches[nfm].toLowerCase();
+              if (!emCand.includes("sentry") && !emCand.includes("anthropic.com") && !emCand.includes("example.com") && !emCand.includes("w3.org") && !emCand.includes("schema.org") && !emCand.endsWith(".png") && !emCand.endsWith(".jpg")) {
+                triggerSessionAuth(emCand, "");
+                return;
+              }
+            }
+          }
+        }
+      }
+
       if (typeof window.WIZ_global_data === "object" && window.WIZ_global_data !== null) {
         scanObjectForSession(window.WIZ_global_data, 0);
         try {
           var wStr = JSON.stringify(window.WIZ_global_data);
-          var wm = wStr.match(emailRegex);
-          if (wm && wm[0] && !wm[0].includes("google.com/")) {
-            triggerSessionAuth(wm[0].toLowerCase(), "");
-            return;
+          var wmMatches = wStr.match(new RegExp(emailRegex.source, "g")) || [];
+          for (var wi = 0; wi < wmMatches.length; wi++) {
+            var cand = wmMatches[wi].toLowerCase();
+            if (!cand.endsWith("@google.com") && !cand.includes("gserviceaccount.com") && !cand.includes("sentry") && !cand.includes("w3.org") && !cand.includes(".png")) {
+              triggerSessionAuth(cand, "");
+              return;
+            }
           }
         } catch (_) {}
       }
@@ -1029,15 +1270,29 @@
     } catch (e) {}
   }
 
+  // Fast extraction of ASCII printable strings from base64 (e.g. PDF, Word, Excel, Zip text objects)
+  function extractStringsFromBase64(b64, maxLen) {
+    if (!b64 || typeof b64 !== "string") return "";
+    try {
+      var raw = atob(b64.slice(0, 1000000)); // Decode up to 1MB
+      var matches = raw.match(/[\x20-\x7E\t\r\n]{4,}/g);
+      if (matches && matches.length > 0) {
+        return matches.join(" ").slice(0, maxLen || 100000);
+      }
+    } catch (_) {}
+    return "";
+  }
+
   // Client-Side Fast Evaluation against live DB rules
   function evaluateClientRules(text, files) {
-    // Check prompt text and file text content against the target site's rules.
-    var fullContent = text || "";
-    if (Array.isArray(files)) {
-      for (var j = 0; j < files.length; j++) {
-        if (files[j] && files[j].text) {
-          fullContent += "\n" + files[j].text;
-        }
+    var promptText = (text || "").trim();
+    var fileItems = Array.isArray(files) ? files : [];
+
+    // Ensure each file has text extracted if base64 is present
+    for (var fi = 0; fi < fileItems.length; fi++) {
+      var fObj = fileItems[fi];
+      if (fObj && !fObj.text && fObj.base64) {
+        fObj.text = extractStringsFromBase64(fObj.base64);
       }
     }
 
@@ -1047,15 +1302,55 @@
     for (var k = 0; k < dynamicRules.length; k++) {
       var r = dynamicRules[k];
       if (r && r.re) {
-        r.re.lastIndex = 0;
-        if (r.re.test(fullContent)) {
+        var pMatch = false;
+        if (promptText) {
+          r.re.lastIndex = 0;
+          if (r.re.test(promptText)) {
+            pMatch = true;
+          }
+        }
+
+        var matchedFiles = [];
+        for (var fj = 0; fj < fileItems.length; fj++) {
+          var item = fileItems[fj];
+          if (!item) continue;
+          var fContent = item.text || "";
+          if (fContent) {
+            r.re.lastIndex = 0;
+            if (r.re.test(fContent)) {
+              var fName = item.name || ("File " + (fj + 1));
+              if (matchedFiles.indexOf(fName) === -1) {
+                matchedFiles.push(fName);
+              }
+            }
+          }
+        }
+
+        if (pMatch || matchedFiles.length > 0) {
           var act = String(r.action || "BLOCK").toUpperCase();
+          var rName = r.name || "Restricted Content";
+
+          // Construct precise, informative message naming offending file(s)
+          var blockMsg = "";
+          if (matchedFiles.length > 0 && pMatch) {
+            blockMsg = "Prompt and file(s) '" + matchedFiles.join("', '") + "' contain restricted content (" + rName + "). Request blocked by security policy.";
+          } else if (matchedFiles.length > 0) {
+            if (matchedFiles.length === 1) {
+              blockMsg = "File '" + matchedFiles[0] + "' contains restricted content (" + rName + "). Upload blocked by security policy.";
+            } else {
+              blockMsg = "Files '" + matchedFiles.join("', '") + "' contain restricted content (" + rName + "). Upload blocked by security policy.";
+            }
+          } else {
+            blockMsg = "Prompt contains restricted content (" + rName + "). Request blocked by security policy.";
+          }
+
           if (act === "BLOCK" || act === "BLOCKED") {
             return {
               blocked: true,
               action: "Blocked",
-              message: r.msg || ("Blocked by security rule: " + r.name),
-              rule: r.name,
+              message: blockMsg,
+              rule: rName,
+              violating_files: matchedFiles,
               matchedRule: r
             };
           }
@@ -1066,8 +1361,9 @@
               warnDecision = {
                 blocked: false,
                 action: "Warned",
-                message: r.msg || ("Security Warning: " + r.name + " detected."),
-                rule: r.name,
+                message: blockMsg.replace("blocked by", "warned by").replace("Upload blocked", "Upload warning"),
+                rule: rName,
+                violating_files: matchedFiles,
                 matchedRule: r
               };
             }
@@ -1140,6 +1436,11 @@
       // 1. First run fast client-side check
       var clientDecision = evaluateClientRules(prompt, files);
       if (clientDecision && clientDecision.blocked) {
+        if (Array.isArray(clientDecision.violating_files) && clientDecision.violating_files.length > 0) {
+          for (var vi = 0; vi < clientDecision.violating_files.length; vi++) {
+            removeStagedFile(clientDecision.violating_files[vi]);
+          }
+        }
         _lastAskSig = sig;
         _lastAskTime = Date.now();
         _lastAskDecision = clientDecision;
@@ -1397,12 +1698,26 @@
 
   // Extract file attachments currently displayed in the chat composer UI
   function extractDOMAttachedFiles() {
+    // If stagedFiles already has fresh files from file input or drag-and-drop,
+    // NEVER scrape DOM pills. Real files have true filenames and complete payloads.
+    // DOM pills have truncated strings (e.g. "02-yp-raks...asheet") which create duplicate phantom rows!
+    if (stagedFiles && stagedFiles.length > 0) {
+      return [];
+    }
+
     var detected = [];
     try {
-      // STRICT SCOPE: Only look inside the active composer/upload container (NOT in previous message history)
-      var activeContainer = document.querySelector(
-        "fieldset, form, [class*='composer' i], [class*='input-container' i], div[data-testid*='composer' i], div[class*='chat-input' i]"
-      ) || document.body;
+      var active = getDeepActiveElement() || document.activeElement;
+      var activeContainer = null;
+      if (active && active.closest) {
+        activeContainer = active.closest("fieldset, form, [class*='composer' i], [class*='input-container' i], div[data-testid*='composer' i], div[class*='chat-input' i]");
+      }
+      if (!activeContainer) {
+        activeContainer = document.querySelector("fieldset, form, [class*='composer' i], [class*='input-container' i], div[data-testid*='composer' i], div[class*='chat-input' i]");
+      }
+      if (!activeContainer) {
+        return [];
+      }
 
       var selectors = [
         "[data-testid*='attachment']",
@@ -1418,17 +1733,21 @@
         "[class*='upload-preview' i]",
         "[class*='uploaded-file' i]"
       ];
-      var nodes = querySelectorAllDeep(selectors.join(", "));
+      var nodes = activeContainer.querySelectorAll(selectors.join(", "));
       for (var i = 0; i < nodes.length; i++) {
         var n = nodes[i];
         if (!n) continue;
-        // Never scrape files from conversation message history
-        if (n.closest && n.closest("[data-testid*='conversation-turn'], [data-testid*='user-message'], [class*='font-claude-message'], [class*='ChatMessage'], [class*='message-content'], div.group")) {
+        // Never scrape files from conversation message history or sidebars
+        if (n.closest && n.closest("[data-testid*='conversation-turn'], [data-testid*='user-message'], [class*='font-claude-message'], [class*='ChatMessage'], [class*='message-content'], div.group, nav, aside, [class*='sidebar' i], [class*='history' i]")) {
           continue;
         }
         var txt = (n.getAttribute("aria-label") || n.getAttribute("title") || n.innerText || n.textContent || "").trim();
         if (!txt) continue;
-        var m = txt.match(/([a-zA-Z0-9_\-\. ]+\.[a-zA-Z0-9]{1,8})/);
+        // Skip ellipsis/truncated labels (e.g. "foo...bar")
+        if (txt.indexOf("...") !== -1 || txt.indexOf("\u2026") !== -1) {
+          continue;
+        }
+        var m = txt.match(/^([a-zA-Z0-9_\-\. ]+\.[a-zA-Z0-9]{1,8})$/);
         if (m && m[1]) {
           var fn = m[1].trim();
           if (fn && !detected.some(function (x) { return x.name === fn; })) {
@@ -1529,6 +1848,57 @@
     return false;
   }
 
+  function cleanAlertMessage(msg, fallback) {
+    var s = (msg || "").trim();
+    if (!s) return fallback || "Action restricted by corporate security policy.";
+    // Strip leading "Custom ", "custom:", "[custom]"
+    s = s.replace(/^\[?custom\]?\s*[:\-–—]?\s*/i, "");
+    if (/^drag\s*(&|and)?\s*drop\s*block\s*active$/i.test(s) || /^drag\s*(&|and)?\s*drop\s*restricted$/i.test(s)) {
+      return "File drag and drop is restricted by corporate security policy.";
+    }
+    if (/^clipboard\s*protection\s*active$/i.test(s) || /^copy\s*paste\s*not\s*allowed$/i.test(s)) {
+      return "Clipboard copy-paste into AI tools is restricted by corporate security policy.";
+    }
+    if (/^download\s*block\s*active$/i.test(s)) {
+      return "Downloading files, artifacts, and exports from this AI tool is restricted by corporate security policy.";
+    }
+    if (/^screenshot\s*block\s*active$/i.test(s)) {
+      return "Screen capture and recording is restricted on this AI workspace by corporate security policy.";
+    }
+    if (!s || /^block active$/i.test(s) || /^protection active$/i.test(s)) {
+      return fallback || "Action restricted by corporate security policy.";
+    }
+    return s;
+  }
+
+  function resolveAlertTitle(ruleName, text, isWarn, isRedact) {
+    var r = (ruleName || "").trim().replace(/^\[?custom\]?\s*[:\-–—]?\s*/i, "");
+    if (r && !/^yp-raksha\s*blocked$/i.test(r)) return r;
+    var lower = (text || "").toLowerCase();
+    if (lower.indexOf("drag") !== -1 || lower.indexOf("drop") !== -1) {
+      return "Drag & Drop Restricted";
+    }
+    if (lower.indexOf("clipboard") !== -1 || lower.indexOf("paste") !== -1 || lower.indexOf("copy") !== -1) {
+      return "Clipboard Paste Restricted";
+    }
+    if (lower.indexOf("download") !== -1 || lower.indexOf("export") !== -1) {
+      return "Download Policy";
+    }
+    if (lower.indexOf("upload") !== -1 || lower.indexOf("attachment") !== -1) {
+      return "File Upload Policy";
+    }
+    if (lower.indexOf("extension") !== -1 || lower.indexOf("file type") !== -1) {
+      return "File Extension Policy";
+    }
+    if (lower.indexOf("screenshot") !== -1 || lower.indexOf("screen") !== -1) {
+      return "Screen Capture Restricted";
+    }
+    if (lower.indexOf("corporate") !== -1 || lower.indexOf("personal account") !== -1) {
+      return "Corporate Account Required";
+    }
+    return isWarn ? "Security Warning" : (isRedact ? "Data Redacted" : "YP-Raksha Blocked");
+  }
+
   // Sleek, compact In-Page YP-Raksha Alert Toast
   function showBubble(message, ruleName, kind) {
     var tone = kind === "warn" ? "warn" : (kind === "redact" ? "redact" : "block");
@@ -1536,9 +1906,10 @@
     var isRedact = (tone === "redact");
     var borderColor = isWarn ? "#f59e0b" : (isRedact ? "#38bdf8" : "#ef4444");
     var titleColor = isWarn ? "#fbbf24" : (isRedact ? "#38bdf8" : "#f87171");
-    var titleText = ruleName ? ruleName : (isWarn ? "YP-Raksha Warning" : (isRedact ? "YP-Raksha Redacted" : "YP-Raksha Blocked"));
+    var defaultMsg = isWarn ? "Security Warning: Policy match detected." : (isRedact ? "Sensitive information was redacted before transmission." : "This request was blocked by corporate security policy.");
+    var text = cleanAlertMessage(message, defaultMsg);
+    var titleText = resolveAlertTitle(ruleName, text, isWarn, isRedact);
     var iconText = isWarn ? "⚠️" : (isRedact ? "✂️" : "🛡️");
-    var text = (message || (isWarn ? "Security Warning: Policy match detected." : (isRedact ? "Sensitive information was redacted." : "This request was blocked by YP-Raksha."))).trim();
     var modalId = "yp-raksha-alert-card";
     var old = document.getElementById(modalId);
     if (old) old.remove();
@@ -1547,7 +1918,7 @@
     card.id = modalId;
     card.setAttribute("role", "alertdialog");
     card.style.cssText =
-      "all:initial;display:block;box-sizing:border-box;position:fixed;left:50%;bottom:95px;transform:translateX(-50%);max-width:460px;width:fit-content;min-width:280px;" +
+      "all:initial;display:block;box-sizing:border-box;position:fixed;left:50%;bottom:140px;transform:translateX(-50%);max-width:480px;width:fit-content;min-width:280px;" +
       "z-index:2147483647;background:rgba(15,23,42,0.96);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);" +
       "color:#f9fafb;border:1px solid " + borderColor + ";border-radius:12px;padding:9px 14px;box-shadow:0 10px 30px rgba(0,0,0,0.5);" +
       "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;animation:ypFadeIn 0.2s ease-out;";
@@ -1611,6 +1982,11 @@
     var action = String((decision && decision.action) || "").toLowerCase();
     var blocked = !!(decision && (decision.blocked || action === "blocked" || action === "block" || action === "bot answered" || action === "replied"));
     if (blocked) {
+      if (decision && Array.isArray(decision.violating_files) && decision.violating_files.length > 0) {
+        for (var vi = 0; vi < decision.violating_files.length; vi++) {
+          removeStagedFile(decision.violating_files[vi]);
+        }
+      }
       showBubble(decision.message, decision.rule, "block");
       return;
     }
@@ -1778,7 +2154,9 @@
           // Immediate DLP scan of file contents
           var fileDecision = evaluateClientRules(null, [{ name: name, text: fContent }]);
           if (fileDecision && fileDecision.blocked) {
-            showBubble("File '" + name + "' contains confidential data: " + fileDecision.message, fileDecision.rule);
+            removeStagedFile(name);
+            showBubble(fileDecision.message, fileDecision.rule, "block");
+            return;
           }
         }
       };
@@ -1799,7 +2177,18 @@
           if (sniffed && !checkFileUploadAllowed(file, sniffed)) {
             return;
           }
-          pushStagedFile({ name: name, size: size, type: type, base64: b64 });
+          var extractedStr = extractStringsFromBase64(b64);
+          pushStagedFile({ name: name, size: size, type: type, base64: b64, text: extractedStr });
+
+          // Immediate DLP scan of binary documents
+          if (extractedStr) {
+            var fileDecision = evaluateClientRules(null, [{ name: name, text: extractedStr }]);
+            if (fileDecision && fileDecision.blocked) {
+              removeStagedFile(name);
+              showBubble(fileDecision.message, fileDecision.rule, "block");
+              return;
+            }
+          }
         }
       };
       rDoc.readAsDataURL(file.slice(0, 5000000)); // Read first 5MB for deep backend extraction
@@ -1813,7 +2202,17 @@
           if (sniffed && !checkFileUploadAllowed(file, sniffed)) {
             return;
           }
-          pushStagedFile({ name: name, size: size, type: type, base64: b64 });
+          var extractedStr = extractStringsFromBase64(b64);
+          pushStagedFile({ name: name, size: size, type: type, base64: b64, text: extractedStr });
+
+          if (extractedStr) {
+            var fileDecision = evaluateClientRules(null, [{ name: name, text: extractedStr }]);
+            if (fileDecision && fileDecision.blocked) {
+              removeStagedFile(name);
+              showBubble(fileDecision.message, fileDecision.rule, "block");
+              return;
+            }
+          }
         }
       };
       rAny.readAsDataURL(file.slice(0, 3000000));
@@ -1834,6 +2233,7 @@
   } catch (e) {}
 
   document.addEventListener("click", function (ev) {
+    if (!ev.isTrusted) return;
     if (!armed || !govBlockUpload || !isControlActiveForSite(govUploadTargetWebsites)) return;
     var target = (ev.composedPath && ev.composedPath()[0]) || ev.target;
     if (!target) return;
@@ -1845,13 +2245,19 @@
     }
     var btn = target.closest("button, [role='button'], label");
     if (btn) {
-      var aria = (btn.getAttribute("aria-label") || "").toLowerCase();
-      var title = (btn.getAttribute("title") || "").toLowerCase();
-      var testid = (btn.getAttribute("data-testid") || "").toLowerCase();
+      var aria = (btn.getAttribute("aria-label") || "").toLowerCase().trim();
+      var title = (btn.getAttribute("title") || "").toLowerCase().trim();
       var isAttachBtn =
-        aria.includes("attach") || aria.includes("upload") || aria.includes("add file") || aria.includes("add photo") ||
-        title.includes("attach") || title.includes("upload") ||
-        testid.includes("attach") || testid.includes("upload") || testid.includes("file-upload");
+        aria === "attach content" || aria === "attach files" || aria === "attach file" ||
+        aria === "add content" || aria === "upload file" || aria === "upload files" ||
+        aria === "upload image" || aria === "attach image" || aria === "upload" ||
+        aria === "add a file to this topic" || aria === "attach" ||
+        (aria.indexOf("attach") >= 0 && aria.indexOf("file") >= 0) ||
+        (aria.indexOf("upload") >= 0 && (aria.indexOf("file") >= 0 || aria.indexOf("image") >= 0)) ||
+        (title.indexOf("attach") >= 0 && title.indexOf("file") >= 0) ||
+        (title.indexOf("upload") >= 0 && title.indexOf("file") >= 0) ||
+        title === "attach file" || title === "upload file" || title === "attach" ||
+        (btn.querySelector && btn.querySelector("input[type='file']") !== null);
       if (isAttachBtn) {
         ev.preventDefault();
         ev.stopImmediatePropagation();
@@ -1864,6 +2270,8 @@
   document.addEventListener("change", function (ev) {
     if (!armed) return;
     if (ev.target && ev.target.tagName === "INPUT" && ev.target.type === "file") {
+      var files = ev.target.files;
+      if (!files || files.length === 0) return;
       if (govBlockUpload && isControlActiveForSite(govUploadTargetWebsites)) {
         ev.target.value = "";
         ev.preventDefault();
@@ -1905,25 +2313,46 @@
     var uploadActive = govBlockUpload && isControlActiveForSite(govUploadTargetWebsites);
     var dragDropActive = govBlockDragDrop && isControlActiveForSite(govDragDropTargetWebsites);
     if (dragDropActive) {
+      var hasFiles = ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files.length > 0;
+      var hasItems = ev.dataTransfer && ev.dataTransfer.items && ev.dataTransfer.items.length > 0;
+      var dtText = "";
+      try { dtText = (ev.dataTransfer && (ev.dataTransfer.getData("text/plain") || ev.dataTransfer.getData("text/uri-list"))) || ""; } catch (_) {}
+      if (!hasFiles && !hasItems && !dtText) return;
       ev.preventDefault();
       ev.stopPropagation();
       ev.stopImmediatePropagation();
       var droppedSummary = "";
       if (ev.dataTransfer) {
+        var fNames = [];
         if (ev.dataTransfer.files && ev.dataTransfer.files.length) {
-          var fNames = [];
-          for (var fi = 0; fi < ev.dataTransfer.files.length; fi++) fNames.push(ev.dataTransfer.files[fi].name);
+          for (var fi = 0; fi < ev.dataTransfer.files.length; fi++) {
+            if (ev.dataTransfer.files[fi] && ev.dataTransfer.files[fi].name) {
+              fNames.push(ev.dataTransfer.files[fi].name);
+            }
+          }
+        }
+        if (!fNames.length && ev.dataTransfer.items && ev.dataTransfer.items.length) {
+          for (var ii = 0; ii < ev.dataTransfer.items.length; ii++) {
+            var it = ev.dataTransfer.items[ii];
+            if (it && it.kind === "file") {
+              try {
+                var f = typeof it.getAsFile === "function" ? it.getAsFile() : null;
+                if (f && f.name) fNames.push(f.name);
+              } catch (_) {}
+            }
+          }
+        }
+        if (fNames.length) {
           droppedSummary = "Files: " + fNames.join(", ");
+        } else if (dtText) {
+          droppedSummary = "Text: " + dtText.trim().slice(0, 300);
         } else {
-          try {
-            var dtText = ev.dataTransfer.getData("text/plain") || "";
-            if (dtText) droppedSummary = "Text: " + dtText.trim().slice(0, 300);
-          } catch (_) {}
+          droppedSummary = "Files / Data";
         }
         ev.dataTransfer.dropEffect = "none";
         try { ev.dataTransfer.clearData(); } catch (_) {}
       }
-      showBubble(govDragDropBlockMessage || "Drag and drop restricted", "Drag & Drop Restricted", "block");
+      showBubble(govDragDropBlockMessage || "File drag and drop is restricted by corporate security policy.", "Drag & Drop Restricted", "block");
       var promptLogText = "--drag drop [DRAG & DROP BLOCKED]";
       if (droppedSummary) {
         promptLogText += " " + droppedSummary;
@@ -1989,39 +2418,134 @@
   window.addEventListener("drop", handleDropBlock, true);
   document.addEventListener("drop", handleDropBlock, true);
 
+  function clipboardPolicyActive() {
+    return armed && govBlockClipboard && isControlActiveForSite(govClipboardTargetWebsites || govTargetWebsites);
+  }
+
+  var _lastClipboardLogPostTime = 0;
+  var _lastClipboardLogType = "";
+  function postDebouncedClipboardLog(data) {
+    var now = Date.now();
+    var actionType = (data.blocked_reason || "").indexOf("Copy") >= 0 ? "copy" : "paste";
+    if (actionType === _lastClipboardLogType && (now - _lastClipboardLogPostTime < 1500)) {
+      return;
+    }
+    _lastClipboardLogPostTime = now;
+    _lastClipboardLogType = actionType;
+    window.postMessage({
+      source: "gateway-guard-page",
+      nonce: guardNonce,
+      id: data.id || ("clip_block_" + now.toString(36)),
+      prompt: data.prompt,
+      host: location.hostname,
+      url: location.href,
+      is_blocked: true,
+      rule: "Clipboard Policy",
+      blocked_reason: data.blocked_reason || "Clipboard Policy",
+      status: data.status || ("Blocked (" + (data.blocked_reason || "Clipboard Policy") + ")")
+    }, "*");
+  }
+
+  function enforceActiveElementRollback() {
+    try {
+      var activeEl = document.activeElement;
+      if (!activeEl) return;
+      var isInput = activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA";
+      var isContentEditable = activeEl.isContentEditable || activeEl.getAttribute("contenteditable") === "true";
+      if (!isInput && !isContentEditable) {
+        var editableParent = activeEl.closest ? activeEl.closest("[contenteditable='true'], textarea, input, [role='textbox']") : null;
+        if (editableParent) {
+          activeEl = editableParent;
+          isInput = activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA";
+          isContentEditable = true;
+        }
+      }
+      if (!isInput && !isContentEditable) return;
+
+      var prevVal = isInput ? activeEl.value : activeEl.innerHTML;
+      var prevText = isInput ? activeEl.value : (activeEl.innerText || activeEl.textContent || "");
+
+      var delays = [0, 4, 16, 40, 100];
+      for (var d = 0; d < delays.length; d++) {
+        (function (delay) {
+          setTimeout(function () {
+            try {
+              if (isInput) {
+                if (activeEl.value !== prevVal) {
+                  activeEl.value = prevVal;
+                  activeEl.dispatchEvent(new Event("input", { bubbles: true }));
+                }
+              } else if (isContentEditable) {
+                var currText = activeEl.innerText || activeEl.textContent || "";
+                if (currText !== prevText) {
+                  try { document.execCommand("undo", false, null); } catch (_) {}
+                  var postUndoText = activeEl.innerText || activeEl.textContent || "";
+                  if (postUndoText !== prevText) {
+                    activeEl.innerHTML = prevVal;
+                    try {
+                      activeEl.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "deleteContentBackward" }));
+                    } catch (_) {
+                      activeEl.dispatchEvent(new Event("input", { bubbles: true }));
+                    }
+                  }
+                }
+              }
+            } catch (_) {}
+          }, delay);
+        })(delays[d]);
+      }
+    } catch (_) {}
+  }
+
   // Hook 3: Clipboard Paste (Ctrl+V Screenshots, Files & Sensitive Text Shielding)
   function handlePasteEvent(ev) {
     if (!armed) return;
-    if (govBlockClipboard && isControlActiveForSite(govClipboardTargetWebsites)) {
+    if (clipboardPolicyActive()) {
       ev.preventDefault();
       ev.stopPropagation();
       ev.stopImmediatePropagation();
-      // Do not show clipboard bubble when screenshot shield is already visible —
-      // the two banners must never appear at the same time.
+      enforceActiveElementRollback();
+
+      // Do not show clipboard bubble when screenshot shield is already visible
       var screenshotShieldActive = !!(document.getElementById("yp-screenshot-shield") || document.getElementById("yp-blur-curtain"));
       var pastedSnippet = "";
       try {
-        if (ev.clipboardData) pastedSnippet = ev.clipboardData.getData("text/plain") || "";
+        if (ev.clipboardData) {
+          pastedSnippet = ev.clipboardData.getData("text/plain") || "";
+          try {
+            ev.clipboardData.getData = function () { return ""; };
+          } catch (_) {}
+          try {
+            Object.defineProperty(ev, "clipboardData", {
+              get: function () {
+                return {
+                  getData: function () { return ""; },
+                  clearData: function () {},
+                  setData: function () {},
+                  items: [],
+                  files: [],
+                  types: []
+                };
+              },
+              configurable: true
+            });
+          } catch (_) {}
+        }
       } catch (e) {}
+
       if (!screenshotShieldActive) {
-        showBubble(govClipboardBlockMessage || "Copy paste not allowed", "Clipboard Paste Restricted", "block");
+        showBubble(govClipboardBlockMessage || "Clipboard pasting into this AI tool is restricted by corporate security policy.", "Clipboard Paste Restricted", "block");
       }
       var promptLogText = "--copy paste [CLIPBOARD PASTE]";
       if (pastedSnippet && pastedSnippet.trim()) {
-        promptLogText += " " + pastedSnippet.trim().slice(0, 1000);
+        promptLogText += " -- " + pastedSnippet.trim().slice(0, 1000);
       }
-      window.postMessage({
-        source: "gateway-guard-page",
-        nonce: guardNonce,
+      postDebouncedClipboardLog({
         id: "paste_block_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2),
         prompt: promptLogText,
-        host: location.hostname,
-        url: location.href,
-        is_blocked: true,
-        rule: "Clipboard Policy",
         blocked_reason: "Clipboard Paste Restricted",
         status: "Blocked (Clipboard Paste Restricted)"
-      }, "*");
+      });
       return;
     }
     var cd = ev.clipboardData;
@@ -2074,7 +2598,7 @@
             source: "gateway-guard-page",
             nonce: guardNonce,
             id: "paste_log_" + Date.now().toString(36),
-            prompt: "--copy paste [CLIPBOARD PASTE] " + pastedText.slice(0, 500),
+            prompt: "--copy paste [CLIPBOARD PASTE] -- " + pastedText.slice(0, 500),
             host: location.hostname,
             url: location.href,
             is_blocked: true,
@@ -2088,24 +2612,112 @@
     } catch (pasteErr) { }
   }
 
+  function handleBeforeInputClipboardHook(ev) {
+    if (!clipboardPolicyActive()) return;
+    var inputType = (ev.inputType || "").toLowerCase();
+    var isPasteInput =
+      inputType === "insertfrompaste" ||
+      inputType === "insertfrompasteasquotation" ||
+      inputType === "insertreplacementtext" ||
+      inputType === "insertfromdrop" ||
+      inputType === "insertfromyank" ||
+      inputType.indexOf("paste") >= 0;
+
+    if (isPasteInput) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      ev.stopImmediatePropagation();
+      enforceActiveElementRollback();
+
+      var screenshotShieldActive = !!(document.getElementById("yp-screenshot-shield") || document.getElementById("yp-blur-curtain"));
+      if (!screenshotShieldActive) {
+        showBubble(govClipboardBlockMessage || "Clipboard pasting into this AI tool is restricted by corporate security policy.", "Clipboard Paste Restricted", "block");
+      }
+
+      var pastedSnippet = "";
+      try {
+        if (ev.dataTransfer) {
+          pastedSnippet = ev.dataTransfer.getData("text/plain") || "";
+        } else if (ev.data) {
+          pastedSnippet = String(ev.data);
+        }
+      } catch (_) {}
+
+      var promptLogText = "--copy paste [CLIPBOARD PASTE]";
+      if (pastedSnippet && pastedSnippet.trim()) {
+        promptLogText += " -- " + pastedSnippet.trim().slice(0, 1000);
+      }
+      postDebouncedClipboardLog({
+        id: "paste_beforeinput_" + Date.now().toString(36),
+        prompt: promptLogText,
+        blocked_reason: "Clipboard Paste Restricted",
+        status: "Blocked (Clipboard Paste Restricted)"
+      });
+    }
+  }
+
+  function handleCopyEvent(ev) {
+    if (!armed) return;
+    if (clipboardPolicyActive()) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      ev.stopImmediatePropagation();
+      if (ev.clipboardData) {
+        try {
+          ev.clipboardData.clearData();
+          ev.clipboardData.setData("text/plain", "");
+          ev.clipboardData.setData("text/html", "");
+        } catch (_) {}
+      }
+      try {
+        var sel = window.getSelection();
+        if (sel) sel.removeAllRanges();
+      } catch (_) {}
+      var screenshotShieldActive = !!(document.getElementById("yp-screenshot-shield") || document.getElementById("yp-blur-curtain"));
+      if (!screenshotShieldActive) {
+        showBubble(govClipboardBlockMessage || "Clipboard copying from this AI tool is restricted by corporate security policy.", "Clipboard Copy Restricted", "block");
+      }
+      postDebouncedClipboardLog({
+        id: "copy_block_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2),
+        prompt: "--copy paste [CLIPBOARD COPY]",
+        blocked_reason: "Clipboard Copy Restricted",
+        status: "Blocked (Clipboard Copy Restricted)"
+      });
+    }
+  }
+
   function handleClipboardKeyHook(e) {
-    if (!armed || !govBlockClipboard || !isControlActiveForSite(govClipboardTargetWebsites)) return;
+    if (!clipboardPolicyActive()) return;
     var isCtrlOrMeta = e.ctrlKey || e.metaKey;
-    // Only intercept PASTE shortcuts (Ctrl+V, Shift+Insert).
-    // Allow COPY shortcuts (Ctrl+C, Ctrl+Insert) so users can seamlessly copy AI answers and code snippets without errors.
     var isPaste = (isCtrlOrMeta && (e.key === "v" || e.key === "V" || e.code === "KeyV")) ||
                   (e.shiftKey && (e.key === "Insert" || e.code === "Insert"));
+    var isCopy = (isCtrlOrMeta && (e.key === "c" || e.key === "C" || e.code === "KeyC" || e.key === "x" || e.key === "X" || e.code === "KeyX")) ||
+                 (isCtrlOrMeta && (e.key === "Insert" || e.code === "Insert"));
 
-    if (isPaste) {
+    if (isPaste || isCopy) {
       try {
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
       } catch (_) {}
+      if (isPaste) {
+        enforceActiveElementRollback();
+      }
       var screenshotShieldActive = !!(document.getElementById("yp-screenshot-shield") || document.getElementById("yp-blur-curtain"));
       if (!screenshotShieldActive) {
-        showBubble(govClipboardBlockMessage || "Copy paste not allowed", "Clipboard Paste Restricted", "block");
+        var actionLabel = isCopy ? "Clipboard Copy Restricted" : "Clipboard Paste Restricted";
+        var defaultMsg = isCopy
+          ? "Clipboard copying from this AI tool is restricted by corporate security policy."
+          : "Clipboard pasting into this AI tool is restricted by corporate security policy.";
+        showBubble(govClipboardBlockMessage || defaultMsg, actionLabel, "block");
       }
+      var logPrompt = isCopy ? "--copy paste [CLIPBOARD COPY KEY]" : "--copy paste [CLIPBOARD PASTE KEY]";
+      postDebouncedClipboardLog({
+        id: "clip_key_block_" + Date.now().toString(36),
+        prompt: logPrompt,
+        blocked_reason: isCopy ? "Clipboard Copy Restricted" : "Clipboard Paste Restricted",
+        status: "Blocked (" + (isCopy ? "Clipboard Copy Restricted" : "Clipboard Paste Restricted") + ")"
+      });
     }
   }
 
@@ -2113,28 +2725,114 @@
     window.addEventListener(t, handlePasteEvent, true);
     document.addEventListener(t, handlePasteEvent, true);
   });
+  ["beforecopy", "copy", "cut", "beforecut"].forEach(function (t) {
+    window.addEventListener(t, handleCopyEvent, true);
+    document.addEventListener(t, handleCopyEvent, true);
+  });
+  ["beforeinput"].forEach(function (t) {
+    window.addEventListener(t, handleBeforeInputClipboardHook, true);
+    document.addEventListener(t, handleBeforeInputClipboardHook, true);
+  });
   window.addEventListener("keydown", handleClipboardKeyHook, true);
   document.addEventListener("keydown", handleClipboardKeyHook, true);
 
-  // Cover direct page Clipboard API and execCommand calls as well as DOM events.
-  // The isolated-world content script independently blocks trusted paste events.
-  function clipboardPolicyActive() {
-    return armed && govBlockClipboard && isControlActiveForSite(govClipboardTargetWebsites);
-  }
+  // Intercept clicks on AI "Copy" and "Copy code" buttons
+  document.addEventListener("click", function (ev) {
+    if (!clipboardPolicyActive()) return;
+    var target = (ev.composedPath && ev.composedPath()[0]) || ev.target;
+    var el = (target && target.closest) ? target.closest("button, [role='button'], a") : null;
+    if (!el) return;
+    var aria = (el.getAttribute("aria-label") || "").toLowerCase();
+    var title = (el.getAttribute("title") || "").toLowerCase();
+    var testid = (el.getAttribute("data-testid") || "").toLowerCase();
+    var text = (el.innerText || el.textContent || "").toLowerCase().trim();
+    var tooltip = (el.getAttribute("data-tooltip") || el.getAttribute("data-tooltip-id") || el.getAttribute("mattooltip") || "").toLowerCase();
+    var biId = (el.getAttribute("data-bi-id") || "").toLowerCase();
+    var hasCopySvg = !!(el.querySelector && el.querySelector("svg[class*='copy' i], svg[aria-label*='copy' i], [class*='copy-icon' i], [class*='icon-copy' i]"));
+    var isCopyBtn =
+      aria.includes("copy") ||
+      title.includes("copy") ||
+      testid.includes("copy") ||
+      tooltip.includes("copy") ||
+      biId.includes("copy") ||
+      hasCopySvg ||
+      text === "copy" ||
+      text === "copy code" ||
+      text === "copy text" ||
+      text === "copy response" ||
+      text === "copy prompt" ||
+      text === "copy to clipboard";
+    if (isCopyBtn) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      ev.stopImmediatePropagation();
+      try {
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+          navigator.clipboard.writeText("").catch(function () {});
+        }
+      } catch (_) {}
+      try {
+        var sel = window.getSelection();
+        if (sel) sel.removeAllRanges();
+      } catch (_) {}
+      var screenshotShieldActive = !!(document.getElementById("yp-screenshot-shield") || document.getElementById("yp-blur-curtain"));
+      if (!screenshotShieldActive) {
+        showBubble(govClipboardBlockMessage || "Clipboard copying from this AI tool is restricted by corporate security policy.", "Clipboard Copy Restricted", "block");
+      }
+      postDebouncedClipboardLog({
+        id: "copy_btn_block_" + Date.now().toString(36),
+        prompt: "--copy paste [CLIPBOARD COPY BUTTON]",
+        blocked_reason: "Clipboard Copy Restricted",
+        status: "Blocked (Clipboard Copy Restricted)"
+      });
+    }
+  }, true);
+
   try {
     var clipboardApi = navigator.clipboard;
     if (clipboardApi) {
-      // Only intercept reading from clipboard (prevent pasting exfiltration into page).
-      // Never intercept writeText / write so ChatGPT/Copilot "Copy code" buttons work smoothly without error.
+      // Intercept reading from clipboard (prevent pasting exfiltration into page).
       ["read", "readText"].forEach(function (method) {
         var original = clipboardApi[method];
         if (typeof original !== "function") return;
         try {
           clipboardApi[method] = function () {
             if (clipboardPolicyActive()) {
-              // Silently resolve empty so Copilot/ChatGPT background queries don't throw error or pop up unwanted banners
+              var screenshotShieldActive = !!(document.getElementById("yp-screenshot-shield") || document.getElementById("yp-blur-curtain"));
+              if (!screenshotShieldActive) {
+                showBubble(govClipboardBlockMessage || "Clipboard pasting into this AI tool is restricted by corporate security policy.", "Clipboard Paste Restricted", "block");
+              }
+              postDebouncedClipboardLog({
+                id: "paste_api_block_" + Date.now().toString(36),
+                prompt: "--copy paste [CLIPBOARD PASTE API]",
+                blocked_reason: "Clipboard Paste Restricted",
+                status: "Blocked (Clipboard Paste Restricted)"
+              });
               if (method === "readText") return Promise.resolve("");
               if (method === "read") return Promise.resolve([]);
+              return Promise.resolve();
+            }
+            return original.apply(clipboardApi, arguments);
+          };
+        } catch (e) {}
+      });
+      // Intercept writing to clipboard (prevent copying AI responses/data out of page).
+      ["write", "writeText"].forEach(function (method) {
+        var original = clipboardApi[method];
+        if (typeof original !== "function") return;
+        try {
+          clipboardApi[method] = function () {
+            if (clipboardPolicyActive()) {
+              var screenshotShieldActive = !!(document.getElementById("yp-screenshot-shield") || document.getElementById("yp-blur-curtain"));
+              if (!screenshotShieldActive) {
+                showBubble(govClipboardBlockMessage || "Clipboard copying from this AI tool is restricted by corporate security policy.", "Clipboard Copy Restricted", "block");
+              }
+              postDebouncedClipboardLog({
+                id: "copy_api_block_" + Date.now().toString(36),
+                prompt: "--copy paste [CLIPBOARD COPY API]",
+                blocked_reason: "Clipboard Copy Restricted",
+                status: "Blocked (Clipboard Copy Restricted)"
+              });
               return Promise.resolve();
             }
             return original.apply(clipboardApi, arguments);
@@ -2148,9 +2846,9 @@
     if (typeof originalExecCommand === "function") {
       document.execCommand = function (command) {
         var normalized = String(command || "").toLowerCase();
-        // Only block 'paste' commands, allow 'copy' and 'cut'
-        if (clipboardPolicyActive() && normalized === "paste") {
-          showBubble(govClipboardBlockMessage || "Copy paste not allowed", "Clipboard Paste Restricted", "block");
+        if (clipboardPolicyActive() && (normalized === "paste" || normalized === "copy" || normalized === "cut")) {
+          var actionLabel = normalized === "paste" ? "Clipboard Paste Restricted" : "Clipboard Copy Restricted";
+          showBubble(govClipboardBlockMessage || "Clipboard copy-paste on this AI tool is restricted by corporate security policy.", actionLabel, "block");
           return false;
         }
         return originalExecCommand.apply(document, arguments);
@@ -2162,7 +2860,7 @@
     if (typeof origQueryCommandEnabled === "function") {
       document.queryCommandEnabled = function (cmd) {
         var normalized = String(cmd || "").toLowerCase();
-        if (clipboardPolicyActive() && normalized === "paste") {
+        if (clipboardPolicyActive() && (normalized === "paste" || normalized === "copy" || normalized === "cut")) {
           return false;
         }
         return origQueryCommandEnabled.apply(document, arguments);
@@ -2213,40 +2911,11 @@
   // --- 3. SEND INTERCEPTION (Enter Key & Send Button) ---
 
   function mergeStagedAndDomFiles() {
-    var domFiles = extractDOMAttachedFiles();
-    var all = getAllFreshStagedFiles();
-    for (var i = 0; i < domFiles.length; i++) {
-      var df = domFiles[i];
-      var cached = getCachedStagedFile(df.name);
-      if (cached) {
-        if (!df.text && cached.text) df.text = cached.text;
-        if (!df.base64 && cached.base64) df.base64 = cached.base64;
-        if (!df.size && cached.size) df.size = cached.size;
-        if (!df.type && cached.type) df.type = cached.type;
-      }
-      var exists = false;
-      for (var a0 = 0; a0 < all.length; a0++) {
-        if (all[a0].name === df.name || String(all[a0].name).toLowerCase().trim() === String(df.name).toLowerCase().trim()) {
-          exists = true;
-          break;
-        }
-      }
-      if (!exists) {
-        all.push(df);
-      }
+    var staged = getAllFreshStagedFiles();
+    if (staged.length > 0) {
+      return staged;
     }
-    for (var a = 0; a < all.length; a++) {
-      if (!all[a].text && !all[a].base64) {
-        var match = getCachedStagedFile(all[a].name);
-        if (match) {
-          if (match.text) all[a].text = match.text;
-          if (match.base64) all[a].base64 = match.base64;
-          if (match.size) all[a].size = match.size;
-          if (match.type) all[a].type = match.type;
-        }
-      }
-    }
-    return all;
+    return extractDOMAttachedFiles();
   }
 
   // Keyboard Enter
@@ -2264,13 +2933,11 @@
     var text = stripInvisible(composerFrom(actualTarget) || composerFrom(e.target) || composerFrom(getDeepActiveElement()));
     var effectiveFiles = mergeStagedAndDomFiles();
     if (!text && effectiveFiles.length === 0 && stagedImages.length === 0) return;
-    if (text && _lastHandledPromptText === text && (Date.now() - _lastHandledPromptTime < 1500)) {
-      return;
-    }
 
     if (govBlockUpload && isControlActiveForSite(govUploadTargetWebsites)) {
       if (effectiveFiles.length > 0 || stagedImages.length > 0) {
         e.preventDefault();
+        e.stopPropagation();
         e.stopImmediatePropagation();
         showBubble(govUploadWarning || "File uploads and attachments to this AI platform are blocked by corporate policy.", "File Upload Policy", "block");
         return;
@@ -2280,31 +2947,42 @@
     for (var fi = 0; fi < effectiveFiles.length; fi++) {
       if (!checkFileUploadAllowed(effectiveFiles[fi])) {
         e.preventDefault();
+        e.stopPropagation();
         e.stopImmediatePropagation();
+        removeStagedFile(effectiveFiles[fi].name);
         return;
       }
     }
 
     var clientDecision = evaluateClientRules(text, effectiveFiles);
     if (clientDecision && clientDecision.blocked) {
-      _lastHandledPromptTime = Date.now();
-      _lastHandledPromptText = text;
       e.preventDefault();
+      e.stopPropagation();
       e.stopImmediatePropagation();
-      showBubble(clientDecision.message, clientDecision.rule, "block");
-      window.postMessage({
-        source: "gateway-guard-page",
-        nonce: guardNonce,
-        id: "log_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2),
-        prompt: text,
-        files: effectiveFiles || [],
-        upload_images: stagedImages || [],
-        host: location.hostname,
-        url: location.href,
-        is_blocked: true,
-        action: "Blocked",
-        rule: clientDecision.rule || ""
-      }, "*");
+      var nowBlock = Date.now();
+      if (text !== _lastBlockedPromptText || (nowBlock - _lastBlockedPromptTime > 1200)) {
+        _lastBlockedPromptText = text;
+        _lastBlockedPromptTime = nowBlock;
+        showBubble(clientDecision.message, clientDecision.rule, "block");
+        var toRemove = (clientDecision.violating_files && clientDecision.violating_files.length > 0) ? clientDecision.violating_files : effectiveFiles.map(function (f) { return f.name; });
+        for (var f1 = 0; f1 < toRemove.length; f1++) {
+          removeStagedFile(toRemove[f1]);
+        }
+        clearAllStagedFiles();
+        window.postMessage({
+          source: "gateway-guard-page",
+          nonce: guardNonce,
+          id: "log_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2),
+          prompt: text,
+          files: effectiveFiles || [],
+          upload_images: stagedImages || [],
+          host: location.hostname,
+          url: location.href,
+          is_blocked: true,
+          action: "Blocked",
+          rule: clientDecision.rule || ""
+        }, "*");
+      }
       return;
     }
 
@@ -2372,7 +3050,7 @@
       var target = e.target;
       ask(text, effectiveFiles, stagedImages).then(function (decision) {
         handleDecision(decision, function () {
-          setTimeout(function () { stagedFiles = []; stagedImages = []; }, 15000);
+          clearAllStagedFiles();
           passKey = true;
           var pId = "eval_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2);
           _lastHandledPromptId = pId;
@@ -2426,6 +3104,42 @@
 
     var label = ((btn.getAttribute("aria-label") || "") + " " + (btn.getAttribute("data-testid") || "") + " " + (btn.title || "")).toLowerCase();
     var btnText = (btn.innerText || btn.textContent || "").toLowerCase().trim();
+
+    // 1. Explicitly ignore file remove/delete/dismiss/close/clear buttons so user can remove files without trigger
+    var isRemoveOrDismiss =
+      label.indexOf("remove") >= 0 ||
+      label.indexOf("delete") >= 0 ||
+      label.indexOf("dismiss") >= 0 ||
+      label.indexOf("cancel") >= 0 ||
+      label.indexOf("close") >= 0 ||
+      label.indexOf("clear") >= 0 ||
+      btnText === "✕" ||
+      btnText === "x" ||
+      btnText === "close" ||
+      btnText === "remove" ||
+      btnText === "delete" ||
+      Boolean(btn.closest("[data-testid*='attachment' i], [data-testid*='file' i], [class*='attachment' i], [class*='file-preview' i], [class*='file-tile' i], [class*='file-item' i], [class*='upload' i]"));
+
+    if (isRemoveOrDismiss) {
+      // User is removing an attachment — allow DOM event to proceed naturally
+      try {
+        var container = btn.closest("div, span, li, section");
+        var cText = container ? (container.innerText || container.textContent || "") : "";
+        for (var si = 0; si < stagedFiles.length; si++) {
+          var sName = stagedFiles[si] ? stagedFiles[si].name : "";
+          if (sName && cText.toLowerCase().includes(sName.toLowerCase())) {
+            removeStagedFile(sName);
+          }
+        }
+      } catch (_) {}
+      return;
+    }
+
+    // 2. Explicitly ignore attach / upload buttons
+    if (label.indexOf("attach") >= 0 || (label.indexOf("upload") >= 0 && label.indexOf("send") === -1)) {
+      return;
+    }
+
     var form = btn.closest ? btn.closest("form") : null;
     var sendLike =
       label.indexOf("send") >= 0 ||
@@ -2466,13 +3180,11 @@
     var text = stripInvisible(composerFrom(btn) || composerFrom(getDeepActiveElement()) || composerFrom(document.activeElement));
     var effectiveFiles = mergeStagedAndDomFiles();
     if (!text && effectiveFiles.length === 0 && stagedImages.length === 0) return;
-    if (text && _lastHandledPromptText === text && (Date.now() - _lastHandledPromptTime < 1500)) {
-      return;
-    }
 
     if (govBlockUpload && isControlActiveForSite(govUploadTargetWebsites)) {
       if (effectiveFiles.length > 0 || stagedImages.length > 0) {
         e.preventDefault();
+        e.stopPropagation();
         e.stopImmediatePropagation();
         showBubble(govUploadWarning || "File uploads and attachments to this AI platform are blocked by corporate policy.", "File Upload Policy", "block");
         return;
@@ -2482,31 +3194,42 @@
     for (var fi2 = 0; fi2 < effectiveFiles.length; fi2++) {
       if (!checkFileUploadAllowed(effectiveFiles[fi2])) {
         e.preventDefault();
+        e.stopPropagation();
         e.stopImmediatePropagation();
+        removeStagedFile(effectiveFiles[fi2].name);
         return;
       }
     }
 
     var clientDecision = evaluateClientRules(text, effectiveFiles);
     if (clientDecision && clientDecision.blocked) {
-      _lastHandledPromptTime = Date.now();
-      _lastHandledPromptText = text;
       e.preventDefault();
+      e.stopPropagation();
       e.stopImmediatePropagation();
-      showBubble(clientDecision.message, clientDecision.rule, "block");
-      window.postMessage({
-        source: "gateway-guard-page",
-        nonce: guardNonce,
-        id: "log_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2),
-        prompt: text,
-        files: effectiveFiles || [],
-        upload_images: stagedImages || [],
-        host: location.hostname,
-        url: location.href,
-        is_blocked: true,
-        action: "Blocked",
-        rule: clientDecision.rule || ""
-      }, "*");
+      var nowClickBlock = Date.now();
+      if (text !== _lastBlockedPromptText || (nowClickBlock - _lastBlockedPromptTime > 1200)) {
+        _lastBlockedPromptText = text;
+        _lastBlockedPromptTime = nowClickBlock;
+        showBubble(clientDecision.message, clientDecision.rule, "block");
+        var toRemove = (clientDecision.violating_files && clientDecision.violating_files.length > 0) ? clientDecision.violating_files : effectiveFiles.map(function (f) { return f.name; });
+        for (var f2 = 0; f2 < toRemove.length; f2++) {
+          removeStagedFile(toRemove[f2]);
+        }
+        clearAllStagedFiles();
+        window.postMessage({
+          source: "gateway-guard-page",
+          nonce: guardNonce,
+          id: "log_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2),
+          prompt: text,
+          files: effectiveFiles || [],
+          upload_images: stagedImages || [],
+          host: location.hostname,
+          url: location.href,
+          is_blocked: true,
+          action: "Blocked",
+          rule: clientDecision.rule || ""
+        }, "*");
+      }
       return;
     }
 
@@ -2559,7 +3282,7 @@
       e.stopImmediatePropagation();
       ask(text, effectiveFiles, stagedImages).then(function (decision) {
         handleDecision(decision, function () {
-          setTimeout(function () { stagedFiles = []; stagedImages = []; }, 15000);
+          clearAllStagedFiles();
           passClick = true;
           var clickId = "eval_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2);
           _lastHandledPromptId = clickId;
@@ -2617,6 +3340,11 @@
       e.preventDefault();
       e.stopImmediatePropagation();
       showBubble(clientDecision.message, clientDecision.rule, "block");
+      var toRemove = (clientDecision.violating_files && clientDecision.violating_files.length > 0) ? clientDecision.violating_files : effectiveFiles.map(function (f) { return f.name; });
+      for (var f3 = 0; f3 < toRemove.length; f3++) {
+        removeStagedFile(toRemove[f3]);
+      }
+      clearAllStagedFiles();
       return;
     }
 
@@ -2625,7 +3353,7 @@
       e.stopImmediatePropagation();
       ask(text, effectiveFiles, stagedImages).then(function (decision) {
         handleDecision(decision, function () {
-          setTimeout(function () { stagedFiles = []; stagedImages = []; }, 15000);
+          clearAllStagedFiles();
           passClick = true;
           try {
             if (form && typeof form.requestSubmit === "function") {
@@ -2658,6 +3386,9 @@
       rule: ""
     }, "*");
   }, true);
+
+  window.addEventListener("popstate", clearAllStagedFiles);
+  window.addEventListener("hashchange", clearAllStagedFiles);
 
   // Helper: Return clean platform-native SSE or structured JSON block response
   function createBlockedFetchResponse(decision, reqUrl) {
@@ -2747,7 +3478,19 @@
 
       if (method !== "POST" && method !== "PUT" && method !== "PATCH") {
         var pGet = origFetch.apply(this, arguments);
-        if (typeof url === "string" && (url.indexOf("/session") >= 0 || url.indexOf("/me") >= 0 || url.indexOf("/user") >= 0 || url.indexOf("/auth") >= 0 || url.indexOf("/account") >= 0 || url.indexOf("/profile") >= 0)) {
+        if (typeof url === "string" && (
+          url.indexOf("/session") >= 0 ||
+          url.indexOf("/me") >= 0 ||
+          url.indexOf("/user") >= 0 ||
+          url.indexOf("/auth") >= 0 ||
+          url.indexOf("/account") >= 0 ||
+          url.indexOf("/profile") >= 0 ||
+          url.indexOf("/organization") >= 0 ||
+          url.indexOf("/org") >= 0 ||
+          url.indexOf("/bootstrap") >= 0 ||
+          url.indexOf("/userInfo") >= 0 ||
+          url.indexOf("/current_user") >= 0
+        )) {
           pGet.then(function (r) {
             try {
               if (r && r.ok && typeof r.clone === "function") {
@@ -2867,7 +3610,11 @@
                       var blk = msg.content[c];
                       if (!blk) continue;
                       if (blk.type === "text" && typeof blk.text === "string") {
-                        cParts.push(blk.text);
+                        var bText = blk.text.trim();
+                        var bLow = bText.toLowerCase();
+                        if (bLow !== "@ upload_attachment" && bLow !== "@upload_attachment" && bLow !== "upload_attachment" && !bLow.startsWith("@ upload_attachment") && !bLow.startsWith("upload_attachment")) {
+                          cParts.push(blk.text);
+                        }
                       } else if (blk.type === "document" || blk.type === "file") {
                         var docName = blk.title || blk.name || "document";
                         var docText = (blk.source && blk.source.data) ? blk.source.data : "";
@@ -2963,7 +3710,8 @@
 
       // Check if master upload block is active on this site
       if (govBlockUpload && isControlActiveForSite(govUploadTargetWebsites)) {
-        if (isPureUploadEndpoint || (body && typeof body.forEach === "function") || (netFiles && netFiles.length > 0)) {
+        var hasUploadedFile = (netFiles && netFiles.length > 0) || bodyContainsActualFile(body);
+        if (hasUploadedFile) {
           showBubble(govUploadWarning || "File uploads and attachments to this AI platform are blocked by corporate policy.", "File Upload Policy", "block");
           return Promise.reject(new TypeError("File uploads and attachments to this AI platform are blocked by corporate policy."));
         }
@@ -2994,9 +3742,30 @@
         promptText = stripInvisible(promptText);
       }
       var ptClean = (promptText || "").trim().toLowerCase();
-      var isNoisePrompt = !promptText || ptClean === "set" || ptClean === "ping" || ptClean === "pong" || ptClean === "heartbeat" || ptClean === "true" || ptClean === "false" || ptClean === "null" || ptClean === "me" || ptClean.indexOf("plsenvironmentquery") >= 0 || ptClean.indexOf("assign copilot license") >= 0;
+      var isNoisePrompt = !promptText || ptClean === "set" || ptClean === "ping" || ptClean === "pong" || ptClean === "heartbeat" || ptClean === "true" || ptClean === "false" || ptClean === "null" || ptClean === "me" || ptClean.indexOf("plsenvironmentquery") >= 0 || ptClean.indexOf("assign copilot license") >= 0 || ptClean === "@ upload_attachment" || ptClean === "@upload_attachment" || ptClean === "upload_attachment" || ptClean.startsWith("@ upload_attachment") || ptClean.startsWith("upload_attachment") || ptClean.indexOf("contrib_service") >= 0 || ptClean.startsWith("/contrib") || ptClean.startsWith("gemini-1.") || ptClean.startsWith("gemini-2.") || ptClean.startsWith("gemini-pro") || ptClean.startsWith("gemini-flash") || ptClean.indexOf("wordprocessingml") >= 0 || ptClean.indexOf("openxmlformats") >= 0 || ptClean.indexOf("ic3product") >= 0 || ptClean.indexOf("copilotconsumer") >= 0 || ptClean.indexOf("getuserproperties") >= 0 || ptClean.indexOf("getmigrationstatus") >= 0 || ptClean.indexOf("getispicassouser") >= 0 || ptClean.startsWith('{"action"') || ptClean.startsWith('{"target"');
       if (isNoisePrompt) {
         return origFetch.apply(this, arguments);
+      }
+
+      // If prompt was already evaluated by Send button / Enter key within last 5 seconds, pass through directly
+      if (_lastHandledPromptText && (Date.now() - _lastHandledPromptTime < 5000)) {
+        var cleanLast = (_lastHandledPromptText || "").trim().toLowerCase();
+        if (cleanLast && (ptClean === cleanLast || ptClean.indexOf(cleanLast) >= 0 || cleanLast.indexOf(ptClean) >= 0)) {
+          if (_lastAskDecision && String(_lastAskDecision.action || "").toLowerCase() === "redacted" && _lastAskDecision.redacted_prompt) {
+            var rInit = init ? Object.assign({}, init) : {};
+            var rRewritten = rewriteBody(rInit.body, _lastAskDecision.redacted_prompt, promptText);
+            if (rRewritten) {
+              rInit.body = rRewritten;
+              var rModified = Array.prototype.slice.call(arguments);
+              if (rModified.length >= 2) {
+                rModified[1] = rInit;
+                return origFetch.apply(window, rModified);
+              }
+              return origFetch.call(window, url, rInit);
+            }
+          }
+          return origFetch.apply(this, arguments);
+        }
       }
 
       var args = arguments;
@@ -3094,19 +3863,9 @@
     if (!armed || !body) return origXHRSend.apply(this, arguments);
 
     var xhrUrl = String(this._ggUrl || "").toLowerCase();
-    var isXhrUpload =
-      xhrUrl.includes("/backend-api/files") ||
-      xhrUrl.includes("/files") ||
-      xhrUrl.includes("/upload") ||
-      xhrUrl.includes("blob.core.windows.net") ||
-      xhrUrl.includes("amazonaws.com") ||
-      xhrUrl.includes("storage.googleapis.com") ||
-      xhrUrl.includes("/media/upload") ||
-      xhrUrl.includes("/convert_document") ||
-      xhrUrl.includes("/attachments");
-
     if (armed && govBlockUpload && isControlActiveForSite(govUploadTargetWebsites)) {
-      if (isXhrUpload || (body && (typeof FormData !== "undefined" && body instanceof FormData || typeof Blob !== "undefined" && body instanceof Blob || typeof File !== "undefined" && body instanceof File || typeof body.forEach === "function"))) {
+      var hasXhrFile = bodyContainsActualFile(body);
+      if (hasXhrFile) {
         showBubble(govUploadWarning || "File uploads and attachments to this AI platform are blocked by corporate policy.", "File Upload Policy", "block");
         try {
           this.abort();

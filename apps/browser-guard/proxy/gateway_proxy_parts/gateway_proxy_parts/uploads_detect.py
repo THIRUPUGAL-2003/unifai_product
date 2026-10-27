@@ -396,6 +396,17 @@ def _is_real_user_upload_name(name: str) -> bool:
         return False
 
     low = n.lower()
+    # Reject MIME types or URL-encoded MIME fragments mistaken for filenames
+    if any(m in low for m in (
+        "openxmlformats", "wordprocessingml", "spreadsheetml", "presentationml",
+        "2fvnd.", "%2fvnd.", "vnd.openxml", "vnd.ms-", "application/vnd", "application%2f",
+        "contrib_service", "/contrib_service", "upload_attachment",
+    )):
+        return False
+    if low.startswith(("2f", "%2f")) and any(m in low for m in ("vnd", "application", "text", "image")):
+        return False
+    if "/contrib" in low or "contrib_service" in low:
+        return False
     has_ext = bool(re.search(r"\.[A-Za-z0-9]{1,8}$", n))
     # Extensionless "Name 1.2" labels are UI chrome (model pickers, tabs), not uploads.
     if not has_ext:

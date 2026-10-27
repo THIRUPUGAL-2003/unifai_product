@@ -615,7 +615,14 @@ def enforce_file_send_policy(
                             },
                         )
                         mark_duplicate_event(domain, dedupe_key)
-                return False, "", notice, 1, cap_done
+            try:
+                from config_caches_rules import is_already_handled_by_extension
+                if is_already_handled_by_extension(domain, caption or "", (all_hints[0] if all_hints else "")):
+                    print(f"[Gateway Proxy] Extension already handled file/prompt on {domain}. Skipping proxy wire duplicate rows.")
+                    return False, "", "", 1, cap_done
+            except Exception:
+                pass
+
             log_caption = (caption or "")[:500]
             for idx, h_item in enumerate(all_hints):
                 prompt_log = _user_prompt_log_text(voice=is_voice, file_label=h_item, caption=log_caption, index=idx + 1, total=n_files)
@@ -650,6 +657,14 @@ def enforce_file_send_policy(
         # (Claude/Gemini often attach-then-auto-read with empty user text).
         # Still log the file so Prompt Logs + rules are not silent.
         # A second wire for the same file must not add another row.
+        try:
+            from config_caches_rules import is_already_handled_by_extension
+            if is_already_handled_by_extension(domain, "", (all_hints[0] if all_hints else "")):
+                print(f"[Gateway Proxy] Extension already handled file (no caption) on {domain}. Skipping proxy wire duplicate rows.")
+                return False, "", "", 1, cap_done
+        except Exception:
+            pass
+
         for idx, h_item in enumerate(all_hints):
             print(f"[Gateway Proxy] FILE/VOICE SEND (cache miss, no caption) | {h_item} | {client_ip} -> {host} ({idx + 1}/{n_files})")
             prompt_log = _user_prompt_log_text(voice=is_voice, file_label=h_item, caption="", index=idx + 1, total=n_files)
@@ -1325,6 +1340,14 @@ def _extract_file_send_user_caption(
         low = t.lower()
         if low in _WIRE_CAPTION_REJECT:
             return
+        if "/contrib_service" in low or "contrib_service" in low or "/contrib/" in low:
+            return
+        if low in ("@ upload_attachment", "@upload_attachment", "upload_attachment") or low.startswith(("@ upload_attachment", "@upload_attachment", "upload_attachment")):
+            return
+        if re.fullmatch(r"(?:gemini|gpt|claude|llama|mistral)[-\d\.]+[a-z0-9\-]*", low):
+            return
+        if any(m in low for m in ("openxmlformats", "wordprocessingml", "spreadsheetml", "presentationml", "2fvnd.")):
+            return
         if low.endswith("_pointer") or low.endswith("_id") or low.endswith("_type"):
             return
         if re.fullmatch(r"[a-z][a-z0-9_]{2,40}", low) and "_" in low:
@@ -1524,16 +1547,30 @@ def _keep_logged_upload(prep: dict) -> bool:
 def _user_prompt_log_text(*, voice: bool = False, file_label: str = "", caption: str = "", index: int = 1, total: int = 1) -> str:
     """Prompt Log text. Uniform across all AI domains: name -- prompt, name(1/2) -- prompt, voice."""
     cap = (caption or "").strip()
+    if cap:
+        cap_l = cap.lower()
+        if (
+            "/contrib_service" in cap_l
+            or "contrib_service" in cap_l
+            or "/contrib/" in cap_l
+            or cap_l in ("@ upload_attachment", "@upload_attachment", "upload_attachment")
+            or cap_l.startswith(("@ upload_attachment", "@upload_attachment", "upload_attachment"))
+            or re.fullmatch(r"(?:gemini|gpt|claude|llama|mistral)[-\d\.]+[a-z0-9\-]*", cap_l)
+            or any(m in cap_l for m in ("openxmlformats", "wordprocessingml", "spreadsheetml", "presentationml", "2fvnd."))
+        ):
+            cap = ""
     if voice:
         return f"voice -- {cap}" if cap else "voice"
     name = (file_label or "").strip()
+    if not _is_real_user_upload_name(name):
+        name = ""
     if (not name or name.lower() in ("file", "attachment", "document", "image")) and cap:
         m = re.search(r'\b([A-Za-z0-9_\-\.]{1,60}\.(?:pdf|docx?|xlsx?|csv|txt|png|jpe?g|pptx?|json|py|zip))\b', cap, re.I)
         if m:
             candidate_fn = m.group(1).strip()
             if _is_real_user_upload_name(candidate_fn):
                 name = candidate_fn
-    if not name:
+    if not name or not _is_real_user_upload_name(name):
         name = "file"
     if total > 1:
         name = f"{name}({index}/{total})"

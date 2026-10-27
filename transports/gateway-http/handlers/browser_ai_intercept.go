@@ -316,6 +316,26 @@ func (h *BrowserAIHandler) intercept(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
+	if logstore.IsNonPromptWireRequest(payload.Prompt) {
+		SendJSON(ctx, map[string]any{
+			"status":             "success",
+			"allowed":            true,
+			"action":             "Allowed",
+			"rule_triggered":     "",
+			"warning_message":    "",
+			"redacted_prompt":    payload.Prompt,
+			"forward_prompt":     payload.Prompt,
+			"risk_score":         0,
+			"predictive_risk":    "LOW",
+			"predicted_category": "SAFE",
+			"reply_text":         "",
+			"reply_bot_provider": "",
+			"reply_bot_model":    "",
+			"eval_error":         "",
+		})
+		return
+	}
+
 	evalOnly := metadataBool(payload.Metadata, "evaluation_only")
 	if evalOnly {
 		allowed, action, ruleTriggered, ruleWarning, evalError, securityVerdict := h.evaluateGuardOnly(ctx, payload.Prompt, payload.UploadImages)
@@ -348,9 +368,12 @@ func (h *BrowserAIHandler) intercept(ctx *fasthttp.RequestCtx) {
 		strings.HasPrefix(pTrimmed, "--copy paste") ||
 		strings.HasPrefix(pTrimmed, "--drag drop") ||
 		strings.HasPrefix(pTrimmed, "--download") ||
+		strings.HasPrefix(pTrimmed, "--screenshot") ||
 		strings.HasPrefix(pTrimmed, "[DRAG") ||
 		strings.HasPrefix(pTrimmed, "[CLIPBOARD") ||
-		strings.HasPrefix(pTrimmed, "[DOWNLOAD") {
+		strings.HasPrefix(pTrimmed, "[DOWNLOAD") ||
+		strings.HasPrefix(pTrimmed, "[SCREENSHOT") ||
+		strings.HasPrefix(pTrimmed, "[SCREEN CAPTURE") {
 		uploadScan = true
 	}
 

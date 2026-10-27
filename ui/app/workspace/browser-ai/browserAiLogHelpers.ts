@@ -54,6 +54,7 @@ export function logExtractedText(log: BrowserAILogEntry, attachmentText = ""): s
 
 export function isFileUploadLog(log: BrowserAILogEntry | null | undefined): boolean {
 	if (!log) return false;
+	if (isDragDropLog(log) || isClipboardLog(log) || isScreenshotLog(log) || isDownloadLog(log)) return false;
 	if (log.attachment_name || log.attachment_stored_name) return true;
 	const p = (log.user_prompt_full || log.user_prompt_preview || "").trim();
 	if (p.startsWith("[FILE UPLOAD]") || p.startsWith("[VOICE UPLOAD]")) return true;
@@ -319,3 +320,130 @@ export function securityVerdictFromLog(log: BrowserAILogEntry): SecurityVerdict 
 		tone: "neutral",
 	};
 }
+
+export function isClipboardLog(log: BrowserAILogEntry | null | undefined): boolean {
+	if (!log) return false;
+	const full = `${log.user_prompt_preview || ""} ${log.user_prompt_full || ""}`.trim().toLowerCase();
+	const status = `${log.status || ""} ${log.rule_triggered || ""}`.toLowerCase();
+	const category = (log.predicted_category || "").toLowerCase();
+	return (
+		full.startsWith("--copy paste") ||
+		full.startsWith("[clipboard") ||
+		category === "clipboard_governance" ||
+		status.includes("clipboard paste") ||
+		status.includes("clipboard copy") ||
+		status.includes("clipboard policy")
+	);
+}
+
+export function isClipboardCopyLog(log: BrowserAILogEntry | null | undefined): boolean {
+	if (!log) return false;
+	const full = `${log.user_prompt_preview || ""} ${log.user_prompt_full || ""}`.toLowerCase();
+	const status = `${log.status || ""} ${log.rule_triggered || ""}`.toLowerCase();
+	return full.includes("[clipboard copy") || status.includes("clipboard copy");
+}
+
+export function logClipboardPromptText(log: BrowserAILogEntry): string {
+	const full = (log.user_prompt_full || log.user_prompt_preview || "").trim();
+	let text = full.replace(/^(?:--copy\s+paste\s+)?\[CLIPBOARD\s+(?:PASTE|COPY)(?:\s+KEY|\s+BUTTON|\s+API)?\]\s*(?:--\s*)?/i, "");
+	text = text.replace(/^--copy\s+paste\s*(?:--\s*)?/i, "");
+	return text.trim();
+}
+
+export function isDragDropLog(log: BrowserAILogEntry | null | undefined): boolean {
+	if (!log) return false;
+	const full = `${log.user_prompt_preview || ""} ${log.user_prompt_full || ""}`.trim().toLowerCase();
+	const status = `${log.status || ""} ${log.rule_triggered || ""}`.toLowerCase();
+	const category = (log.predicted_category || "").toLowerCase();
+	return (
+		full.startsWith("--drag drop") ||
+		full.includes("--drag drop") ||
+		full.startsWith("[drag") ||
+		full.includes("[drag & drop") ||
+		full.includes("[drag and drop") ||
+		category === "drag_drop_governance" ||
+		status.includes("drag & drop") ||
+		status.includes("drag drop") ||
+		status.includes("drag_drop")
+	);
+}
+
+export function logDragDropPromptText(log: BrowserAILogEntry): string {
+	const full = (log.user_prompt_full || log.user_prompt_preview || "").trim();
+	let text = full.replace(/^(?:--drag\s+drop\s+)?\[DRAG\s+(?:&|AND)?\s+DROP\s+BLOCKED\]\s*(?:--\s*)?/i, "");
+	text = text.replace(/^--drag\s+drop\s*(?:--\s*)?/i, "");
+	text = text.replace(/^\[(?:DRAG\s+(?:&|AND)?\s+DROP|DRAG)\]\s*(?:--\s*)?/i, "");
+	return text.trim();
+}
+
+export function isScreenshotLog(log: BrowserAILogEntry | null | undefined): boolean {
+	if (!log) return false;
+	const full = `${log.user_prompt_preview || ""} ${log.user_prompt_full || ""}`.trim().toLowerCase();
+	const status = `${log.status || ""} ${log.rule_triggered || ""}`.toLowerCase();
+	const category = (log.predicted_category || "").toLowerCase();
+	return (
+		full.startsWith("--screenshot") ||
+		full.includes("--screenshot") ||
+		full.startsWith("[screenshot") ||
+		full.includes("[screen capture") ||
+		category === "screenshot_restriction" ||
+		category === "capture_governance" ||
+		status.includes("screen capture") ||
+		status.includes("screenshot")
+	);
+}
+
+export function logScreenshotPromptText(log: BrowserAILogEntry): string {
+	const full = (log.user_prompt_full || log.user_prompt_preview || "").trim();
+	let text = full.replace(/^(?:--screenshot\s+)?\[SCREEN\s+(?:CAPTURE|SHOT)\s+RESTRICTED\]\s*(?:--\s*)?/i, "");
+	text = text.replace(/^--screenshot\s*(?:--\s*)?/i, "");
+	text = text.replace(/^\[(?:SCREENSHOT|SCREEN\s+CAPTURE)\]\s*(?:--\s*)?/i, "");
+	return text.trim();
+}
+
+export function isDownloadLog(log: BrowserAILogEntry | null | undefined): boolean {
+	if (!log) return false;
+	const full = `${log.user_prompt_preview || ""} ${log.user_prompt_full || ""}`.trim().toLowerCase();
+	const status = `${log.status || ""} ${log.rule_triggered || ""}`.toLowerCase();
+	const category = (log.predicted_category || "").toLowerCase();
+	return (
+		full.startsWith("--download") ||
+		full.includes("--download") ||
+		full.startsWith("[download") ||
+		full.includes("[download blocked]") ||
+		category === "download_governance" ||
+		status.includes("download policy") ||
+		status.includes("download restricted") ||
+		status.includes("download blocked")
+	);
+}
+
+export function logDownloadPromptText(log: BrowserAILogEntry): string {
+	const full = (log.user_prompt_full || log.user_prompt_preview || "").trim();
+	let text = full.replace(/^(?:--download\s+)?\[DOWNLOAD\s+(?:BLOCKED|RESTRICTED)\]\s*(?:--\s*)?/i, "");
+	text = text.replace(/^--download\s*(?:--\s*)?/i, "");
+	text = text.replace(/^\[(?:DOWNLOAD)\]\s*(?:--\s*)?/i, "");
+	return text.trim();
+}
+
+export function isCorporateDomainLog(log: BrowserAILogEntry | null | undefined): boolean {
+	if (!log) return false;
+	const full = `${log.user_prompt_preview || ""} ${log.user_prompt_full || ""}`.trim().toLowerCase();
+	const status = `${log.status || ""} ${log.rule_triggered || ""}`.toLowerCase();
+	const category = (log.predicted_category || "").toLowerCase();
+	return (
+		full.startsWith("--corporate account") ||
+		full.includes("[unauthorized domain]") ||
+		category === "corporate_workspace_blocked" ||
+		category === "corporate_domain_policy" ||
+		status.includes("unauthorized personal account") ||
+		status.includes("corporate workspace")
+	);
+}
+
+export function logCorporatePromptText(log: BrowserAILogEntry): string {
+	const full = (log.user_prompt_full || log.user_prompt_preview || "").trim();
+	let text = full.replace(/^--corporate\s+account\s*(?:\[UNAUTHORIZED\s+DOMAIN\])?\s*/i, "");
+	return text.trim() || "Unauthorized Personal Account Blocked";
+}
+

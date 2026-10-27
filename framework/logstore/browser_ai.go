@@ -67,6 +67,39 @@ func IsOpaqueOrWirePrompt(s string) bool {
 	return looksLikeBinaryOrWireGarbage(s)
 }
 
+// IsNonPromptWireRequest checks whether a prompt is an internal wire token, model selector name,
+// upload URL/service pointer, or tool invocation command that must never be evaluated by Guard Rules
+// or persisted in Prompt Logs.
+func IsNonPromptWireRequest(s string) bool {
+	t := strings.TrimSpace(s)
+	if t == "" {
+		return false
+	}
+	low := strings.ToLower(t)
+	if strings.Contains(low, "/contrib_service") || strings.Contains(low, "contrib_service") || strings.HasPrefix(low, "/contrib/") {
+		return true
+	}
+	if low == "@ upload_attachment" || low == "@upload_attachment" || low == "upload_attachment" || strings.HasPrefix(low, "@ upload_attachment") || strings.HasPrefix(low, "upload_attachment") {
+		return true
+	}
+	if strings.HasPrefix(low, "gemini-1.") || strings.HasPrefix(low, "gemini-2.") || strings.HasPrefix(low, "gemini-pro") || strings.HasPrefix(low, "gemini-flash") || strings.HasPrefix(low, "gemini-ultra") || strings.HasPrefix(low, "gemini-nano") {
+		return true
+	}
+	if strings.Contains(low, "openxmlformats") || strings.Contains(low, "wordprocessingml") || strings.Contains(low, "spreadsheetml") || strings.Contains(low, "presentationml") || strings.Contains(low, "2fvnd.") {
+		return true
+	}
+	if strings.Contains(low, "ic3product") || strings.Contains(low, "copilotconsumer") || strings.Contains(low, "getuserproperties") || strings.Contains(low, "getmigrationstatus") || strings.Contains(low, "getispicassouser") || strings.Contains(low, "useglobalendpoint") {
+		return true
+	}
+	if strings.HasPrefix(low, "{\"action\":") || strings.HasPrefix(low, "{\"action\" :") || strings.HasPrefix(low, "{\"action\": \"") {
+		return true
+	}
+	if strings.HasPrefix(low, "{") && strings.HasSuffix(low, "}") && (strings.Contains(low, "\"action\":") || strings.Contains(low, "\"target\":") || strings.Contains(low, "\"method\":")) && !strings.Contains(low, "\"prompt\":") && !strings.Contains(low, "\"query\":") && !strings.Contains(low, "\"text\":") && !strings.Contains(low, "\"message\":") {
+		return true
+	}
+	return false
+}
+
 // IsInternalHostOrDomain reports whether a host, domain, or raw URL represents an internal loopback,
 // private network (RFC 1918), internal portal (SERVER_DOMAIN), or gateway infrastructure.
 func IsInternalHostOrDomain(rawHost string) bool {
@@ -1462,13 +1495,13 @@ func (m *BrowserAIManager) GetControls(ctx context.Context) (*BrowserControlSett
 		ctrl.PolicyVersion = 1
 	}
 	if ctrl.ClipboardBlockMessage == "" {
-		ctrl.ClipboardBlockMessage = "Copy paste not allowed"
+		ctrl.ClipboardBlockMessage = "Clipboard copy-paste into AI tools is restricted by corporate security policy."
 	}
 	if ctrl.DragDropBlockMessage == "" {
-		ctrl.DragDropBlockMessage = "Drag and drop restricted"
+		ctrl.DragDropBlockMessage = "File drag and drop is restricted by corporate security policy."
 	}
 	if ctrl.DownloadBlockMessage == "" {
-		ctrl.DownloadBlockMessage = "File download and artifact export is blocked on monitored AI tools."
+		ctrl.DownloadBlockMessage = "Downloading files, artifacts, and exports from this AI tool is restricted by corporate security policy."
 	}
 	if unifySharedLogAutoDelete(&ctrl) {
 		_ = db.WithContext(ctx).Model(&BrowserControlSettings{}).Where("id = ?", BrowserControlSettingsID).Updates(map[string]any{
@@ -1686,8 +1719,12 @@ func areRelatedAIHosts(h1, h2 string) bool {
 		{"grok.com", "x.ai"},
 		{"gemini.google.com", "aistudio.google.com"},
 		{"gemini.google.com", "google.com"},
+		{"gemini.google.com", "bard.google.com"},
+		{"copilot.microsoft.com", "copilot.com"},
 		{"copilot.microsoft.com", "bing.com"},
 		{"copilot.microsoft.com", "microsoft.com"},
+		{"copilot.microsoft.com", "office.com"},
+		{"copilot.microsoft.com", "githubcopilot.com"},
 	}
 	for _, p := range pairs {
 		if (strings.HasSuffix(h1, p[0]) || strings.HasSuffix(h1, "."+p[0])) &&
@@ -2320,9 +2357,12 @@ func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, prompt
 		strings.HasPrefix(trimmedPrompt, "--copy paste") ||
 		strings.HasPrefix(trimmedPrompt, "--drag drop") ||
 		strings.HasPrefix(trimmedPrompt, "--download") ||
+		strings.HasPrefix(trimmedPrompt, "--screenshot") ||
 		strings.HasPrefix(trimmedPrompt, "[CLIPBOARD") ||
 		strings.HasPrefix(trimmedPrompt, "[DRAG") ||
-		strings.HasPrefix(trimmedPrompt, "[DOWNLOAD")
+		strings.HasPrefix(trimmedPrompt, "[DOWNLOAD") ||
+		strings.HasPrefix(trimmedPrompt, "[SCREENSHOT") ||
+		strings.HasPrefix(trimmedPrompt, "[SCREEN CAPTURE")
 
 	// Never persist internal loopback, private networks, or internal portal traffic as Browser AI Prompt Logs
 	metaDom := ""
@@ -2360,7 +2400,7 @@ func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, prompt
 
 	if !isUpload {
 
-		if trimmedPrompt == "" || lowTrimmed == "ping" || lowTrimmed == "pong" || lowTrimmed == "heartbeat" || strings.HasPrefix(lowTrimmed, "count=") {
+		if trimmedPrompt == "" || lowTrimmed == "ping" || lowTrimmed == "pong" || lowTrimmed == "heartbeat" || strings.HasPrefix(lowTrimmed, "count=") || IsNonPromptWireRequest(promptFull) {
 			return &BrowserAILog{
 				ID:                uuid.New().String(),
 				Timestamp:         time.Now(),
@@ -2369,7 +2409,7 @@ func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, prompt
 				UserPromptFull:    "",
 				EstTokens:         0,
 				ClientIP:          clientIP,
-				Status:            "Skipped (heartbeat/empty)",
+				Status:            "Skipped (internal wire request)",
 				Action:            "Allowed",
 				RiskScore:         0,
 				PredictiveRisk:    "LOW",
@@ -2433,6 +2473,8 @@ func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, prompt
 				predictedCategory = "DRAG_DROP_GOVERNANCE"
 			} else if strings.Contains(strings.ToLower(blockedReason), "download") || strings.Contains(strings.ToLower(promptFull), "--download") || strings.Contains(strings.ToLower(promptFull), "[download") {
 				predictedCategory = "DOWNLOAD_GOVERNANCE"
+			} else if strings.Contains(strings.ToLower(blockedReason), "screenshot") || strings.Contains(strings.ToLower(blockedReason), "screen capture") || strings.Contains(strings.ToLower(promptFull), "--screenshot") || strings.Contains(strings.ToLower(promptFull), "[screenshot") || strings.Contains(strings.ToLower(promptFull), "[screen capture") {
+				predictedCategory = "SCREENSHOT_RESTRICTION"
 			}
 		} else if statusStr, ok := metadata["status"].(string); ok && statusStr != "" {
 			status = statusStr
@@ -2458,6 +2500,12 @@ func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, prompt
 		}
 	} else if strings.Contains(strings.ToLower(promptFull), "--download") || strings.Contains(strings.ToLower(promptFull), "[download") {
 		predictedCategory = "DOWNLOAD_GOVERNANCE"
+		if riskScore < 60 {
+			riskScore = 60
+			predictiveRisk = "MEDIUM"
+		}
+	} else if strings.Contains(strings.ToLower(promptFull), "--screenshot") || strings.Contains(strings.ToLower(promptFull), "[screenshot") || strings.Contains(strings.ToLower(promptFull), "[screen capture") {
+		predictedCategory = "SCREENSHOT_RESTRICTION"
 		if riskScore < 60 {
 			riskScore = 60
 			predictiveRisk = "MEDIUM"
@@ -3585,7 +3633,7 @@ func (m *BrowserAIManager) UpsertAgentHeartbeat(ctx context.Context, incoming *B
 			HealthStatus:       strings.TrimSpace(incoming.HealthStatus),
 			HealthDetail:       strings.TrimSpace(incoming.HealthDetail),
 			Status:             AgentStatusActive,
-			ExtensionStatus:    firstNonEmpty(strings.TrimSpace(incoming.ExtensionStatus), "not_installed"),
+			ExtensionStatus:    firstNonEmpty(strings.TrimSpace(incoming.ExtensionStatus), "installed"),
 			ADDomain:           strings.TrimSpace(incoming.ADDomain),
 			ADUpn:              strings.TrimSpace(incoming.ADUpn),
 			ADGroups:           strings.TrimSpace(incoming.ADGroups),
@@ -3686,7 +3734,7 @@ func (m *BrowserAIManager) UpsertAgentHeartbeat(ctx context.Context, incoming *B
 			existing.ExtensionLastSeenAt = &now
 		}
 	} else if existing.ExtensionStatus == "" {
-		existing.ExtensionStatus = "not_installed"
+		existing.ExtensionStatus = "installed"
 	}
 	existing.LastSeenAt = now
 	existing.UpdatedAt = now
