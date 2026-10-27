@@ -995,4 +995,122 @@ All deployed endpoints can be remotely controlled in real time directly from the
 | **Remote Uninstall** | Click **Remote Uninstall** (requires Uninstall Key) | `POST /api/browser-ai/agents/{id}/remote-uninstall` (`guardEventUninstall`) | Daemon clears Windows PAC, deletes startup Run key, removes install folder, signals extension to clear policies, and calls `/uninstall-ack` | ⚪ **Uninstalled** |
 | **Local Tamper Protection** | User runs local uninstaller from Windows Settings | CLI prompt: `YP_Raksha.exe --uninstall-prompt` | GUI dialog requests Uninstall Key; wrong key is denied (`valid: false`), protection remains active | 🟢 **Active** (Tamper Protected) |
 
+---
+
+## 9. File Upload Prediction & Deep Extraction Architecture (Extension ↔ Desktop EXE)
+
+### 9.1. Architectural Philosophy: Split-Responsibility Model
+
+In high-performance enterprise DLP, client browsers must remain light, responsive, and crash-free. Therefore, the UnifAI architecture strictly segregates file inspection duties into a **Two-Tier Split-Responsibility Model**:
+
+1. **Browser Extension (Fast Predictor & Gatekeeper)**:
+   - **Does NOT** perform CPU-intensive or memory-heavy binary text parsing in the DOM thread.
+   - **Predicts** file metadata: File Name, MIME type, file extension, magic byte signature (`sniffMagicFileType`), accompanying user prompt, and session correlation tokens.
+   - **Applies Browser Governance Settings**: Evaluates upload permissions (`block_upload`), blocked/restricted file extensions (`restricted_file_extensions`), and allowed extensions (`allowed_file_extensions`) against target domains.
+   - **Dispatches**: If browser conditions pass, packages the file payload (single or batch of 1 to N files) and securely streams them to the local desktop agent (EXE).
+
+2. **Desktop Daemon / EXE (Deep Content Extractor & AI/DLP Engine)**:
+   - **Receives** individual or multiple file streams from the extension.
+   - **Type-Based Data Extraction**: Leverages specialized native parsing engines based on detected file types (PDF, Word, Excel, PowerPoint, Text/Source Code, Images with OCR, PE Binaries, Compressed Archives).
+   - **Rule Evaluation**: Runs extracted text through active DLP regex filters, deterministic keyword lists, and multi-modal AI Bot Evaluator LLMs.
+   - **Action Enforcement**:
+     - **Match Found**: Enforces policy action (`BLOCK`, `WARN`, `REDACT`, `AUDIT`), returns violation details to extension to block UI submission, and logs incident to centralized database.
+     - **No Match (Clean)**: Returns `ALLOWED`. The upload proceeds smoothly to the AI target platform.
+
+```mermaid
+flowchart TD
+    subgraph STAGE1["🔵 STAGE 1: BROWSER EXTENSION (Fast Metadata & Type Prediction)"]
+        A["👤 User Uploads File(s)<br/>(Single or Multiple 1..N)"] --> B["📎 DOM Interceptor<br/>inspectAndStageFile()"]
+        B --> C["🔍 Metadata & Type Predictor<br/>- File Name<br/>- File Extension<br/>- Magic Bytes (MZ, PDF, PK, etc.)<br/>- Prompt Text + Correlation ID"]
+        C --> D{"⚙️ Browser Setting Conditions?<br/>- block_upload<br/>- restricted_file_extensions<br/>- allowed_file_extensions"}
+        D -->|Violation| E["🚫 Browser-Side Immediate Block<br/>UI Compliance Alert Modal"]
+        D -->|Passed / Allowed| F["📦 Package Single / Multi-File Stream<br/>(Base64 / Binary Buffer)"]
+    end
+
+    subgraph STAGE2["🔄 STAGE 2: EXTENSION ↔ EXE BRIDGE"]
+        F -->|POST /extension/check<br/>or Transparent Proxy Intercept| G["💻 Desktop Daemon (EXE)<br/>127.0.0.1:18195"]
+    end
+
+    subgraph STAGE3["🟢 STAGE 3: DESKTOP EXE (Type-Based Deep Content Extraction)"]
+        G --> H{"📂 Detect File Type & Dispatch Extractor"}
+        H -->|Plain Text / Source Code| I1["📝 Direct Text Parser<br/>.py, .js, .json, .csv, .txt, .env, .sql"]
+        H -->|PDF Documents| I2["📄 PDF Text & Form Extractor<br/>PyPDF2 / pdfplumber (Text + Stream)"]
+        H -->|Office Documents| I3["📊 Office Document Extractor<br/>python-docx, openpyxl, pptx"]
+        H -->|Images / Scans| I4["🖼️ Vision & OCR Engine<br/>Tesseract / Multi-Modal Scanner"]
+        H -->|Binaries / Executables| I5["⚙️ Binary & PE Extractor<br/>PE Headers, Magic Bytes MZ, String Tables"]
+        H -->|Archives / Compressed| I6["📦 Archive Decompressor<br/>.zip, .tar.gz, .rar inner file scanner"]
+    end
+
+    subgraph STAGE4["🟣 STAGE 4: RULE EVALUATION & ENFORCEMENT ENGINE"]
+        I1 & I2 & I3 & I4 & I5 & I6 --> J["📑 Unified Extracted Text Buffer"]
+        J --> K["🛡️ Security Rule Evaluation Pipeline"]
+        K --> L1["🔍 Deterministic Regex (PCI, PII, Secrets)"]
+        K --> L2["📋 Keyword & Sensitive Terms Matcher"]
+        K --> L3["🤖 Multi-Modal AI Bot Evaluator"]
+        
+        L1 & L2 & L3 --> M{"⚖️ Policy Rule Matched?"}
+        M -->|YES - Rule Matched| N["🚨 ENFORCE POLICY ACTION<br/>- BLOCK: Intercept & Drop Request<br/>- WARN: Prompt Confirmation Dialog<br/>- REDACT: Mask Sensitive Data<br/>- AUDIT: Log Violation & Alert Admins"]
+        M -->|NO - Clean Payload| O["✅ NORMALLY ALLOWED<br/>Zero-friction passthrough to AI Target<br/>(ChatGPT / Claude / Gemini / DeepSeek)"]
+    end
+
+    N -->|Block Response| G
+    O -->|Success Response| G
+    G -->|Result JSON| P["🌐 Browser AI Interface<br/>(Event Blocked or Transmitted)"]
+```
+
+### 9.2. Comprehensive Pipeline Specification
+
+#### Stage 1: Browser Extension (Metadata Prediction & Governance Filtering)
+* **File Detection Hooks**: Intercepts HTML5 `<input type="file">`, DOM Drag & Drop events (`drop`, `dragover`), and Clipboard file paste events (`paste`).
+* **Magic Byte Sniffing**: Inspects the first 16 bytes (`DataView` buffer) to verify true file types regardless of user-modified file extensions:
+  - `4D 5A` (`MZ`): Windows Portable Executable (`.exe`, `.dll`, `.sys`)
+  - `25 50 44 46` (`%PDF`): Adobe PDF document
+  - `50 4B 03 04` (`PK..`): ZIP Archive / Office OpenXML (`.docx`, `.xlsx`, `.pptx`)
+  - `89 50 4E 47` (`.PNG`): Portable Network Graphics
+  - `FF D8 FF`: JPEG Image
+* **Browser Setting Policy Evaluation**:
+  - `block_upload = true`: Drops file immediately; alerts employee with `upload_warning`.
+  - `block_file_extension = true`: Compares detected extension against `restricted_file_extensions` (e.g. `.pem`, `.key`, `.env`, `.sql`, `.exe`).
+  - `allowed_file_extensions`: If configured, denies any extension not present on the whitelist.
+* **Batch Packaging**: Single files or batches of 2 to 10+ files are tagged with correlation IDs (`file_id`, `prompt_id`, `timestamp`) and dispatched to the local EXE listener.
+
+#### Stage 2: Extension to EXE Communication Bridge
+* **Loopback Transport**: Transmitted over high-speed local HTTP socket (`http://127.0.0.1:18195/extension/check`) with fallback to loopback PAC/MitM proxy socket (`127.0.0.1:18103`).
+* **ChatGPT Asset Pointer Correlation**: Specifically resolves ChatGPT's `asset_pointer` upload mechanism, ensuring staged file content is linked to backend conversational requests even when OpenAI hashes internal file IDs (`file-xxx`).
+
+#### Stage 3: Desktop EXE Deep Content Extraction Matrix
+
+| File Classification | Extensions / MIME | Extraction Method in Desktop EXE | Extracted Content Output |
+| :--- | :--- | :--- | :--- |
+| **Source Code & Scripts** | `.py`, `.js`, `.ts`, `.go`, `.java`, `.cpp`, `.sh`, `.ps1` | UTF-8 direct stream decoder with fallback to Latin-1 / UTF-16 | Raw source code lines, functions, embedded credentials |
+| **Config & Data Files** | `.env`, `.json`, `.yaml`, `.yml`, `.csv`, `.xml`, `.sql` | Structured text reader + key-value delimiter parser | Configuration values, database dumps, environment variables |
+| **PDF Documents** | `.pdf` (`application/pdf`) | Binary stream reader using PyPDF2 / pdfplumber text extractors | Uncompressed text from all pages, document metadata, form fields |
+| **Word Documents** | `.docx`, `.doc` | XML stream decompressor (`word/document.xml`) via python-docx | Paragraph text, headers, footers, embedded tables |
+| **Excel Spreadsheets** | `.xlsx`, `.xls` | OpenXML sheet parser via openpyxl | Cell contents across all sheets, hidden columns, sheet names |
+| **PowerPoint Slides** | `.pptx`, `.ppt` | Slide text accumulator via python-pptx | Slide titles, bullet points, speaker notes |
+| **Images & Scans** | `.png`, `.jpg`, `.jpeg`, `.webp`, `.bmp` | Optical Character Recognition (OCR) via Tesseract / Vision model | Text printed inside screenshots, IDs, invoices, and photos |
+| **Binaries & Executables**| `.exe`, `.dll`, `.bin`, `.so`, `.dylib` | PE header inspection + ASCII/Unicode string extraction (`strings`) | Hardcoded strings, URLs, API keys, certificate signatures |
+| **Compressed Archives** | `.zip`, `.tar.gz`, `.tgz`, `.7z` | Recursive in-memory archive extraction | Decompressed text and inner files evaluated against all stages |
+
+#### Stage 4: DLP & AI Rule Evaluation Engine
+
+1. **Deterministic Regex & Keyword Engine**:
+   - Matches extracted text against enterprise rules:
+     - Financial: Credit card numbers (Luhn validated), IBAN, PAN card.
+     - Identity: Social Security Numbers (SSN), Aadhaar, Passport numbers.
+     - Security: AWS/GCP/Azure Secret Keys, Private Keys (`BEGIN RSA PRIVATE KEY`), JWT tokens, database passwords.
+     - Custom: Corporate intellectual property keywords and source code signatures.
+2. **AI Bot LLM Evaluator (Optional Deep Inspection)**:
+   - For unstructured text or ambiguous compliance questions, dispatches extracted text to configured AI Evaluator (e.g., local Ollama or secure enterprise model).
+   - Evaluates risk score (Low, Medium, High, Critical) and intent classification.
+3. **Decision & Action Matrix**:
+
+| Evaluation Result | System Action | Extension / Browser Behavior | Telemetry & Audit Action |
+| :--- | :---: | :--- | :--- |
+| **Rule Violated (`BLOCK`)** | `BLOCK` | Submission aborted; red DLP violation popup shown to employee | Ingested to `browser_ai_prompts` with `action: "Blocked"`, alert triggered |
+| **Rule Violated (`WARN`)** | `WARN` | Modal warning displayed; requires employee justification to proceed | Ingested with `action: "Warned"`, confirmation logged |
+| **Rule Violated (`REDACT`)** | `REDACT` | Sensitive substrings masked (`[REDACTED]`) before target transmission | Ingested with `action: "Redacted"`, diff stored |
+| **No Rules Violated** | `ALLOW` | **Normally Allowed**: Zero delay; file and prompt pass cleanly to AI target | Ingested with `action: "Allowed"`, telemetry updated |
+
+
 

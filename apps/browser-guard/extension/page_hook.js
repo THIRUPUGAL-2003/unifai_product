@@ -33,17 +33,54 @@
 
   function pushStagedFile(item) {
     if (!item || !item.name) return;
-    item.timestamp = Date.now();
+    var now = Date.now();
+    item.timestamp = now;
     var key = String(item.name).toLowerCase().trim();
+    var existing = stagedFilesCache[key] || stagedFilesCache[item.name];
+    if (existing) {
+      if (!item.text && existing.text) item.text = existing.text;
+      if (!item.base64 && existing.base64) item.base64 = existing.base64;
+      if (!item.size && existing.size) item.size = existing.size;
+      if (!item.type && existing.type) item.type = existing.type;
+    }
     stagedFilesCache[key] = item;
     stagedFilesCache[item.name] = item;
     for (var s = 0; s < stagedFiles.length; s++) {
-      if (stagedFiles[s].name === item.name) {
+      if (stagedFiles[s].name === item.name || String(stagedFiles[s].name).toLowerCase().trim() === key) {
         stagedFiles[s] = item;
         return;
       }
     }
     stagedFiles.push(item);
+  }
+
+  function getAllFreshStagedFiles() {
+    var now = Date.now();
+    var map = {};
+    for (var s = 0; s < stagedFiles.length; s++) {
+      var item = stagedFiles[s];
+      if (item && item.name && (now - (item.timestamp || 0) < 180000)) {
+        map[String(item.name).toLowerCase().trim()] = item;
+      }
+    }
+    var keys = Object.keys(stagedFilesCache);
+    for (var k = 0; k < keys.length; k++) {
+      var entry = stagedFilesCache[keys[k]];
+      if (entry && entry.name && (now - (entry.timestamp || 0) < 180000)) {
+        var ckey = String(entry.name).toLowerCase().trim();
+        if (!map[ckey]) {
+          map[ckey] = entry;
+        } else if ((!map[ckey].base64 && !map[ckey].text) && (entry.base64 || entry.text)) {
+          map[ckey] = entry;
+        }
+      }
+    }
+    var result = [];
+    var mkeys = Object.keys(map);
+    for (var m = 0; m < mkeys.length; m++) {
+      result.push(map[mkeys[m]]);
+    }
+    return result;
   }
 
   function getCachedStagedFile(name) {
@@ -1615,6 +1652,9 @@
     var size = file.size || 0;
     var type = file.type || "";
 
+    // IMMEDIATELY stage file metadata (name, type, size) so EXE always receives it even if async reader is in-flight
+    pushStagedFile({ name: name, size: size, type: type, text: "", base64: "", pending: true });
+
     // Read images as Base64 for Vision check
     if (type.indexOf("image/") === 0 || /\.(png|jpg|jpeg|webp|bmp|svg)$/i.test(name)) {
       var rImg = new FileReader();
@@ -2102,7 +2142,7 @@
 
   function mergeStagedAndDomFiles() {
     var domFiles = extractDOMAttachedFiles();
-    var all = stagedFiles.slice();
+    var all = getAllFreshStagedFiles();
     for (var i = 0; i < domFiles.length; i++) {
       var df = domFiles[i];
       var cached = getCachedStagedFile(df.name);
@@ -2112,7 +2152,14 @@
         if (!df.size && cached.size) df.size = cached.size;
         if (!df.type && cached.type) df.type = cached.type;
       }
-      if (!all.some(function (x) { return x.name === df.name; })) {
+      var exists = false;
+      for (var a0 = 0; a0 < all.length; a0++) {
+        if (all[a0].name === df.name || String(all[a0].name).toLowerCase().trim() === String(df.name).toLowerCase().trim()) {
+          exists = true;
+          break;
+        }
+      }
+      if (!exists) {
         all.push(df);
       }
     }
@@ -2253,8 +2300,7 @@
       var target = e.target;
       ask(text, effectiveFiles, stagedImages).then(function (decision) {
         handleDecision(decision, function () {
-          stagedFiles = [];
-          stagedImages = [];
+          setTimeout(function () { stagedFiles = []; stagedImages = []; }, 15000);
           passKey = true;
           var pId = "eval_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2);
           _lastHandledPromptId = pId;
@@ -2441,8 +2487,7 @@
       e.stopImmediatePropagation();
       ask(text, effectiveFiles, stagedImages).then(function (decision) {
         handleDecision(decision, function () {
-          stagedFiles = [];
-          stagedImages = [];
+          setTimeout(function () { stagedFiles = []; stagedImages = []; }, 15000);
           passClick = true;
           var clickId = "eval_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2);
           _lastHandledPromptId = clickId;
@@ -2508,8 +2553,7 @@
       e.stopImmediatePropagation();
       ask(text, effectiveFiles, stagedImages).then(function (decision) {
         handleDecision(decision, function () {
-          stagedFiles = [];
-          stagedImages = [];
+          setTimeout(function () { stagedFiles = []; stagedImages = []; }, 15000);
           passClick = true;
           try {
             if (form && typeof form.requestSubmit === "function") {
@@ -2888,7 +2932,7 @@
 
       // Robustly enrich netFiles with cached base64 and text content
       var now_ts = Date.now();
-      var freshStaged = stagedFiles.filter(function (s) { return (now_ts - (s.timestamp || 0)) < 180000; });
+      var freshStaged = getAllFreshStagedFiles();
       for (var nf = 0; nf < netFiles.length; nf++) {
         var nFile = netFiles[nf];
         var cachedFile = getCachedStagedFile(nFile.name);
@@ -2898,32 +2942,18 @@
           if (!nFile.size && cachedFile.size) nFile.size = cachedFile.size;
           if (!nFile.type && cachedFile.type) nFile.type = cachedFile.type;
         }
-        // ChatGPT asset_pointer fallback: name is "file-abc123" not original filename.
-        // If still no content and exactly one fresh staged file exists, use it.
-        if (!nFile.text && !nFile.base64 && freshStaged.length === 1) {
-          var sf = freshStaged[0];
-          if (sf.text) nFile.text = sf.text;
-          if (sf.base64) nFile.base64 = sf.base64;
-          if (!nFile.size && sf.size) nFile.size = sf.size;
-          if (!nFile.type && sf.type) nFile.type = sf.type;
-          // Prefer original filename for accurate type detection
-          if (sf.name && /^file[-_][a-zA-Z0-9]+$/.test(nFile.name || "")) {
-            nFile.name = sf.name;
-          }
-        }
       }
-      // If all netFiles still have no content, match them positionally to fresh staged files
-      var noContentCount = 0;
-      for (var nc = 0; nc < netFiles.length; nc++) {
-        if (!netFiles[nc].text && !netFiles[nc].base64) noContentCount++;
-      }
-      if (noContentCount > 0 && freshStaged.length > 0 && noContentCount === netFiles.length) {
-        for (var fi2 = 0; fi2 < netFiles.length && fi2 < freshStaged.length; fi2++) {
+      // Positionally match any netFiles still lacking content to fresh staged files (handles ChatGPT asset_pointer file-xxx)
+      for (var fi2 = 0; fi2 < netFiles.length && fi2 < freshStaged.length; fi2++) {
+        if (!netFiles[fi2].text && !netFiles[fi2].base64) {
           var sf2 = freshStaged[fi2];
-          if (!netFiles[fi2].text && sf2.text) netFiles[fi2].text = sf2.text;
-          if (!netFiles[fi2].base64 && sf2.base64) netFiles[fi2].base64 = sf2.base64;
+          if (sf2.text) netFiles[fi2].text = sf2.text;
+          if (sf2.base64) netFiles[fi2].base64 = sf2.base64;
           if (!netFiles[fi2].size && sf2.size) netFiles[fi2].size = sf2.size;
           if (!netFiles[fi2].type && sf2.type) netFiles[fi2].type = sf2.type;
+          if (sf2.name && /^file[-_][a-zA-Z0-9]+$/.test(netFiles[fi2].name || "")) {
+            netFiles[fi2].name = sf2.name;
+          }
         }
       }
       if (netFiles.length === 0 && freshStaged.length > 0) {
