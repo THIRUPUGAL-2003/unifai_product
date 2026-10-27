@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/bytedance/sonic"
 	"github.com/gateway/gateway/framework/featureflags"
@@ -1280,7 +1281,18 @@ func (h *BrowserAIHandler) interceptFile(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
+	formExtractedText := getForm("extracted_text")
 	extractedText := strings.TrimSpace(getMetadataString(metadata, "extracted_text"))
+	if extractedText == "" && formExtractedText != "" {
+		extractedText = strings.TrimSpace(formExtractedText)
+		metadata["extracted_text"] = extractedText
+	}
+	if extractedText == "" && len(uploadBytes) > 0 {
+		extractedText = extractFileTextFallback(uploadBytes, fileName)
+		if extractedText != "" {
+			metadata["extracted_text"] = extractedText
+		}
+	}
 	uploadImages := parseUploadImagesMetadata(metadata)
 	scanApplied := h.applyScanGuardFromMetadata(ctx, logEntry, metadata, &ruleWarning)
 	// Never stamp AI Guard Bot "security OK" on filename-only prefixes with no extract/images.
@@ -1406,4 +1418,83 @@ func (h *BrowserAIHandler) getAttachment(ctx *fasthttp.RequestCtx) {
 		ctx.Response.Header.Set("Content-Disposition", fmt.Sprintf(`inline; filename="%s"`, strings.ReplaceAll(name, `"`, "")))
 	}
 	ctx.SetBody(data)
+}
+
+// extractFileTextFallback pulls clean text or printable ASCII/UTF-16 strings from raw upload bytes
+// so AI Guard Bot always evaluates file contents even if proxy or agent did not pre-extract.
+func extractFileTextFallback(data []byte, filename string) string {
+	if len(data) == 0 {
+		return ""
+	}
+	// 1. Plain text / UTF-8 decode
+	if utf8.Valid(data) {
+		printable := true
+		for _, r := range string(data) {
+			if r < 32 && r != '\n' && r != '\r' && r != '\t' {
+				printable = false
+				break
+			}
+		}
+		if printable {
+			s := strings.TrimSpace(string(data))
+			if len(s) > 3 {
+				if len(s) > 80000 {
+					return s[:80000]
+				}
+				return s
+			}
+		}
+	}
+	// 2. Extract ASCII strings (for .exe, .bin, .so, etc.)
+	var sb strings.Builder
+	var current strings.Builder
+	for _, b := range data {
+		if b >= 32 && b <= 126 {
+			current.WriteByte(b)
+		} else {
+			if current.Len() >= 4 {
+				if sb.Len() > 0 {
+					sb.WriteByte(' ')
+				}
+				sb.WriteString(current.String())
+				if sb.Len() > 80000 {
+					break
+				}
+			}
+			current.Reset()
+		}
+	}
+	if current.Len() >= 4 && sb.Len() < 80000 {
+		if sb.Len() > 0 {
+			sb.WriteByte(' ')
+		}
+		sb.WriteString(current.String())
+	}
+
+	// 3. Extract UTF-16LE strings (common in Windows .exe binaries)
+	if sb.Len() < 40000 && len(data) >= 8 {
+		var u16 strings.Builder
+		for i := 0; i+1 < len(data); i += 2 {
+			if data[i] >= 32 && data[i] <= 126 && data[i+1] == 0 {
+				u16.WriteByte(data[i])
+			} else {
+				if u16.Len() >= 4 {
+					if sb.Len() > 0 {
+						sb.WriteByte(' ')
+					}
+					sb.WriteString(u16.String())
+					if sb.Len() > 80000 {
+						break
+					}
+				}
+				u16.Reset()
+			}
+		}
+	}
+
+	res := strings.TrimSpace(sb.String())
+	if len(res) > 3 {
+		return res
+	}
+	return ""
 }

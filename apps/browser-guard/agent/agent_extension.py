@@ -656,6 +656,9 @@ def _post_intercept_file(
         add_field("agent_type", "endpoint")
         add_field("file_name", file_name)
         add_field("content_type", content_type or "application/octet-stream")
+        ext_text = str((metadata or {}).get("extracted_text") or "")
+        if ext_text:
+            add_field("extracted_text", ext_text)
         add_field("metadata", json.dumps(metadata))
         if file_payload and len(file_payload) <= 20 * 1024 * 1024:
             hdr = (
@@ -776,6 +779,7 @@ def check_prompt(
     images_list = upload_images if isinstance(upload_images, list) else []
 
     file_names = []
+    file_extracted_texts = []
     for f in files_list:
         if isinstance(f, dict):
             fname = str(f.get("name") or "").strip()
@@ -799,8 +803,8 @@ def check_prompt(
                 except Exception:
                     pass
 
-            extracted = ""
-            if raw_b or ftext:
+            extracted = str(f.get("extracted_text") or "").strip()
+            if not extracted and (raw_b or ftext):
                 try:
                     p_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "proxy"))
                     if p_dir not in sys.path:
@@ -823,20 +827,49 @@ def check_prompt(
                     for enc in ("utf-8", "utf-16", "utf-16-le", "utf-16-be", "latin-1", "cp1252"):
                         try:
                             t_dec = raw_b.decode(enc, errors="strict").strip()
-                            if len(t_dec) > 3:
+                            if len(t_dec) > 3 and not any(ord(c) == 0 for c in t_dec[:100]):
                                 extracted = t_dec
                                 break
                         except Exception:
                             continue
 
-                # Printable ASCII strings extraction fallback for raw binaries
-                if not extracted and raw_b and len(raw_b) >= 4:
+                # Printable ASCII + UTF-16LE strings extraction for .exe, PE binaries, archives, and arbitrary data
+                is_bin = (
+                    raw_b.startswith(b"MZ")
+                    or norm_fext in ("exe", "dll", "sys", "bin", "dat", "so", "dylib", "elf", "class")
+                    or (b"\x00" in raw_b[:512])
+                )
+                if raw_b and (is_bin or not extracted) and len(raw_b) >= 4:
+                    bin_parts = []
                     try:
-                        strs = re.findall(rb'[A-Za-z0-9_./@:\-]{4,}', raw_b)
-                        if strs:
-                            extracted = b" ".join(strs[:5000]).decode("ascii", errors="ignore")
+                        strs = re.findall(rb'[\x20-\x7E]{4,}', raw_b)
+                        for s_bytes in strs[:3000]:
+                            s_dec = s_bytes.decode("ascii", errors="ignore").strip()
+                            if len(s_dec) >= 4:
+                                bin_parts.append(s_dec)
                     except Exception:
                         pass
+                    try:
+                        u16_strs = re.findall(rb'(?:[\x20-\x7E]\x00){4,}', raw_b)
+                        for u_bytes in u16_strs[:3000]:
+                            u_dec = u_bytes.decode("utf-16le", errors="ignore").strip()
+                            if len(u_dec) >= 4 and u_dec not in bin_parts:
+                                bin_parts.append(u_dec)
+                    except Exception:
+                        pass
+                    if bin_parts:
+                        extra_str = " ".join(bin_parts[:4000])
+                        if extracted:
+                            extracted += "\n" + extra_str
+                        else:
+                            extracted = extra_str
+
+            if extracted:
+                f["extracted_text"] = extracted
+                file_extracted_texts.append(extracted)
+            elif ftext:
+                f["extracted_text"] = ftext
+                file_extracted_texts.append(ftext)
 
             if ftext and len(ftext.strip()) > 0:
                 text += f"\n[File: {fname}]\n" + ftext[:50000]
@@ -1040,11 +1073,16 @@ def check_prompt(
             f_meta["file_name"] = fname
             f_meta["user_caption"] = user_caption
             f_meta["upload_scan"] = True
+            f_ext_text = ""
+            if isinstance(f, dict):
+                f_ext_text = str(f.get("extracted_text") or f.get("text") or "").strip()
+            if f_ext_text:
+                f_meta["extracted_text"] = f_ext_text[:100000]
             if is_blocked:
                 f_meta["is_blocked"] = True
                 f_meta["blocked_reason"] = rule or "Client Security Rule"
 
-            # Post file attachment asynchronously in background thread so check_prompt returns in 5ms without blocking
+            # Post file attachment asynchronously in background thread so file is stored in backend
             threading.Thread(
                 target=_post_intercept_file,
                 kwargs=dict(
@@ -1069,7 +1107,9 @@ def check_prompt(
                 "rule": rule or "Data Loss Prevention Rule",
                 "redacted_prompt": "",
             }
-        return {"blocked": False, "action": "Allowed", "message": "", "rule": ""}
+
+    if file_extracted_texts:
+        meta["extracted_text"] = "\n\n".join(file_extracted_texts)[:100000]
 
     payload = {
         "platform": platform,
@@ -1113,7 +1153,8 @@ def check_prompt(
         return {"blocked": False, "passthrough": True, "message": "", "rule": ""}
 
     # Deduplicate non-blocked prompts within 8 seconds
-    prompt_dedupe_key = f"{platform}|{text[:100]}"
+    file_key = ",".join(file_names) if file_names else ""
+    prompt_dedupe_key = f"{platform}|{file_key}|{text[:100]}"
     if _is_duplicate_file_post("prompt|" + prompt_dedupe_key, ttl=8.0):
         return {"blocked": False, "action": "Allowed", "message": "", "rule": ""}
 

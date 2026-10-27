@@ -27,9 +27,16 @@
   var passClick = false;
   var pending = {};
   var stagedFiles = [];
+  var stagedFilesCache = {};
   var stagedImages = [];
+  var lastCreatedFileName = "";
+
   function pushStagedFile(item) {
     if (!item || !item.name) return;
+    item.timestamp = Date.now();
+    var key = String(item.name).toLowerCase().trim();
+    stagedFilesCache[key] = item;
+    stagedFilesCache[item.name] = item;
     for (var s = 0; s < stagedFiles.length; s++) {
       if (stagedFiles[s].name === item.name) {
         stagedFiles[s] = item;
@@ -37,6 +44,46 @@
       }
     }
     stagedFiles.push(item);
+  }
+
+  function getCachedStagedFile(name) {
+    if (!name) return null;
+    var now = Date.now();
+    var clean = String(name).toLowerCase().trim();
+    if (stagedFilesCache[clean] && (now - (stagedFilesCache[clean].timestamp || 0) < 180000)) {
+      return stagedFilesCache[clean];
+    }
+    if (stagedFilesCache[name] && (now - (stagedFilesCache[name].timestamp || 0) < 180000)) {
+      return stagedFilesCache[name];
+    }
+    var keys = Object.keys(stagedFilesCache);
+    for (var k = 0; k < keys.length; k++) {
+      var entry = stagedFilesCache[keys[k]];
+      if (entry && (now - (entry.timestamp || 0) < 180000)) {
+        var eName = String(entry.name || "").toLowerCase().trim();
+        if (clean === eName || clean.endsWith(eName) || eName.endsWith(clean)) {
+          return entry;
+        }
+      }
+    }
+    for (var s = 0; s < stagedFiles.length; s++) {
+      if (stagedFiles[s].name === name || String(stagedFiles[s].name).toLowerCase().trim() === clean) {
+        return stagedFiles[s];
+      }
+    }
+    var freshEntries = [];
+    for (var f = 0; f < keys.length; f++) {
+      var fe = stagedFilesCache[keys[f]];
+      if (fe && (now - (fe.timestamp || 0) < 90000)) {
+        if (!freshEntries.some(function (x) { return x === fe; })) {
+          freshEntries.push(fe);
+        }
+      }
+    }
+    if (freshEntries.length === 1) {
+      return freshEntries[0];
+    }
+    return null;
   }
   var _lastHandledPromptTime = 0;
   var _lastHandledPromptText = "";
@@ -1559,12 +1606,12 @@
 
   // --- 2. ALL FILE TYPES & IMAGE INTERCEPTION ENGINE ---
 
-  function inspectAndStageFile(file) {
+  function inspectAndStageFile(file, optName) {
     if (!file) return false;
     if (!checkFileUploadAllowed(file)) {
       return false;
     }
-    var name = file.name || "file";
+    var name = optName || file.name || "file";
     var size = file.size || 0;
     var type = file.type || "";
 
@@ -2057,8 +2104,27 @@
     var domFiles = extractDOMAttachedFiles();
     var all = stagedFiles.slice();
     for (var i = 0; i < domFiles.length; i++) {
-      if (!all.some(function (x) { return x.name === domFiles[i].name; })) {
-        all.push(domFiles[i]);
+      var df = domFiles[i];
+      var cached = getCachedStagedFile(df.name);
+      if (cached) {
+        if (!df.text && cached.text) df.text = cached.text;
+        if (!df.base64 && cached.base64) df.base64 = cached.base64;
+        if (!df.size && cached.size) df.size = cached.size;
+        if (!df.type && cached.type) df.type = cached.type;
+      }
+      if (!all.some(function (x) { return x.name === df.name; })) {
+        all.push(df);
+      }
+    }
+    for (var a = 0; a < all.length; a++) {
+      if (!all[a].text && !all[a].base64) {
+        var match = getCachedStagedFile(all[a].name);
+        if (match) {
+          if (match.text) all[a].text = match.text;
+          if (match.base64) all[a].base64 = match.base64;
+          if (match.size) all[a].size = match.size;
+          if (match.type) all[a].type = match.type;
+        }
       }
     }
     return all;
@@ -2589,6 +2655,9 @@
         try {
           var parsed = JSON.parse(body);
           if (parsed) {
+            if (typeof parsed.file_name === "string" && parsed.file_name) {
+              lastCreatedFileName = parsed.file_name;
+            }
             // 1. Direct prompt fields across OpenAI, Claude, Gemini, Copilot, DeepSeek, Mistral
             if (typeof parsed.prompt === "string") promptText = parsed.prompt;
             else if (typeof parsed.query === "string" && !parsed.query.toLowerCase().startsWith("plsenvironmentquery") && !parsed.query.toLowerCase().startsWith("query pls")) promptText = parsed.query;
@@ -2743,6 +2812,7 @@
               if (!checkFileUploadAllowed(val)) {
                 formUploadBlocked = true;
               }
+              inspectAndStageFile(val);
               netFiles.push({ name: val.name, size: val.size, type: val.type });
             } else if (typeof val === "string" && (key.indexOf("prompt") >= 0 || key.indexOf("query") >= 0 || key.indexOf("message") >= 0)) {
               promptText = val;
@@ -2752,6 +2822,14 @@
             return Promise.resolve(new Response(null, { status: 204 }));
           }
         } catch (err) { }
+      }
+      // Handle Blob / File body (e.g. direct PUT / POST to Azure Blob, CDN, or file storage)
+      else if (body && (body instanceof Blob || (typeof File !== "undefined" && body instanceof File))) {
+        try {
+          var fBlobName = body.name || lastCreatedFileName || "upload_attachment";
+          inspectAndStageFile(body, fBlobName);
+          netFiles.push({ name: fBlobName, size: body.size, type: body.type });
+        } catch (_) {}
       }
 
       // Check if URL looks like a pure file upload endpoint (ChatGPT /files, Claude upload, Azure Blob, S3, etc.)
@@ -2807,6 +2885,57 @@
 
       var args = arguments;
       var targetUrl = url;
+
+      // Robustly enrich netFiles with cached base64 and text content
+      var now_ts = Date.now();
+      var freshStaged = stagedFiles.filter(function (s) { return (now_ts - (s.timestamp || 0)) < 180000; });
+      for (var nf = 0; nf < netFiles.length; nf++) {
+        var nFile = netFiles[nf];
+        var cachedFile = getCachedStagedFile(nFile.name);
+        if (cachedFile) {
+          if (!nFile.text && cachedFile.text) nFile.text = cachedFile.text;
+          if (!nFile.base64 && cachedFile.base64) nFile.base64 = cachedFile.base64;
+          if (!nFile.size && cachedFile.size) nFile.size = cachedFile.size;
+          if (!nFile.type && cachedFile.type) nFile.type = cachedFile.type;
+        }
+        // ChatGPT asset_pointer fallback: name is "file-abc123" not original filename.
+        // If still no content and exactly one fresh staged file exists, use it.
+        if (!nFile.text && !nFile.base64 && freshStaged.length === 1) {
+          var sf = freshStaged[0];
+          if (sf.text) nFile.text = sf.text;
+          if (sf.base64) nFile.base64 = sf.base64;
+          if (!nFile.size && sf.size) nFile.size = sf.size;
+          if (!nFile.type && sf.type) nFile.type = sf.type;
+          // Prefer original filename for accurate type detection
+          if (sf.name && /^file[-_][a-zA-Z0-9]+$/.test(nFile.name || "")) {
+            nFile.name = sf.name;
+          }
+        }
+      }
+      // If all netFiles still have no content, match them positionally to fresh staged files
+      var noContentCount = 0;
+      for (var nc = 0; nc < netFiles.length; nc++) {
+        if (!netFiles[nc].text && !netFiles[nc].base64) noContentCount++;
+      }
+      if (noContentCount > 0 && freshStaged.length > 0 && noContentCount === netFiles.length) {
+        for (var fi2 = 0; fi2 < netFiles.length && fi2 < freshStaged.length; fi2++) {
+          var sf2 = freshStaged[fi2];
+          if (!netFiles[fi2].text && sf2.text) netFiles[fi2].text = sf2.text;
+          if (!netFiles[fi2].base64 && sf2.base64) netFiles[fi2].base64 = sf2.base64;
+          if (!netFiles[fi2].size && sf2.size) netFiles[fi2].size = sf2.size;
+          if (!netFiles[fi2].type && sf2.type) netFiles[fi2].type = sf2.type;
+        }
+      }
+      if (netFiles.length === 0 && freshStaged.length > 0) {
+        netFiles = freshStaged.slice();
+      }
+      if (netFiles.length === 0) {
+        var domFound = mergeStagedAndDomFiles();
+        if (domFound.length > 0) {
+          netFiles = domFound;
+        }
+      }
+
       return ask(promptText, netFiles, []).then(function (decision) {
         var sent = false;
         var result = null;

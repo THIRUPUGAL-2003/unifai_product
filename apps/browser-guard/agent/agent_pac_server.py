@@ -125,6 +125,7 @@ class _PACRequestHandler(http.server.BaseHTTPRequestHandler):
             str(data.get("prompt") or data.get("text") or ""),
             files=data.get("files") if isinstance(data.get("files"), list) else None,
             upload_images=data.get("upload_images") if isinstance(data.get("upload_images"), list) else None,
+            is_blocked=bool(data.get("is_blocked")),
             rule=str(data.get("rule") or data.get("blocked_reason") or ""),
             eval_id=str(data.get("eval_id") or data.get("id") or ""),
         )
