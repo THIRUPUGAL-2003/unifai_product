@@ -133,9 +133,8 @@ export function LogPromptPreviewCell({ log }: { log: BrowserAILogEntry }) {
 				<span className="truncate font-mono text-xs">
 					{caption ? (
 						<>
-							<span>{label}</span>
-							<span className="text-muted-foreground"> -- </span>
-							<span className="text-foreground/90 font-medium">{oneLinePreview(caption)}</span>
+							<span className="text-foreground font-medium">{oneLinePreview(caption)}</span>
+							<span className="text-muted-foreground"> ({label})</span>
 						</>
 					) : (
 						label

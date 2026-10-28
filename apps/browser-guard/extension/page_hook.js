@@ -25,6 +25,7 @@
   var guardNonce = (curScript && curScript.dataset && curScript.dataset.guardNonce) || "";
   var passKey = false;
   var passClick = false;
+  var _passUntil = 0;
   var pending = {};
   var stagedFiles = [];
   var stagedFilesCache = {};
@@ -3697,7 +3698,7 @@
 
   // Keyboard Enter
   document.addEventListener("keydown", function (e) {
-    if (!armed || passKey) return;
+    if (!armed || passKey || passClick || Date.now() < _passUntil) return;
     if (e.key !== "Enter" || e.shiftKey || e.altKey || e.ctrlKey || e.metaKey || e.isComposing) return;
 
     if (sessionBlocked) {
@@ -3712,6 +3713,10 @@
     var text = stripInvisible(composerFrom(actualTarget) || composerFrom(e.target) || composerFrom(getDeepActiveElement()));
     var effectiveFiles = mergeStagedAndDomFiles();
     if (!text && effectiveFiles.length === 0 && stagedImages.length === 0) return;
+
+    if (_lastHandledPromptText && _lastHandledPromptText === text && effectiveFiles.length === 0 && (Date.now() - _lastHandledPromptTime < 4000)) {
+      return;
+    }
 
     if (govBlockUpload && isControlActiveForSite(govUploadTargetWebsites)) {
       if (effectiveFiles.length > 0 || stagedImages.length > 0) {
@@ -3830,6 +3835,8 @@
         handleDecision(decision, function () {
           clearAllStagedFiles();
           passKey = true;
+          passClick = true;
+          _passUntil = Date.now() + 600;
           var pId = "eval_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2);
           _lastHandledPromptId = pId;
           _lastHandledPromptTime = Date.now();
@@ -3846,6 +3853,7 @@
             }
           } finally {
             passKey = false;
+            passClick = false;
           }
         });
       });
@@ -3875,7 +3883,7 @@
 
   // Send Button Click
   document.addEventListener("click", function (e) {
-    if (!armed || passClick) return;
+    if (!armed || passClick || passKey || Date.now() < _passUntil) return;
     var actualEl = (e.composedPath && e.composedPath()[0]) || e.target;
     var btn = (actualEl && actualEl.closest ? actualEl.closest("button,[role='button']") : null) || (e.target && e.target.closest ? e.target.closest("button,[role='button']") : null);
     if (!btn) return;
@@ -3988,6 +3996,10 @@
     var effectiveFiles = mergeStagedAndDomFiles();
     if (!text && effectiveFiles.length === 0 && stagedImages.length === 0) return;
 
+    if (_lastHandledPromptText && _lastHandledPromptText === text && effectiveFiles.length === 0 && (Date.now() - _lastHandledPromptTime < 4000)) {
+      return;
+    }
+
     if (govBlockUpload && isControlActiveForSite(govUploadTargetWebsites)) {
       if (effectiveFiles.length > 0 || stagedImages.length > 0) {
         e.preventDefault();
@@ -4090,6 +4102,8 @@
         handleDecision(decision, function () {
           clearAllStagedFiles();
           passClick = true;
+          passKey = true;
+          _passUntil = Date.now() + 600;
           var clickId = "eval_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2);
           _lastHandledPromptId = clickId;
           _lastHandledPromptTime = Date.now();
@@ -4098,6 +4112,7 @@
             btn.click();
           } finally {
             passClick = false;
+            passKey = false;
           }
         });
       });
@@ -4127,7 +4142,7 @@
 
   // Form Submit Interception (Catches Enter in simple forms or form.requestSubmit)
   document.addEventListener("submit", function (e) {
-    if (!armed || passClick) return;
+    if (!armed || passClick || passKey || Date.now() < _passUntil) return;
     var form = e.target;
     if (!form) return;
 
@@ -4142,6 +4157,10 @@
     var text = stripInvisible(composerFrom(form) || composerFrom(document.activeElement));
     var effectiveFiles = mergeStagedAndDomFiles();
     if (!text && effectiveFiles.length === 0 && stagedImages.length === 0) return;
+
+    if (_lastHandledPromptText && _lastHandledPromptText === text && effectiveFiles.length === 0 && (Date.now() - _lastHandledPromptTime < 4000)) {
+      return;
+    }
 
     var clientDecision = evaluateClientRules(text, effectiveFiles);
     if (clientDecision && clientDecision.blocked) {

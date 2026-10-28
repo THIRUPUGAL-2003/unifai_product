@@ -1158,6 +1158,24 @@ def check_prompt(
             if cached_dec and (now_ts - cached_ts < 0.8):
                 return dict(cached_dec)
 
+    # If this exact text was already handled as a caption for attached files on this host within the last 5 seconds,
+    # return the cached decision and skip creating a duplicate standalone text row in Prompt Logs.
+    if not files_list and text and not is_governance_action:
+        clean_text = " ".join(re.sub(r'[\u200B-\u200F\uFEFF\u202A-\u202E\u2060-\u206F]', '', text).replace('\u00A0', ' ').strip().split())
+        with _RECENT_EXTENSION_EVALS_LOCK:
+            for ev in _RECENT_EXTENSION_EVALS:
+                if (now_ts - float(ev.get("time") or 0) < 5.0) and (ev.get("host") == clean_h or ev.get("host") == host):
+                    ev_preview = ev.get("preview") or ""
+                    ev_files = ev.get("files") or []
+                    if ev_files and ev_preview and (ev_preview == clean_text[:150] or clean_text[:150].startswith(ev_preview) or ev_preview.startswith(clean_text[:150])):
+                        return {
+                            "blocked": bool(ev.get("is_blocked")),
+                            "action": str(ev.get("action") or "Allowed"),
+                            "rule": str(ev.get("rule") or ""),
+                            "message": str(ev.get("message") or ""),
+                            "redacted_prompt": "",
+                        }
+
     file_names = []
     file_extracted_texts = []
     file_text_map = {}
@@ -1257,41 +1275,75 @@ def check_prompt(
             if extracted and len(extracted.strip()) > 3:
                 eval_text += f"\n{extracted[:100000]}"
 
-            # Anti-spoofing real file type check against restricted or allowed extensions
-            real_type = detect_real_file_type(raw_b, ftext or extracted, fname, ctype)
-            restricted_str = str(_governance_cache.get("restricted_file_extensions") or "")
-            allowed_str = str(_governance_cache.get("allowed_file_extensions") or "")
-            mode = str(_governance_cache.get("file_extension_mode") or "block_listed")
+        # Anti-spoofing real file type check against restricted or allowed extensions
+        restricted_str = str(_governance_cache.get("restricted_file_extensions") or "")
+        allowed_str = str(_governance_cache.get("allowed_file_extensions") or "")
+        mode = str(_governance_cache.get("file_extension_mode") or "block_listed")
 
+        violating_ext_files = []
+        violating_ext_types = []
+        for cf in files_list:
+            cf_name = (cf.get("name") if isinstance(cf, dict) else str(cf)).strip()
+            cf_ext = os.path.splitext(cf_name)[1].lower()
+            cf_norm = cf_ext.lstrip('.').lower()
+            cf_raw = b""
+            cf_text = ""
+            cf_type = ""
+            if isinstance(cf, dict):
+                cf_type = str(cf.get("type") or "application/octet-stream").strip()
+                cf_b64 = str(cf.get("base64") or "").strip()
+                cf_text = str(cf.get("text") or "").strip()
+                if cf_b64:
+                    try:
+                        import base64
+                        cf_raw = base64.b64decode(cf_b64)
+                    except Exception:
+                        pass
+                if not cf_raw and cf_text:
+                    try:
+                        cf_raw = cf_text.encode("utf-8", errors="ignore")
+                    except Exception:
+                        pass
+            cf_real = detect_real_file_type(cf_raw, cf_text, cf_name, cf_type)
             if mode == "allow_listed" and allowed_str:
                 allowed_list = [x.strip().lstrip('.').lower() for x in re.split(r'[,;\s]+', allowed_str) if x.strip()]
-                is_allowed = (real_type and real_type in allowed_list) or (norm_fext and norm_fext in allowed_list)
+                is_allowed = (cf_real and cf_real in allowed_list) or (cf_norm and cf_norm in allowed_list)
                 if not is_allowed:
-                    return {
-                        "blocked": True,
-                        "action": "Blocked",
-                        "message": f"File type for '{fname}' is not permitted. Only approved file types ({', '.join('.' + e for e in allowed_list)}) may be uploaded.",
-                        "rule": "Restricted File Type",
-                        "violating_files": [fname],
-                        "redacted_prompt": "",
-                    }
+                    if cf_name and cf_name not in violating_ext_files:
+                        violating_ext_files.append(cf_name)
             elif mode != "allow_listed" and restricted_str:
                 restricted_list = [x.strip().lstrip('.').lower() for x in re.split(r'[,;\s]+', restricted_str) if x.strip()]
-                if (real_type and real_type in restricted_list) or (norm_fext and norm_fext in restricted_list):
-                    matched_ext = real_type if (real_type and real_type in restricted_list) else norm_fext
-                    is_renamed = bool(real_type and real_type in restricted_list and norm_fext != real_type)
-                    return {
-                        "blocked": True,
-                        "action": "Blocked",
-                        "message": (
-                            f"File '{fname}' matches restricted file type '.{matched_ext}' (file renaming detected). Upload blocked by security policy."
-                            if is_renamed else
-                            f"Uploading '.{matched_ext}' files is restricted by corporate DLP policy."
-                        ),
-                        "rule": f"Restricted File Type (.{matched_ext})",
-                        "violating_files": [fname],
-                        "redacted_prompt": "",
-                    }
+                m_ext = cf_real if (cf_real and cf_real in restricted_list) else (cf_norm if (cf_norm and cf_norm in restricted_list) else "")
+                if m_ext:
+                    if cf_name and cf_name not in violating_ext_files:
+                        violating_ext_files.append(cf_name)
+                    ext_tag = f".{m_ext}"
+                    if ext_tag not in violating_ext_types:
+                        violating_ext_types.append(ext_tag)
+
+        if violating_ext_files:
+            f_str = ", ".join(f"'{fn}'" for fn in violating_ext_files)
+            types_str = ", ".join(violating_ext_types) if violating_ext_types else ""
+            if mode == "allow_listed":
+                msg = (
+                    f"File {f_str} is not permitted. Only approved file types ({', '.join('.' + e for e in allowed_list)}) may be uploaded. Please remove this file before sending."
+                    if len(violating_ext_files) == 1 else
+                    f"Files {f_str} are not permitted. Only approved file types ({', '.join('.' + e for e in allowed_list)}) may be uploaded. Please remove these files before sending."
+                )
+            else:
+                msg = (
+                    f"File {f_str} ({types_str}) is restricted by corporate DLP policy. Please remove this file before sending."
+                    if len(violating_ext_files) == 1 else
+                    f"Files {f_str} ({types_str}) are restricted by corporate DLP policy. Please remove these files before sending."
+                )
+            return {
+                "blocked": True,
+                "action": "Blocked",
+                "message": msg,
+                "rule": f"Restricted File Type ({types_str.upper()})" if types_str else "Restricted File Type",
+                "violating_files": violating_ext_files,
+                "redacted_prompt": "",
+            }
 
             if fext in (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".svg") and fb64:
                 img_data = fb64 if fb64.startswith("data:") else f"data:image/{norm_fext or 'png'};base64,{fb64}"
