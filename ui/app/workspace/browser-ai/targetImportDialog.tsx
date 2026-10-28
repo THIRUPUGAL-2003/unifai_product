@@ -23,7 +23,13 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { useImportBrowserAiTargetsMutation, type BrowserTargetWebsite } from "@/lib/store/apis/browserAiApi";
+import {
+	useImportBrowserAiTargetsMutation,
+	useGetBrowserAiControlsQuery,
+	useUpdateBrowserAiControlsMutation,
+	type BrowserTargetWebsite,
+	type BrowserControlSettings,
+} from "@/lib/store/apis/browserAiApi";
 import { normalizeTargetDomain, HOST_ROLE_OPTIONS, type HostRole } from "./relatedHosts";
 
 export interface ParsedImportTarget {
@@ -84,6 +90,8 @@ export function TargetImportDialog({
 	const { toast } = useToast();
 	const fileInputRef = useRef<HTMLInputElement>(null);
 	const [importTargetsMutation, { isLoading: isSubmitting }] = useImportBrowserAiTargetsMutation();
+	const { data: controlsData } = useGetBrowserAiControlsQuery();
+	const [updateControls] = useUpdateBrowserAiControlsMutation();
 
 	const [fileName, setFileName] = useState<string>("");
 	const [parsedTargets, setParsedTargets] = useState<ParsedImportTarget[]>([]);
@@ -285,6 +293,54 @@ export function TargetImportDialog({
 				title: "Targets Imported",
 				description: msg,
 			});
+
+			// Auto-populate active policies in Browser Settings with newly imported target domains
+			const importedDoms = validList.map((t) => normalizeTargetDomain(t.domain)).filter(Boolean);
+			const ctrl = controlsData?.controls;
+			if (ctrl && importedDoms.length > 0) {
+				const appendToPolicy = (currentVal?: string) => {
+					const raw = (currentVal || "").trim().toLowerCase();
+					if (!raw || raw === "none") return raw;
+					if (raw === "all" || raw === "*") return "all";
+					const existing = raw.split(/[,\s;]+/).map((s) => s.trim().toLowerCase()).filter(Boolean);
+					const combined = Array.from(new Set([...existing, ...importedDoms.map((d) => d.toLowerCase())]));
+					return combined.join(", ");
+				};
+
+				const policyUpdates: Partial<BrowserControlSettings> = {};
+				if (ctrl.upload_target_websites && ctrl.upload_target_websites !== "none") {
+					policyUpdates.upload_target_websites = appendToPolicy(ctrl.upload_target_websites);
+				}
+				if (ctrl.file_extension_target_websites && ctrl.file_extension_target_websites !== "none") {
+					policyUpdates.file_extension_target_websites = appendToPolicy(ctrl.file_extension_target_websites);
+				}
+				if (ctrl.download_target_websites && ctrl.download_target_websites !== "none") {
+					policyUpdates.download_target_websites = appendToPolicy(ctrl.download_target_websites);
+				}
+				if (ctrl.drag_drop_target_websites && ctrl.drag_drop_target_websites !== "none") {
+					policyUpdates.drag_drop_target_websites = appendToPolicy(ctrl.drag_drop_target_websites);
+				}
+				if (ctrl.clipboard_target_websites && ctrl.clipboard_target_websites !== "none") {
+					const mergedClip = appendToPolicy(ctrl.clipboard_target_websites);
+					policyUpdates.clipboard_target_websites = mergedClip;
+					policyUpdates.governance_target_websites = mergedClip;
+				}
+				if (ctrl.screenshot_target_websites && ctrl.screenshot_target_websites !== "none") {
+					policyUpdates.screenshot_target_websites = appendToPolicy(ctrl.screenshot_target_websites);
+				}
+				if (ctrl.corporate_target_websites && ctrl.corporate_target_websites !== "none") {
+					policyUpdates.corporate_target_websites = appendToPolicy(ctrl.corporate_target_websites);
+				}
+
+				if (Object.keys(policyUpdates).length > 0) {
+					try {
+						await updateControls(policyUpdates).unwrap();
+					} catch {
+						// best effort
+					}
+				}
+			}
+
 			onImportSuccess();
 			onOpenChange(false);
 			resetState();
