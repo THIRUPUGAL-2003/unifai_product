@@ -53,7 +53,13 @@ func SectionRequirementFor(method, path string) []string {
 	}
 	switch {
 	case path == "/api/config" || path == "/api/config/metadata":
-		return []string{"settings/client-settings"}
+		if path == "/api/config/metadata" {
+			return []string{"settings/client-settings"}
+		}
+		return []string{
+			"settings/client-settings", "settings/compatibility", "settings/security", "settings/performance-tuning",
+			"observability/logs-settings", "mcp-gateway/mcp-settings", "models/model-settings", "models/pricing-overrides",
+		}
 	case strings.HasPrefix(path, "/api/vector-store-config") || path == "/api/plugins/semantic_cache":
 		return []string{"settings/caching"}
 	case strings.HasPrefix(path, "/api/proxy-config"):
@@ -62,6 +68,12 @@ func SectionRequirementFor(method, path string) []string {
 		return []string{"settings/security"}
 	case strings.HasPrefix(path, "/api/feature-flags"):
 		return []string{"settings/feature-flags"}
+	case strings.HasPrefix(path, "/api/pricing"):
+		return []string{"models/pricing-overrides"}
+	case strings.HasPrefix(path, "/api/cache/clear"):
+		return []string{"settings/caching"}
+	case strings.HasPrefix(path, "/api/cluster"):
+		return []string{"guardrails/cluster-config"}
 	case strings.HasPrefix(path, "/api/access-profiles"):
 		return []string{"governance/access-profiles"}
 	case strings.HasPrefix(path, "/api/roles"), strings.HasPrefix(path, "/api/permissions"), strings.HasPrefix(path, "/api/rbac"):
@@ -75,9 +87,9 @@ func SectionRequirementFor(method, path string) []string {
 	case strings.HasPrefix(path, "/api/guardrails"):
 		return []string{"guardrails/rules", "guardrails/providers"}
 	case strings.HasPrefix(path, "/api/governance/virtual-keys/") && strings.HasSuffix(path, "/users"):
-		return []string{"governance/virtual-keys", "governance/users"}
+		return []string{"governance/virtual-keys", "governance/users", "settings/api-keys"}
 	case strings.HasPrefix(path, "/api/governance/virtual-keys"):
-		return []string{"governance/virtual-keys"}
+		return []string{"governance/virtual-keys", "settings/api-keys"}
 	case strings.HasPrefix(path, "/api/governance/teams/") && strings.Contains(path, "/members"):
 		return []string{"governance/teams", "governance/users"}
 	case strings.HasPrefix(path, "/api/governance/teams"):

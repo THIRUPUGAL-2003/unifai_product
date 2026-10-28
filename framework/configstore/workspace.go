@@ -985,6 +985,7 @@ var RBACResourceNames = []string{
 
 	// Settings sub-features
 	"ClientSettings", "Compatibility", "Caching", "Security", "PerformanceTuning",
+	"Proxy",
 }
 
 // RBACOperationNames is the workspace operation catalog.

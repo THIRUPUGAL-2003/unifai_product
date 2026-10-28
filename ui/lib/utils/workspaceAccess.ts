@@ -90,9 +90,10 @@ export function getScopedWorkspaceSections(
 		return null;
 	}
 	if (auth.role === "admin" || auth.role === "sub_admin") {
-		// Empty allowed_sections = unrestricted. A customized list limits the sidebar.
+		// Empty allowed_sections is unrestricted only for the super-admin. A
+		// sub-admin must receive explicit workspace sections.
 		const parsed = parseAdminAllowedSections(auth.allowed_sections);
-		if (parsed.size === 0) {
+		if (auth.role === "admin" && parsed.size === 0) {
 			return null;
 		}
 		return parsed;

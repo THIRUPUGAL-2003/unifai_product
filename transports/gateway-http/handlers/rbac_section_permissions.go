@@ -47,7 +47,7 @@ func isSectionGrantedForPath(granted, path string) bool {
 		return hasGrant("browser-ai", "browser-ai/overview", "browser-ai/targets", "browser-ai/rules", "browser-ai/logs", "browser-ai/search-logs", "browser-ai/agents", "browser-ai/telemetry", "browser-ai/setup", "observability", "observability/llm-logs")
 
 	case strings.HasPrefix(path, "/api/governance/virtual-keys"):
-		return hasGrant("governance", "governance/virtual-keys", "prompt-repository")
+		return hasGrant("governance", "governance/virtual-keys", "settings/api-keys", "prompt-repository")
 
 	case strings.HasPrefix(path, "/api/governance/users"),
 		strings.HasPrefix(path, "/api/session/users"),
@@ -362,7 +362,7 @@ func resourcesForGrantedSections(grantedSections string) []string {
 
 	// 8. Settings (7 features)
 	if hasGrant("settings") {
-		add("Settings", "ClientSettings", "Compatibility", "Caching", "Security", "APIKeys", "PerformanceTuning", "FeatureFlags")
+		add("Settings", "ClientSettings", "Compatibility", "Caching", "Security", "APIKeys", "PerformanceTuning", "FeatureFlags", "Proxy", "VirtualKeys")
 	}
 	if hasGrant("settings/client-settings") {
 		add("ClientSettings", "Settings")
@@ -377,10 +377,10 @@ func resourcesForGrantedSections(grantedSections string) []string {
 		add("Security", "Settings")
 	}
 	if hasGrant("settings/api-keys") {
-		add("APIKeys", "Settings")
+		add("APIKeys", "VirtualKeys", "Settings")
 	}
 	if hasGrant("settings/proxy") {
-		add("Settings")
+		add("Proxy", "Settings")
 	}
 	if hasGrant("settings/performance-tuning") {
 		add("PerformanceTuning", "Settings")

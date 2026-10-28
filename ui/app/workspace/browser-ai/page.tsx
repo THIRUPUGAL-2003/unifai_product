@@ -5426,12 +5426,6 @@ export default function BrowserAiPage() {
 						);
 					})}
 				</div>
-				<div className="rounded border border-border/50 bg-background/50 p-2.5 text-[11px] text-muted-foreground space-y-1">
-					<p className="font-medium text-foreground">Data Compliance:</p>
-					<p>
-						Expired files are shredded from disk. File metadata, hashes, and audit logs are preserved permanently.
-					</p>
-				</div>
 			</div>
 		</div>
 	)}

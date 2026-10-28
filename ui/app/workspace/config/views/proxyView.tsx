@@ -20,7 +20,7 @@ import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 
 export default function ProxyView() {
-	const hasSettingsUpdateAccess = useRbac(RbacResource.Settings, RbacOperation.Update);
+	const hasSettingsUpdateAccess = useRbac(RbacResource.Proxy, RbacOperation.Update) || useRbac(RbacResource.Settings, RbacOperation.Update);
 	const { data: gatewayConfig } = useGetCoreConfigQuery({ fromDB: true });
 	const proxyConfig = gatewayConfig?.proxy_config;
 	const [updateProxyConfig, { isLoading }] = useUpdateProxyConfigMutation();

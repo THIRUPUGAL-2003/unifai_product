@@ -53,7 +53,8 @@ const isRedactedPassword = (pwd?: string) => {
 };
 
 export default function SecurityView() {
-	const hasSettingsUpdateAccess = useRbac(RbacResource.Settings, RbacOperation.Update);
+	const hasSettingsUpdateAccess =
+		useRbac(RbacResource.Security, RbacOperation.Update) || useRbac(RbacResource.Settings, RbacOperation.Update);
 	const { data: gatewayConfig, isError: configFailed, error: configError } = useGetCoreConfigQuery({ fromDB: true });
 	const { data: authType, isLoading: authTypeLoading, error: authTypeError } = useGetAuthTypeQuery(undefined, { skip: !IS_ENTERPRISE });
 	const { data: smtpData, error: smtpError } = useGetSMTPConfigQuery();

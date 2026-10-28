@@ -133,6 +133,7 @@ const RESOURCE_TO_SECTION_MAP: Record<string, string[]> = {
 	Security: ["settings/security"],
 	APIKeys: ["settings/api-keys"],
 	PerformanceTuning: ["settings/performance-tuning"],
+	Proxy: ["settings/proxy"],
 	FeatureFlags: ["settings/feature-flags"],
 
 	// Aliases & legacy mappings for backward compatibility
@@ -225,6 +226,7 @@ const RESOURCE_GROUPS: { title: string; resources: string[] }[] = [
 			"Security",
 			"APIKeys",
 			"PerformanceTuning",
+			"Proxy",
 			"FeatureFlags",
 		],
 	},
@@ -296,6 +298,7 @@ const RESOURCE_LABELS: Record<string, string> = {
 	Security: "Security",
 	APIKeys: "API Keys",
 	PerformanceTuning: "Performance Tuning",
+	Proxy: "Proxy",
 	FeatureFlags: "Feature Flags",
 
 	// Legacy aliases

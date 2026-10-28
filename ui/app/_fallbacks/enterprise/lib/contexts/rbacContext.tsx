@@ -80,6 +80,7 @@ export enum RbacResource {
 	Caching = "Caching",
 	Security = "Security",
 	PerformanceTuning = "PerformanceTuning",
+	Proxy = "Proxy",
 }
 
 // RBAC Operation Names (must match backend definitions)

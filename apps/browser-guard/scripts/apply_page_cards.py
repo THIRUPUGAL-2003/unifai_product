@@ -1002,12 +1002,6 @@ new_cards = '''\t\t\t\t\t\t{/* POLICY 1: File Upload Policy (Includes Block All 
 \t\t\t\t\t\t);
 \t\t\t\t\t})}
 \t\t\t\t</div>
-\t\t\t\t<div className="rounded border border-border/50 bg-background/50 p-2.5 text-[11px] text-muted-foreground space-y-1">
-\t\t\t\t\t<p className="font-medium text-foreground">Data Compliance:</p>
-\t\t\t\t\t<p>
-\t\t\t\t\t\tExpired files are shredded from disk. File metadata, hashes, and audit logs are preserved permanently.
-\t\t\t\t\t</p>
-\t\t\t\t</div>
 \t\t\t</div>
 \t\t</div>
 \t)}

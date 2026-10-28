@@ -11,7 +11,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 export default function ObservabilityView() {
-	const hasSettingsUpdateAccess = useRbac(RbacResource.Settings, RbacOperation.Update);
+	const hasSettingsUpdateAccess =
+		useRbac(RbacResource.LogsSettings, RbacOperation.Update) || useRbac(RbacResource.Settings, RbacOperation.Update);
 	const { data: gatewayConfig } = useGetCoreConfigQuery({ fromDB: true });
 	const config = gatewayConfig?.client_config;
 	const [updateCoreConfig, { isLoading }] = useUpdateCoreConfigMutation();

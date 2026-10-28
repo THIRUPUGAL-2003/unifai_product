@@ -14,7 +14,8 @@ interface PricingFormData {
 }
 
 export default function PricingConfigView() {
-	const hasSettingsUpdateAccess = useRbac(RbacResource.Settings, RbacOperation.Update);
+	const hasSettingsUpdateAccess =
+		useRbac(RbacResource.PricingOverrides, RbacOperation.Update) || useRbac(RbacResource.Settings, RbacOperation.Update);
 	const { data: gatewayConfig } = useGetCoreConfigQuery({ fromDB: true });
 	const config = gatewayConfig?.framework_config;
 	const [updateCoreConfig, { isLoading }] = useUpdateCoreConfigMutation();

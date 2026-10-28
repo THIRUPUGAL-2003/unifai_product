@@ -190,7 +190,7 @@ func readRequirement(path string) *PathRequirement {
 		return &PathRequirement{
 			Resource:       "VirtualKeys",
 			Operation:      "View",
-			AnyOfResources: []string{"VirtualKeys", "Governance"},
+			AnyOfResources: []string{"VirtualKeys", "APIKeys", "Governance"},
 		}
 	case strings.HasPrefix(path, "/api/governance"):
 		return governanceRequirement(path, "View")
@@ -211,8 +211,10 @@ func readRequirement(path string) *PathRequirement {
 		return &PathRequirement{Resource: "ModelProvider", Operation: "View"}
 	case strings.HasPrefix(path, "/api/vector-store-config"):
 		return &PathRequirement{Resource: "Caching", Operation: "View", AnyOfResources: []string{"Caching", "Settings"}}
-	case strings.HasPrefix(path, "/api/proxy-config"), strings.HasPrefix(path, "/api/smtp-config"):
-		return &PathRequirement{Resource: "Settings", Operation: "View"}
+	case strings.HasPrefix(path, "/api/proxy-config"):
+		return &PathRequirement{Resource: "Proxy", Operation: "View", AnyOfResources: []string{"Proxy", "Settings"}}
+	case strings.HasPrefix(path, "/api/smtp-config"):
+		return &PathRequirement{Resource: "Security", Operation: "View", AnyOfResources: []string{"Security", "Settings"}}
 	default:
 		return nil
 	}
@@ -327,9 +329,20 @@ func writeRequirement(method, path string) *PathRequirement {
 	case strings.HasPrefix(path, "/api/audit-logs"):
 		return &PathRequirement{Resource: "AuditLogs", Operation: "Update"}
 	case strings.HasPrefix(path, "/api/access-profiles"):
+		if strings.HasSuffix(path, "/activate") || strings.HasSuffix(path, "/deactivate") {
+			return &PathRequirement{Resource: "AccessProfiles", Operation: "Update"}
+		}
+		if strings.HasSuffix(path, "/clone") {
+			return &PathRequirement{Resource: "AccessProfiles", Operation: "Create"}
+		}
 		return &PathRequirement{Resource: "AccessProfiles", Operation: op}
 	case strings.HasPrefix(path, "/api/roles"), strings.HasPrefix(path, "/api/permissions"), strings.HasPrefix(path, "/api/rbac"), strings.HasSuffix(path, "/role"), strings.HasSuffix(path, "/roles"):
 		return &PathRequirement{Resource: "RBAC", Operation: op}
+	case strings.HasPrefix(path, "/api/session/users"):
+		if strings.HasSuffix(path, "/approve") || strings.HasSuffix(path, "/reject") || strings.HasSuffix(path, "/block") || strings.HasSuffix(path, "/unblock") {
+			return &PathRequirement{Resource: "Users", Operation: "Update", AnyOfResources: []string{"Users", "RBAC", "Governance"}}
+		}
+		return &PathRequirement{Resource: "Users", Operation: op, AnyOfResources: []string{"Users", "RBAC", "Governance"}}
 	case strings.HasPrefix(path, "/api/users"):
 		return &PathRequirement{Resource: "Users", Operation: op, AnyOfResources: []string{"Users", "RBAC", "Governance"}}
 	case strings.HasPrefix(path, "/api/circuit-breaker"):
@@ -339,10 +352,13 @@ func writeRequirement(method, path string) *PathRequirement {
 	case strings.HasPrefix(path, "/api/mcp"):
 		return &PathRequirement{Resource: "MCPGateway", Operation: op}
 	case strings.HasPrefix(path, "/api/governance/virtual-keys"):
+		if strings.HasSuffix(path, "/rotate") || path == "/api/governance/virtual-keys/rotate" {
+			return &PathRequirement{Resource: "VirtualKeys", Operation: "Update", AnyOfResources: []string{"VirtualKeys", "APIKeys", "Governance"}}
+		}
 		return &PathRequirement{
 			Resource:       "VirtualKeys",
 			Operation:      op,
-			AnyOfResources: []string{"VirtualKeys", "Governance"},
+			AnyOfResources: []string{"VirtualKeys", "APIKeys", "Governance"},
 		}
 	case strings.HasPrefix(path, "/api/governance"):
 		return governanceRequirement(path, op)
@@ -369,12 +385,26 @@ func writeRequirement(method, path string) *PathRequirement {
 		return &PathRequirement{Resource: "SkillsRepository", Operation: op}
 	case strings.HasPrefix(path, "/api/providers"), strings.HasPrefix(path, "/api/keys"):
 		return &PathRequirement{Resource: "ModelProvider", Operation: op}
-	case path == "/api/config/metadata", path == "/api/config":
+	case path == "/api/config/metadata":
 		return &PathRequirement{Resource: "ClientSettings", Operation: "Update", AnyOfResources: []string{"ClientSettings", "Settings"}}
+	case path == "/api/config":
+		// Several settings pages share this legacy API route.
+		return &PathRequirement{Resource: "Settings", Operation: "Update", AnyOfResources: []string{
+			"ClientSettings", "Compatibility", "Security", "PerformanceTuning", "LogsSettings",
+			"MCPSettings", "ModelSettings", "PricingOverrides", "Settings",
+		}}
 	case strings.HasPrefix(path, "/api/vector-store-config"):
 		return &PathRequirement{Resource: "Caching", Operation: "Update", AnyOfResources: []string{"Caching", "Settings"}}
-	case strings.HasPrefix(path, "/api/config"), strings.HasPrefix(path, "/api/proxy-config"), strings.HasPrefix(path, "/api/smtp-config"):
-		return &PathRequirement{Resource: "Settings", Operation: "Update"}
+	case strings.HasPrefix(path, "/api/proxy-config"):
+		return &PathRequirement{Resource: "Proxy", Operation: "Update", AnyOfResources: []string{"Proxy", "Settings"}}
+	case strings.HasPrefix(path, "/api/smtp-config"):
+		return &PathRequirement{Resource: "Security", Operation: "Update", AnyOfResources: []string{"Security", "Settings"}}
+	case strings.HasPrefix(path, "/api/pricing"):
+		return &PathRequirement{Resource: "PricingOverrides", Operation: "Update", AnyOfResources: []string{"PricingOverrides", "Settings"}}
+	case strings.HasPrefix(path, "/api/cache/clear"):
+		return &PathRequirement{Resource: "Caching", Operation: "Delete", AnyOfResources: []string{"Caching", "Settings"}}
+	case strings.HasPrefix(path, "/api/cluster"):
+		return &PathRequirement{Resource: "Cluster", Operation: op}
 	default:
 		return nil
 	}

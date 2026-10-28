@@ -21,7 +21,8 @@ const secretVarEquals = (a?: SecretVar, b?: SecretVar) =>
 export default function MCPView() {
 	// MCP Settings lives under MCP Gateway — gate save on MCPGateway Update
 	// (layout already requires the same), not Settings.
-	const hasSettingsUpdateAccess = useRbac(RbacResource.MCPGateway, RbacOperation.Update);
+	const hasSettingsUpdateAccess =
+		useRbac(RbacResource.MCPSettings, RbacOperation.Update) || useRbac(RbacResource.MCPGateway, RbacOperation.Update);
 	const { data: gatewayConfig } = useGetCoreConfigQuery({ fromDB: true });
 	const config = gatewayConfig?.client_config;
 

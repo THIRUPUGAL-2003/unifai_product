@@ -17,7 +17,8 @@ interface ModelSettingsFormData {
 }
 
 export default function ModelSettingsView() {
-	const hasSettingsUpdateAccess = useRbac(RbacResource.Settings, RbacOperation.Update);
+	const hasSettingsUpdateAccess =
+		useRbac(RbacResource.ModelSettings, RbacOperation.Update) || useRbac(RbacResource.Settings, RbacOperation.Update);
 	const { data: gatewayConfig } = useGetCoreConfigQuery({ fromDB: true });
 	const frameworkConfig = gatewayConfig?.framework_config;
 	const clientConfig = gatewayConfig?.client_config;

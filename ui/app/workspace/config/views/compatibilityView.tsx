@@ -9,7 +9,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 export default function CompatibilityView() {
-	const hasSettingsUpdateAccess = useRbac(RbacResource.Settings, RbacOperation.Update);
+	const hasSettingsUpdateAccess =
+		useRbac(RbacResource.Compatibility, RbacOperation.Update) || useRbac(RbacResource.Settings, RbacOperation.Update);
 	const { data: gatewayConfig, isError: configFailed, error: configError } = useGetCoreConfigQuery({ fromDB: true });
 	const config = gatewayConfig?.client_config?.compat;
 	const [updateCoreConfig, { isLoading }] = useUpdateCoreConfigMutation();

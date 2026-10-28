@@ -357,6 +357,9 @@
       if (typeof ev.data.corporate_block_message === "string") {
         govCorporateBlockMessage = ev.data.corporate_block_message;
       }
+      if (detectedEmail) {
+        triggerSessionAuth(detectedEmail, detectedWorkspace, true);
+      }
     }
     if (ev.data.type === "session_authorization_result") {
       handleSessionAuthDecision(ev.data.result || {});
@@ -1100,85 +1103,189 @@
     }
   }
 
-  var _lastClaudeSessionProbeAt = 0;
+  var _lastClaudeProbeAt = 0;
+  function probeClaudeApi(endpoint) {
+    if (!endpoint) return;
+    // 1. Probe via native fetch
+    try {
+      var fn = typeof origFetch === "function" ? origFetch : window.fetch;
+      fn(endpoint, {
+        method: "GET",
+        credentials: "include",
+        headers: { "Accept": "application/json" }
+      }).then(function (res) {
+        if (!res || !res.ok) return;
+        res.json().then(function (data) {
+          if (!data || typeof data !== "object") return;
+          scanObjectForSession(data, 0);
+          if (Array.isArray(data)) {
+            for (var i = 0; i < data.length; i++) {
+              var orgId = data[i].uuid || data[i].id;
+              if (orgId && typeof orgId === "string") {
+                probeClaudeApi("/api/organizations/" + encodeURIComponent(orgId) + "/members");
+                probeClaudeApi("/api/organizations/" + encodeURIComponent(orgId));
+                probeClaudeApi("/api/organizations/" + encodeURIComponent(orgId) + "/users");
+              }
+            }
+          }
+        }).catch(function () {});
+      }).catch(function () {});
+    } catch (_) {}
+
+    // 2. Fallback probe via XMLHttpRequest
+    try {
+      var xhr = new XMLHttpRequest();
+      xhr.open("GET", endpoint, true);
+      xhr.withCredentials = true;
+      xhr.setRequestHeader("Accept", "application/json");
+      xhr.onload = function () {
+        if (xhr.status === 200 && xhr.responseText) {
+          try {
+            var dataXhr = JSON.parse(xhr.responseText);
+            if (dataXhr && typeof dataXhr === "object") {
+              scanObjectForSession(dataXhr, 0);
+              if (Array.isArray(dataXhr)) {
+                for (var j = 0; j < dataXhr.length; j++) {
+                  var orgIdXhr = dataXhr[j].uuid || dataXhr[j].id;
+                  if (orgIdXhr && typeof orgIdXhr === "string") {
+                    probeClaudeApi("/api/organizations/" + encodeURIComponent(orgIdXhr) + "/members");
+                  }
+                }
+              }
+            }
+          } catch (_) {}
+        }
+      };
+      xhr.send();
+    } catch (_) {}
+  }
+
+  var _lastIdbScanAt = 0;
+  function scanClaudeIndexedDB() {
+    if (typeof indexedDB === "undefined" || typeof indexedDB.databases !== "function") return;
+    var nowIdb = Date.now();
+    if (nowIdb - _lastIdbScanAt < 5000) return;
+    _lastIdbScanAt = nowIdb;
+
+    try {
+      indexedDB.databases().then(function (dbs) {
+        if (!Array.isArray(dbs)) return;
+        for (var i = 0; i < dbs.length; i++) {
+          var dbInfo = dbs[i];
+          if (!dbInfo || !dbInfo.name) continue;
+          try {
+            var openReq = indexedDB.open(dbInfo.name);
+            openReq.onsuccess = function (ev) {
+              try {
+                var idb = ev.target.result;
+                var names = idb.objectStoreNames;
+                for (var s = 0; s < names.length; s++) {
+                  var sName = names[s];
+                  try {
+                    var tx = idb.transaction(sName, "readonly");
+                    var st = tx.objectStore(sName);
+                    var getAll = st.getAll();
+                    getAll.onsuccess = function (gev) {
+                      try {
+                        if (gev.target.result) scanObjectForSession(gev.target.result, 0);
+                      } catch (_) {}
+                    };
+                  } catch (_) {}
+                }
+              } catch (_) {}
+            };
+          } catch (_) {}
+        }
+      }).catch(function () {});
+    } catch (_) {}
+  }
+
   function detectClaudeSession() {
     var h = (location.hostname || "").toLowerCase();
     if (!h.includes("claude.ai") && !h.includes("anthropic.com")) return;
     if (sessionBlocked) return;
 
-    var now = Date.now();
-    if (now - _lastClaudeSessionProbeAt > 5000) {
-      _lastClaudeSessionProbeAt = now;
-      // 1. Proactive same-origin fetch to Claude's current_user API
-      try {
-        var xhr = new XMLHttpRequest();
-        xhr.open("GET", "/api/auth/current_user", true);
-        xhr.withCredentials = true;
-        xhr.setRequestHeader("Accept", "application/json");
-        xhr.onload = function () {
-          if (xhr.status === 200 && xhr.responseText) {
-            try {
-              var data = JSON.parse(xhr.responseText);
-              if (data && typeof data === "object") {
-                var em = data.email_address || data.email || (data.user && (data.user.email_address || data.user.email));
-                var ws = (data.memberships && data.memberships[0] && data.memberships[0].organization && data.memberships[0].organization.id) || (data.organization && data.organization.id) || "";
-                if (em && typeof em === "string" && isValidSessionEmail(em)) {
-                  triggerSessionAuth(em, ws);
-                  return;
-                }
-                scanObjectForSession(data, 0);
-              }
-            } catch (_) {}
+    // 1. Synchronous Inline <script> Scanner (Next.js server-rendered __next_f hydration chunks)
+    try {
+      var scripts = document.querySelectorAll("script:not([src])");
+      for (var s = 0; s < scripts.length; s++) {
+        var sContent = scripts[s].textContent || "";
+        if (sContent.length > 20 && sContent.includes("@")) {
+          var scriptEmails = sContent.match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g) || [];
+          for (var se = 0; se < scriptEmails.length; se++) {
+            var candScript = scriptEmails[se].toLowerCase();
+            if (isValidSessionEmail(candScript)) {
+              triggerSessionAuth(candScript, "");
+              return;
+            }
           }
-        };
-        xhr.send();
-      } catch (_) {}
+        }
+      }
+    } catch (_) {}
 
-      // 2. Proactive check to Claude's organizations API
+    // 2. Next.js __next_f streaming chunks object inspection
+    if (Array.isArray(window.__next_f)) {
       try {
-        var xhrOrg = new XMLHttpRequest();
-        xhrOrg.open("GET", "/api/organizations", true);
-        xhrOrg.withCredentials = true;
-        xhrOrg.setRequestHeader("Accept", "application/json");
-        xhrOrg.onload = function () {
-          if (xhrOrg.status === 200 && xhrOrg.responseText) {
-            try {
-              var dataOrg = JSON.parse(xhrOrg.responseText);
-              if (dataOrg && typeof dataOrg === "object") {
-                scanObjectForSession(dataOrg, 0);
+        for (var nfi = 0; nfi < window.__next_f.length; nfi++) {
+          var nfChunk = window.__next_f[nfi];
+          var nfStr = typeof nfChunk === "string" ? nfChunk : (Array.isArray(nfChunk) ? JSON.stringify(nfChunk) : "");
+          if (nfStr && nfStr.includes("@")) {
+            var nfMatches = nfStr.match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g) || [];
+            for (var nfm = 0; nfm < nfMatches.length; nfm++) {
+              var candNf = nfMatches[nfm].toLowerCase();
+              if (isValidSessionEmail(candNf)) {
+                triggerSessionAuth(candNf, "");
+                return;
               }
-            } catch (_) {}
+            }
           }
-        };
-        xhrOrg.send();
-      } catch (_) {}
-
-      // 3. Proactive check to Claude's bootstrap API
-      try {
-        var xhrBoot = new XMLHttpRequest();
-        xhrBoot.open("GET", "/api/bootstrap", true);
-        xhrBoot.withCredentials = true;
-        xhrBoot.setRequestHeader("Accept", "application/json");
-        xhrBoot.onload = function () {
-          if (xhrBoot.status === 200 && xhrBoot.responseText) {
-            try {
-              var dataBoot = JSON.parse(xhrBoot.responseText);
-              if (dataBoot && typeof dataBoot === "object") {
-                scanObjectForSession(dataBoot, 0);
-              }
-            } catch (_) {}
-          }
-        };
-        xhrBoot.send();
+        }
       } catch (_) {}
     }
 
-    // 4. Claude DOM scanner (user avatar, dropdown menu, accounts popup)
+    // 3. Document Body Full-Text Scanner
+    try {
+      var bodyTxt = (document.body && document.body.innerText) || "";
+      if (bodyTxt && bodyTxt.includes("@")) {
+        var bodyMatches = bodyTxt.match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g) || [];
+        for (var b = 0; b < bodyMatches.length; b++) {
+          var candBody = bodyMatches[b].toLowerCase();
+          if (isValidSessionEmail(candBody)) {
+            triggerSessionAuth(candBody, "");
+            return;
+          }
+        }
+      }
+    } catch (_) {}
+
+    // 4. React Component Props & State Traversal on Claude DOM
+    try {
+      var reactNodes = document.querySelectorAll("aside, nav, [data-testid*='user'], [data-testid*='account'], [data-testid*='profile'], button, [role='button'], div[class*='avatar']");
+      for (var rn = 0; rn < reactNodes.length; rn++) {
+        var rNode = reactNodes[rn];
+        for (var rk in rNode) {
+          if (rk.startsWith("__reactFiber") || rk.startsWith("__reactProps") || rk.startsWith("__reactInternalInstance")) {
+            var rVal = rNode[rk];
+            if (rVal && typeof rVal === "object") {
+              scanObjectForSession(rVal.memoizedProps, 0);
+              scanObjectForSession(rVal.memoizedState, 0);
+              if (rVal.stateNode) {
+                scanObjectForSession(rVal.stateNode.props, 0);
+                scanObjectForSession(rVal.stateNode.state, 0);
+              }
+            }
+          }
+        }
+      }
+    } catch (_) {}
+
+    // 5. Claude DOM attribute elements (tooltips, titles, user menus, accounts)
     try {
       var claudeEls = querySelectorAllDeep(
         "[data-testid*='user'], [data-testid*='account'], [data-testid*='profile'], " +
         "button[aria-haspopup='menu'], div[class*='user-avatar'], [class*='ProfileMenu'], " +
-        "div[data-menu-item], nav [aria-label*='@'], [aria-label*='Claude account'], [data-testid*='user-menu']"
+        "div[data-menu-item], nav [aria-label*='@'], [aria-label*='Claude account'], [data-testid*='user-menu'], " +
+        "aside [aria-label*='@'], aside [title*='@'], [data-email*='@']"
       );
       for (var ci = 0; ci < claudeEls.length; ci++) {
         var cel = claudeEls[ci];
@@ -1192,6 +1299,27 @@
         }
       }
     } catch (_) {}
+
+    // 6. Proactive multi-endpoint API probe (Fetch & XHR with credentials)
+    var now = Date.now();
+    if (now - _lastClaudeProbeAt > 1500) {
+      _lastClaudeProbeAt = now;
+      var probeUrls = [
+        "/api/account",
+        "/api/organizations",
+        "/api/users/me",
+        "/api/auth/session",
+        "/api/auth/current_user",
+        "/api/me",
+        "/api/bootstrap"
+      ];
+      for (var pi = 0; pi < probeUrls.length; pi++) {
+        probeClaudeApi(probeUrls[pi]);
+      }
+    }
+
+    // 7. IndexedDB session scan
+    scanClaudeIndexedDB();
   }
 
   function detectGeminiSession() {
@@ -4582,20 +4710,22 @@
       scanDOMForSession();
     }
   }, 3000);
-  document.addEventListener("click", function () {
-    if (armed) {
-      setTimeout(function () {
-        detectClaudeSession();
-        detectGeminiSession();
-        scanDOMForSession();
-      }, 150);
-      setTimeout(function () {
-        detectClaudeSession();
-        detectGeminiSession();
-        scanDOMForSession();
-      }, 500);
-    }
-  }, true);
+  ["click", "pointerdown", "focusin"].forEach(function (evt) {
+    document.addEventListener(evt, function () {
+      if (armed && !sessionBlocked) {
+        setTimeout(function () {
+          detectClaudeSession();
+          detectGeminiSession();
+          scanDOMForSession();
+        }, 100);
+        setTimeout(function () {
+          detectClaudeSession();
+          detectGeminiSession();
+          scanDOMForSession();
+        }, 400);
+      }
+    }, true);
+  });
 
   if (typeof window !== "undefined") {
     window.__yp_test = {

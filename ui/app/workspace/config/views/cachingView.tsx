@@ -238,7 +238,7 @@ export default function CachingView() {
 	const embeddingProviders = useMemo(() => providers.filter(supportsEmbedding), [providers]);
 
 	const [updatePlugin, { isLoading: isUpdating }] = useUpdatePluginMutation();
-	const isSaving = isUpdating || isCreating;
+	const isSaving = isUpdating;
 
 	const [cacheConfig, setCacheConfig] = useState<EditorCacheConfig>(defaultDirectConfig);
 	const [serverCacheConfig, setServerCacheConfig] = useState<EditorCacheConfig>(defaultDirectConfig);
@@ -265,13 +265,13 @@ export default function CachingView() {
 	// yet (first-time setup), keep the default direct-only seed so the user
 	// can start typing before any save.
 	useEffect(() => {
-		if (plugins === undefined) return;
+		if (semanticCachePlugin === undefined) return;
 		if (!semanticCachePlugin?.config) return;
 		const editorConfig = toEditorCacheConfig(semanticCachePlugin.config as Partial<EditorCacheConfig>);
 		setCacheConfig(editorConfig);
 		setServerCacheConfig(editorConfig);
 		setMode(inferMode(editorConfig));
-	}, [plugins, semanticCachePlugin]);
+	}, [semanticCachePlugin]);
 
 	const handleSaveVectorStore = async () => {
 		const err = validateVectorForm(vectorForm);
@@ -332,12 +332,8 @@ export default function CachingView() {
 		setCacheConfig((prev) => ({ ...prev, ...updates }));
 	};
 
-	// Toggle handler. Updates the semantic_cache plugin's enabled flag while
-	// keeping the last-saved config so the backend can ReloadPlugin/RemovePlugin
-	// based on the new flag. When toggling on for the first time and no plugin
-	// row exists, we seed it with the current editor config (direct-only by
-	// default) so the create call has a valid payload — the user can refine
-	// the config and Save afterwards.
+	// Toggle handler. The scoped update endpoint can create the built-in cache row
+	// on first use, so this feature never needs broad plugin-create access.
 	const handleToggle = async (checked: boolean) => {
 		try {
 			if (semanticCachePlugin) {
@@ -355,11 +351,9 @@ export default function CachingView() {
 					return;
 				}
 				const payload = buildPayload(cacheConfig, mode);
-				await createPlugin({
+				await updatePlugin({
 					name: SEMANTIC_CACHE_PLUGIN,
-					enabled: true,
-					config: payload,
-					path: "",
+					data: { enabled: true, config: payload },
 				}).unwrap();
 			}
 			toast.success(checked ? "Local cache enabled" : "Local cache disabled");
@@ -376,17 +370,10 @@ export default function CachingView() {
 		}
 		const payload = buildPayload(cacheConfig, mode);
 		try {
-			const updated = semanticCachePlugin
-				? await updatePlugin({
-						name: SEMANTIC_CACHE_PLUGIN,
-						data: { enabled: semanticCachePlugin.enabled, config: payload },
-					}).unwrap()
-				: await createPlugin({
-						name: SEMANTIC_CACHE_PLUGIN,
-						enabled: false,
-						config: payload,
-						path: "",
-					}).unwrap();
+			const updated = await updatePlugin({
+				name: SEMANTIC_CACHE_PLUGIN,
+				data: { enabled: Boolean(semanticCachePlugin?.enabled), config: payload },
+			}).unwrap();
 			const editor = toEditorCacheConfig(updated.config as Partial<EditorCacheConfig>);
 			setCacheConfig(editor);
 			setServerCacheConfig(editor);
@@ -400,7 +387,7 @@ export default function CachingView() {
 	const cachingActive = enabledOnServer;
 	const canToggleOn = mode === "direct" || isVectorStoreEnabled;
 	const canToggleOff = enabledOnServer;
-	const isLoading = configLoading || pluginsLoading || vectorStoreLoading;
+	const isLoading = configLoading || cachePluginLoading || vectorStoreLoading;
 
 	return (
 		<fieldset

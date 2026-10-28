@@ -96,10 +96,6 @@ func RBACMiddleware(store configstore.ConfigStore) func(fasthttp.RequestHandler)
 			method := string(ctx.Method())
 			req := rbac.PathRequirementFor(method, path)
 			sections := rbac.SectionRequirementFor(method, path)
-			if req == nil && len(sections) == 0 {
-				next(ctx)
-				return
-			}
 			if token == "" || session == nil {
 				next(ctx)
 				return
@@ -120,8 +116,22 @@ func RBACMiddleware(store configstore.ConfigStore) func(fasthttp.RequestHandler)
 				return
 			}
 
-			// Sub-Admin with no custom RBAC and no section restrictions stays unrestricted (has full workspace management).
-			if session.Role == "sub_admin" && strings.TrimSpace(userRbacIDs) == "" && strings.TrimSpace(grantedSections) == "" {
+			// A sub-admin needs an explicit Workspace Access grant. Empty grants
+			// mean no feature access; only shell/bootstrap requests remain available.
+			if strings.EqualFold(session.Role, "sub_admin") && strings.TrimSpace(grantedSections) == "" {
+				if isSubAdminBootstrapPath(method, path) {
+					next(ctx)
+					return
+				}
+				SendError(ctx, fasthttp.StatusForbidden, "no workspace sections are assigned to this account")
+				return
+			}
+
+			if req == nil && len(sections) == 0 {
+				if strings.EqualFold(session.Role, "sub_admin") && !(isRead && isSectionGrantedForPath(grantedSections, path)) && !isSubAdminBootstrapPath(method, path) {
+					SendError(ctx, fasthttp.StatusForbidden, "this API route has no workspace permission mapping")
+					return
+				}
 				next(ctx)
 				return
 			}
@@ -200,6 +210,13 @@ func RBACMiddleware(store configstore.ConfigStore) func(fasthttp.RequestHandler)
 						return
 					}
 				}
+			}
+
+			// A section assignment alone grants reads for users. Mutations need
+			// an operation mapping so Create, Update, and Delete stay distinct.
+			if req == nil && !isRead && !strings.EqualFold(session.Role, "sub_admin") {
+				SendError(ctx, fasthttp.StatusForbidden, "this API route has no operation permission mapping")
+				return
 			}
 
 			// Evaluate granular RBAC permissions.

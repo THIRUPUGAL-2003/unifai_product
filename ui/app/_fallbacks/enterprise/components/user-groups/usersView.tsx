@@ -2094,6 +2094,8 @@ export default function UsersView() {
 											next.add("prompt-repository");
 											return next;
 										});
+					} else if (nextRole === "sub_admin") {
+						setAllowedSections(new Set());
 									}
 								}}
 								className="bg-muted/20 border-border/50 text-foreground w-full rounded-lg border p-2.5 text-sm focus:border-teal-500/50 focus:outline-none"
