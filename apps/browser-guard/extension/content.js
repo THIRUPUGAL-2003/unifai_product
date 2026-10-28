@@ -322,7 +322,7 @@
           box.style.opacity = "0";
           setTimeout(function () { try { host.remove(); } catch (_) {} }, 150);
         } catch (e) {}
-      }, 1000);
+      }, 3000);
     } catch (e) {}
   }
 
@@ -787,7 +787,7 @@
           box.style.opacity = "0";
           setTimeout(function () { try { host.remove(); } catch (_) {} }, 150);
         } catch (e) {}
-      }, 1000);
+      }, 3000);
     } catch (e) {}
   }
 
@@ -892,6 +892,27 @@
       if (dragNotice) dragNotice.remove();
     } catch (_) {}
   }
+
+  function checkDismissIsolatedNotice(e) {
+    var clip = document.getElementById("yp-raksha-isolated-clipboard-notice");
+    var drag = document.getElementById("yp-raksha-isolated-dragdrop-notice");
+    if (!clip && !drag) return;
+    var target = (e && e.target) || document.activeElement;
+    if (target) {
+      var val = typeof target.value === "string" ? target.value.trim() : "";
+      var text = (target.isContentEditable || (target.getAttribute && target.getAttribute("contenteditable") === "true"))
+        ? (target.innerText || target.textContent || "").trim()
+        : "";
+      if (!val && !text) {
+        dismissAllClipboardNotices();
+      }
+    }
+  }
+
+  ["input", "keyup", "change"].forEach(function (evName) {
+    document.addEventListener(evName, checkDismissIsolatedNotice, true);
+    window.addEventListener(evName, checkDismissIsolatedNotice, true);
+  });
 
   function applyIsolatedCurtain() {
     if (!isExtensionValid()) return;

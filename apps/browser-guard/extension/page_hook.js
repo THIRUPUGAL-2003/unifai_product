@@ -2440,6 +2440,52 @@
 
   var _lastBubbleAt = 0;
   var _lastBubbleMsg = "";
+  var _bubbleDismissTimer = null;
+
+  function dismissAlertCard() {
+    if (_bubbleDismissTimer) {
+      clearTimeout(_bubbleDismissTimer);
+      _bubbleDismissTimer = null;
+    }
+    var card = document.getElementById("yp-raksha-alert-card");
+    if (card) {
+      card.style.transition = "opacity 0.2s ease, transform 0.2s ease";
+      card.style.opacity = "0";
+      card.style.transform = "translate(-50%, 8px)";
+      setTimeout(function () {
+        if (card && card.parentNode) card.remove();
+      }, 200);
+    }
+    try {
+      var clip = document.getElementById("yp-raksha-isolated-clipboard-notice");
+      if (clip) clip.remove();
+      var drag = document.getElementById("yp-raksha-isolated-dragdrop-notice");
+      if (drag) drag.remove();
+    } catch (_) {}
+  }
+
+  function checkAndDismissOnEmptyComposer(e) {
+    var card = document.getElementById("yp-raksha-alert-card");
+    var clip = document.getElementById("yp-raksha-isolated-clipboard-notice");
+    var drag = document.getElementById("yp-raksha-isolated-dragdrop-notice");
+    if (!card && !clip && !drag) return;
+
+    var target = (e && e.target) || getDeepActiveElement();
+    var text = stripInvisible(composerFrom(target) || composerFrom(null));
+    var effectiveFiles = (typeof mergeStagedAndDomFiles === "function") ? mergeStagedAndDomFiles() : [];
+    var hasStaged = (Array.isArray(stagedImages) && stagedImages.length > 0) || (Array.isArray(effectiveFiles) && effectiveFiles.length > 0);
+
+    // If chat composer becomes empty (no text and no files), dismiss warning immediately!
+    if (!text && !hasStaged) {
+      dismissAlertCard();
+    }
+  }
+
+  ["input", "keyup", "change", "paste"].forEach(function (evName) {
+    document.addEventListener(evName, checkAndDismissOnEmptyComposer, true);
+    window.addEventListener(evName, checkAndDismissOnEmptyComposer, true);
+  });
+
   // Sleek, compact In-Page YP-Raksha Alert Toast
   function showBubble(message, ruleName, kind) {
     var now = Date.now();
@@ -2496,7 +2542,7 @@
     var closeBtn = document.createElement("button");
     closeBtn.textContent = "✕";
     closeBtn.style.cssText = "background:none;border:none;color:#9ca3af;font-size:12px;cursor:pointer;padding:0 2px;line-height:1;";
-    closeBtn.onclick = function () { card.remove(); };
+    closeBtn.onclick = function () { dismissAlertCard(); };
 
     header.appendChild(titleBox);
     header.appendChild(closeBtn);
@@ -2510,14 +2556,11 @@
 
     (document.body || document.documentElement).appendChild(card);
 
-    // Auto-dismiss after 1 second (User requirement: 1 sec la vantu oirum)
-    setTimeout(function () {
-      if (card && card.parentNode) {
-        card.style.transition = "opacity 0.2s ease";
-        card.style.opacity = "0";
-        setTimeout(function () { if (card.parentNode) card.remove(); }, 200);
-      }
-    }, 1000);
+    // Auto-dismiss after 3 seconds (User requirement: 3 sec kaatanum)
+    if (_bubbleDismissTimer) clearTimeout(_bubbleDismissTimer);
+    _bubbleDismissTimer = setTimeout(function () {
+      dismissAlertCard();
+    }, 3000);
   }
 
   var lastWarnedTime = 0;
