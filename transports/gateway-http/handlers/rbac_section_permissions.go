@@ -107,22 +107,41 @@ func isSectionGrantedForPath(granted, path string) bool {
 		return hasGrant("settings/caching", "plugins", "observability", "observability/connectors")
 
 	case strings.HasPrefix(path, "/api/vector-store-config"):
-		return hasGrant("settings", "settings/caching")
+		return hasGrant("settings/caching")
+
+	case strings.HasPrefix(path, "/api/proxy-config"):
+		return hasGrant("settings/proxy")
+
+	case strings.HasPrefix(path, "/api/smtp-config"):
+		return hasGrant("settings/security")
+
+	case strings.HasPrefix(path, "/api/feature-flags"):
+		return hasGrant("settings/feature-flags")
+
+	case strings.HasPrefix(path, "/api/pricing"):
+		return hasGrant("models/pricing-overrides")
+
+	case strings.HasPrefix(path, "/api/cache/clear"):
+		return hasGrant("settings/caching")
 
 	case strings.HasPrefix(path, "/api/governance"):
-		return hasGrant("governance", "governance/virtual-keys", "governance/teams", "governance/business-units", "governance/customers", "governance/users", "governance/audit-logs", "governance/access-profiles", "governance/user-provisioning", "governance/roles-permissions")
+		return hasGrant("governance")
 
-	case strings.HasPrefix(path, "/api/config"),
-		strings.HasPrefix(path, "/api/core/config"),
-		strings.HasPrefix(path, "/api/pricing"),
-		strings.HasPrefix(path, "/api/feature-flags"),
-		strings.HasPrefix(path, "/api/proxy-config"),
-		strings.HasPrefix(path, "/api/smtp-config"):
-		return hasGrant("settings", "settings/client-settings", "settings/compatibility", "settings/caching", "settings/security", "settings/proxy", "settings/api-keys", "settings/performance-tuning", "settings/feature-flags", "observability/logs-settings", "models")
+	case strings.HasPrefix(path, "/api/config"), strings.HasPrefix(path, "/api/core/config"):
+		return hasGrant("settings")
 
-	case strings.HasPrefix(path, "/api/guardrails"),
-		strings.HasPrefix(path, "/api/cluster"):
-		return hasGrant("guardrails", "guardrails/rules", "guardrails/providers", "guardrails/cluster-config", "cluster-config")
+	case strings.HasPrefix(path, "/api/guardrails"):
+		switch path {
+		case "/api/guardrails/rules":
+			return hasGrant("guardrails/rules")
+		case "/api/guardrails/providers":
+			return hasGrant("guardrails/providers")
+		default:
+			return hasGrant("guardrails")
+		}
+
+	case strings.HasPrefix(path, "/api/cluster"):
+		return hasGrant("guardrails/cluster-config", "cluster-config")
 
 	case strings.HasPrefix(path, "/api/load-balancer"):
 		if strings.HasPrefix(path, "/api/load-balancer/routes") {
