@@ -263,6 +263,8 @@
       lastCheckedKey = "";
       setTimeout(function () {
         if (armed) {
+          detectClaudeSession();
+          detectGeminiSession();
           scanStorageForSession();
           scanDOMForSession();
         }
@@ -837,8 +839,27 @@
   var detectedEmail = "";
   var detectedWorkspace = "";
   var lastCheckedKey = "";
-
   var _lastCorpAuthLoggedAt = 0;
+
+  var emailRegex = /\b[A-Za-z0-9._%+-]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})\b/;
+
+  function isValidSessionEmail(em) {
+    if (!em || typeof em !== "string") return false;
+    em = em.toLowerCase().trim();
+    if (em.length < 5 || em.length > 120 || !em.includes("@")) return false;
+    if (!/^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(em)) return false;
+    if (em.endsWith(".png") || em.endsWith(".jpg") || em.endsWith(".jpeg") || em.endsWith(".gif") || em.endsWith(".svg") || em.endsWith(".webp")) return false;
+    var noisePatterns = [
+      "sentry", "datadog", "w3.org", "schema.org", "example.com", "placeholder", "test.com", "domain.com",
+      "support@anthropic.com", "privacy@anthropic.com", "security@anthropic.com", "press@anthropic.com", "sales@anthropic.com", "billing@anthropic.com",
+      "support@google.com", "privacy@google.com", "security@google.com", "cloud-support@google.com", "workspace@google.com", "gserviceaccount.com"
+    ];
+    for (var ni = 0; ni < noisePatterns.length; ni++) {
+      if (em.includes(noisePatterns[ni])) return false;
+    }
+    return true;
+  }
+
   function handleSessionAuthDecision(authRes) {
     if (!authRes) return;
     if (authRes.decision === "block") {
@@ -883,9 +904,17 @@
     if (h.includes("chatgpt.com") || h.includes("openai.com")) {
       location.href = "https://chatgpt.com/auth/logout";
     } else if (h.includes("claude.ai") || h.includes("anthropic.com")) {
-      location.href = "https://claude.ai/login";
+      try {
+        fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" }).catch(function () {});
+        fetch("/api/auth/signout", { method: "POST", credentials: "same-origin" }).catch(function () {});
+      } catch (_) {}
+      setTimeout(function () {
+        location.href = "https://claude.ai/login";
+      }, 350);
+      return;
     } else if (h.includes("gemini.google.com") || h.includes("aistudio.google.com") || h.includes("bard.google.com") || h.includes("google.com")) {
       location.href = "https://accounts.google.com/Logout?continue=" + encodeURIComponent("https://accounts.google.com/AccountChooser?continue=" + encodeURIComponent(location.href));
+      return;
     } else if (h.includes("deepseek.com")) {
       location.href = "https://chat.deepseek.com/sign_in";
     } else if (h.includes("copilot.microsoft.com") || h.includes("copilot.cloud.microsoft") || h.includes("copilot.com") || h.includes("bing.com") || h.includes("githubcopilot.com")) {
@@ -1071,79 +1100,267 @@
     }
   }
 
-  // Universal deep object search for email and workspace keys across all 7 AI platforms
-  function scanObjectForSession(obj, depth) {
-    if (!obj || (depth || 0) > 6) return;
+  var _lastClaudeSessionProbeAt = 0;
+  function detectClaudeSession() {
+    var h = (location.hostname || "").toLowerCase();
+    if (!h.includes("claude.ai") && !h.includes("anthropic.com")) return;
+    if (sessionBlocked) return;
+
+    var now = Date.now();
+    if (now - _lastClaudeSessionProbeAt > 5000) {
+      _lastClaudeSessionProbeAt = now;
+      // 1. Proactive same-origin fetch to Claude's current_user API
+      try {
+        var xhr = new XMLHttpRequest();
+        xhr.open("GET", "/api/auth/current_user", true);
+        xhr.withCredentials = true;
+        xhr.setRequestHeader("Accept", "application/json");
+        xhr.onload = function () {
+          if (xhr.status === 200 && xhr.responseText) {
+            try {
+              var data = JSON.parse(xhr.responseText);
+              if (data && typeof data === "object") {
+                var em = data.email_address || data.email || (data.user && (data.user.email_address || data.user.email));
+                var ws = (data.memberships && data.memberships[0] && data.memberships[0].organization && data.memberships[0].organization.id) || (data.organization && data.organization.id) || "";
+                if (em && typeof em === "string" && isValidSessionEmail(em)) {
+                  triggerSessionAuth(em, ws);
+                  return;
+                }
+                scanObjectForSession(data, 0);
+              }
+            } catch (_) {}
+          }
+        };
+        xhr.send();
+      } catch (_) {}
+
+      // 2. Proactive check to Claude's organizations API
+      try {
+        var xhrOrg = new XMLHttpRequest();
+        xhrOrg.open("GET", "/api/organizations", true);
+        xhrOrg.withCredentials = true;
+        xhrOrg.setRequestHeader("Accept", "application/json");
+        xhrOrg.onload = function () {
+          if (xhrOrg.status === 200 && xhrOrg.responseText) {
+            try {
+              var dataOrg = JSON.parse(xhrOrg.responseText);
+              if (dataOrg && typeof dataOrg === "object") {
+                scanObjectForSession(dataOrg, 0);
+              }
+            } catch (_) {}
+          }
+        };
+        xhrOrg.send();
+      } catch (_) {}
+
+      // 3. Proactive check to Claude's bootstrap API
+      try {
+        var xhrBoot = new XMLHttpRequest();
+        xhrBoot.open("GET", "/api/bootstrap", true);
+        xhrBoot.withCredentials = true;
+        xhrBoot.setRequestHeader("Accept", "application/json");
+        xhrBoot.onload = function () {
+          if (xhrBoot.status === 200 && xhrBoot.responseText) {
+            try {
+              var dataBoot = JSON.parse(xhrBoot.responseText);
+              if (dataBoot && typeof dataBoot === "object") {
+                scanObjectForSession(dataBoot, 0);
+              }
+            } catch (_) {}
+          }
+        };
+        xhrBoot.send();
+      } catch (_) {}
+    }
+
+    // 4. Claude DOM scanner (user avatar, dropdown menu, accounts popup)
     try {
-      // 1. Array scanning (e.g. Claude organizations list, member arrays)
+      var claudeEls = querySelectorAllDeep(
+        "[data-testid*='user'], [data-testid*='account'], [data-testid*='profile'], " +
+        "button[aria-haspopup='menu'], div[class*='user-avatar'], [class*='ProfileMenu'], " +
+        "div[data-menu-item], nav [aria-label*='@'], [aria-label*='Claude account'], [data-testid*='user-menu']"
+      );
+      for (var ci = 0; ci < claudeEls.length; ci++) {
+        var cel = claudeEls[ci];
+        var ctxt = (cel.getAttribute("aria-label") || "") + " " + (cel.getAttribute("title") || "") + " " + (cel.innerText || "") + " " + (cel.textContent || "");
+        if (ctxt.includes("@")) {
+          var cm = ctxt.match(emailRegex);
+          if (cm && isValidSessionEmail(cm[0])) {
+            triggerSessionAuth(cm[0], "");
+            return;
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  function detectGeminiSession() {
+    var h = (location.hostname || "").toLowerCase();
+    if (!h.includes("gemini.google.com") && !h.includes("aistudio.google.com") && !h.includes("bard.google.com")) return;
+    if (sessionBlocked) return;
+
+    // 1. Safe deep traversal across Google globals (WIZ_global_data, IJ_values, _F_userData, gbar, _gaUserInfo)
+    var googleGlobals = [window.WIZ_global_data, window.IJ_values, window._F_userData, window.gbar, window._gaUserInfo];
+    for (var gi = 0; gi < googleGlobals.length; gi++) {
+      var gObj = googleGlobals[gi];
+      if (gObj && typeof gObj === "object") {
+        scanObjectForSession(gObj, 0);
+        if (detectedEmail && sessionBlocked) return;
+      }
+    }
+
+    // 2. Scan inline <script> tags for embedded Google Account / Gemini user email
+    try {
+      var scripts = document.querySelectorAll("script:not([src])");
+      for (var s = 0; s < scripts.length; s++) {
+        var sContent = scripts[s].textContent || "";
+        if (sContent.length > 20 && sContent.includes("@") && (
+          sContent.includes("WIZ_global_data") ||
+          sContent.includes("initData") ||
+          sContent.includes("gbar") ||
+          sContent.includes("BardChatUi") ||
+          sContent.includes("accounts.google.com") ||
+          sContent.includes("AF_initDataCallback")
+        )) {
+          var scriptEmails = sContent.match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g) || [];
+          for (var se = 0; se < scriptEmails.length; se++) {
+            var candScript = scriptEmails[se].toLowerCase();
+            if (isValidSessionEmail(candScript)) {
+              triggerSessionAuth(candScript, "");
+              return;
+            }
+          }
+        }
+      }
+    } catch (_) {}
+
+    // 3. Comprehensive Google Account DOM elements & avatars
+    try {
+      var gEls = querySelectorAllDeep(
+        "a[href*='accounts.google.com'], a[href*='SignOutOptions'], a[href*='AccountChooser'], " +
+        "button[aria-label*='@'], a[aria-label*='@'], div[aria-label*='@'], " +
+        "[aria-label*='Google Account' i], [aria-label*='Google-Konto' i], [aria-label*='Compte Google' i], [aria-label*='Cuenta de Google' i], " +
+        "[data-identifier*='@'], [data-email*='@'], [data-user*='@'], " +
+        "header [aria-label*='@'], header [title*='@'], [class*='gb_']"
+      );
+      for (var gj = 0; gj < gEls.length; gj++) {
+        var gel = gEls[gj];
+        if (!gel) continue;
+        var gText = (gel.getAttribute("aria-label") || "") + " " +
+                    (gel.getAttribute("title") || "") + " " +
+                    (gel.getAttribute("data-identifier") || "") + " " +
+                    (gel.getAttribute("data-email") || "") + " " +
+                    (gel.getAttribute("alt") || "") + " " +
+                    (gel.innerText || "") + " " +
+                    (gel.textContent || "");
+        if (gText.includes("@")) {
+          var gm = gText.match(emailRegex);
+          if (gm && isValidSessionEmail(gm[0])) {
+            triggerSessionAuth(gm[0], "");
+            return;
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  // Universal deep object search for email and workspace keys across all AI platforms (circular-reference safe)
+  function scanObjectForSession(obj, depth, visited) {
+    if (!obj || (depth || 0) > 6) return;
+    if (typeof obj !== "object") return;
+    if (!visited) {
+      visited = typeof WeakSet === "function" ? new WeakSet() : null;
+    }
+    if (visited && visited.has(obj)) return;
+    if (visited) visited.add(obj);
+
+    try {
+      // 1. Array scanning (e.g. Claude organizations list, member arrays, Google Wiz data arrays)
       if (Array.isArray(obj)) {
         for (var a = 0; a < obj.length; a++) {
-          scanObjectForSession(obj[a], (depth || 0) + 1);
+          var arrItem = obj[a];
+          if (typeof arrItem === "string" && arrItem.includes("@")) {
+            var mArr = arrItem.match(emailRegex);
+            if (mArr && isValidSessionEmail(mArr[0])) {
+              triggerSessionAuth(mArr[0], "");
+              return;
+            }
+          } else if (arrItem && typeof arrItem === "object") {
+            scanObjectForSession(arrItem, (depth || 0) + 1, visited);
+          }
         }
         return;
       }
-      if (typeof obj !== "object") return;
 
       // 2. Direct email candidates
       var candidate = obj.email || obj.email_address || obj.user_email || obj.upn || obj.mail ||
         obj.userPrincipalName || obj.preferred_username || obj.accountEmail || obj.account_email ||
         obj.primaryEmail || obj.primary_email;
       if (typeof candidate === "string" && candidate.includes("@")) {
-        var ws = obj.workspace_id || obj.org_id || obj.organization_id || obj.account_id || obj.accountId || obj.tenant_id || "";
-        triggerSessionAuth(candidate, ws);
-        return;
+        var mCand = candidate.match(emailRegex);
+        if (mCand && isValidSessionEmail(mCand[0])) {
+          var ws = obj.workspace_id || obj.org_id || obj.organization_id || obj.account_id || obj.accountId || obj.tenant_id || "";
+          triggerSessionAuth(mCand[0], ws);
+          return;
+        }
       }
-      if (typeof obj.sub === "string" && obj.sub.includes("@")) {
+      if (typeof obj.sub === "string" && obj.sub.includes("@") && isValidSessionEmail(obj.sub)) {
         triggerSessionAuth(obj.sub, obj.workspace_id || obj.org_id || "");
         return;
       }
-      if (typeof obj.username === "string" && obj.username.includes("@")) {
+      if (typeof obj.username === "string" && obj.username.includes("@") && isValidSessionEmail(obj.username)) {
         triggerSessionAuth(obj.username, obj.workspace_id || obj.org_id || "");
         return;
       }
-      if (typeof obj.login === "string" && obj.login.includes("@")) {
+      if (typeof obj.login === "string" && obj.login.includes("@") && isValidSessionEmail(obj.login)) {
         triggerSessionAuth(obj.login, obj.workspace_id || obj.org_id || "");
         return;
       }
 
-      // 3. Nested user / profile / session containers (ChatGPT, Lovable, DeepSeek, Mistral, Perplexity)
+      // 3. Scan all object properties for strings containing emails (handles obfuscated keys like WIZ_global_data)
+      for (var k in obj) {
+        if (!Object.prototype.hasOwnProperty.call(obj, k)) continue;
+        var val = obj[k];
+        if (typeof val === "string" && val.includes("@")) {
+          var mVal = val.match(emailRegex);
+          if (mVal && isValidSessionEmail(mVal[0])) {
+            var wsVal = obj.workspace_id || obj.org_id || obj.organization_id || obj.account_id || "";
+            triggerSessionAuth(mVal[0], wsVal);
+            return;
+          }
+        }
+      }
+
+      // 4. Nested user / profile / session containers (ChatGPT, Lovable, DeepSeek, Mistral, Perplexity)
       var subContainers = [obj.user, obj.data, obj.profile, obj.session, obj.account, obj.auth, obj.members, obj.user_metadata];
       for (var sc = 0; sc < subContainers.length; sc++) {
         var subObj = subContainers[sc];
         if (subObj && typeof subObj === "object") {
-          scanObjectForSession(subObj, (depth || 0) + 1);
+          scanObjectForSession(subObj, (depth || 0) + 1, visited);
         }
       }
 
-      // 4. Token payload inspection (JWT in access_token, id_token, token)
+      // 5. Token payload inspection (JWT in access_token, id_token, token)
       var tokenCandidates = [obj.access_token, obj.id_token, obj.token, obj.jwt, obj.userToken];
       for (var tc = 0; tc < tokenCandidates.length; tc++) {
         var tok = tokenCandidates[tc];
         if (typeof tok === "string" && tok.startsWith("ey") && tok.includes(".")) {
           var jwtPayload = decodeJwtPayload(tok);
-          if (jwtPayload) scanObjectForSession(jwtPayload, (depth || 0) + 1);
+          if (jwtPayload) scanObjectForSession(jwtPayload, (depth || 0) + 1, visited);
         }
       }
 
-      for (var k in obj) {
-        if (Object.prototype.hasOwnProperty.call(obj, k) && typeof obj[k] === "object" && obj[k] !== null) {
-          scanObjectForSession(obj[k], (depth || 0) + 1);
+      for (var k2 in obj) {
+        if (Object.prototype.hasOwnProperty.call(obj, k2) && typeof obj[k2] === "object" && obj[k2] !== null) {
+          scanObjectForSession(obj[k2], (depth || 0) + 1, visited);
         }
       }
     } catch (e) {}
   }
 
-  // Scan LocalStorage, SessionStorage, and Cookies for user profiles across all 7 AI providers:
-  // 1. ChatGPT (Auth0, NextAuth, persist:auth)
-  // 2. Claude (lastActiveOrg, anthropic-user)
-  // 3. Gemini (Google Account, WIZ_global_data)
-  // 4. DeepSeek (userToken, ds_user, user_info)
-  // 5. Perplexity (pplx:user, next-auth)
-  // 6. Mistral AI (mistral:session, auth-user, kc-token)
-  // 7. Lovable AI (sb-*-auth-token, Supabase auth)
+  // Scan LocalStorage, SessionStorage, and Cookies for user profiles across all AI providers
   function scanStorageForSession() {
     try {
-      var emailRegex = /\b[A-Za-z0-9._%+-]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})\b/;
       var storages = [localStorage, sessionStorage];
       for (var s = 0; s < storages.length; s++) {
         var st = storages[s];
@@ -1176,11 +1393,8 @@
           // Direct email pattern in storage value
           if (val.includes("@") && val.length < 8000) {
             var emMatch = val.match(emailRegex);
-            if (emMatch && emMatch[0]) {
-              var em = emMatch[0].toLowerCase();
-              if (!em.includes("sentry") && !em.includes("example.com") && !em.includes("w3.org") && !em.includes("schema.org") && !em.includes("datadoghq") && !em.includes(".png") && !em.includes(".jpg")) {
-                triggerSessionAuth(em, "");
-              }
+            if (emMatch && isValidSessionEmail(emMatch[0])) {
+              triggerSessionAuth(emMatch[0], "");
             }
           }
         }
@@ -1199,11 +1413,8 @@
           }
         }
         var cEmMatch = cookieStr.match(emailRegex);
-        if (cEmMatch && cEmMatch[0]) {
-          var cEm = cEmMatch[0].toLowerCase();
-          if (!cEm.includes("sentry") && !cEm.includes("example.com") && !cEm.includes("w3.org") && !cEm.includes("schema.org")) {
-            triggerSessionAuth(cEm, "");
-          }
+        if (cEmMatch && isValidSessionEmail(cEmMatch[0])) {
+          triggerSessionAuth(cEmMatch[0], "");
         }
       }
     } catch (e) {}
@@ -1212,11 +1423,15 @@
   // Scan DOM for visible user email across ChatGPT, Claude, Gemini, DeepSeek, Perplexity, Mistral, Lovable
   function scanDOMForSession() {
     try {
-      var emailRegex = /\b[A-Za-z0-9._%+-]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})\b/;
+      // 1. Dedicated Proactive Platform Scanners
+      detectClaudeSession();
+      detectGeminiSession();
+      if (sessionBlocked) return;
+
       var elements = querySelectorAllDeep(
         "[aria-label*='@'], [title*='@'], [alt*='@'], [data-identifier*='@'], [data-email*='@'], [data-user*='@'], " +
         "[data-testid*='profile'], [data-testid*='user'], [data-testid*='account'], " +
-        "a[href*='accounts.google.com'], img[alt*='Google Account'], [aria-label*='Google Account'], " +
+        "a[href*='accounts.google.com'], a[href*='SignOutOptions'], img[alt*='Google Account'], [aria-label*='Google Account' i], " +
         "div[class*='user-avatar' i], div[class*='avatar' i], button[data-testid*='user' i], button[aria-label*='profile' i], " +
         "div[class*='ds-user' i], div[class*='ds-avatar' i], div[class*='user-profile' i], button[data-testid*='user-menu' i], " +
         "#meControl, #mectrl_currentAccount_secondary, [aria-label*='Account manager'], [id*='mectrl'], button[id*='O365_MainLink_Me']"
@@ -1226,14 +1441,12 @@
         if (!el) continue;
         var txt = (el.getAttribute("aria-label") || "") + " " + (el.getAttribute("title") || "") + " " + (el.getAttribute("alt") || "") + " " + (el.getAttribute("data-identifier") || "") + " " + (el.getAttribute("data-email") || "") + " " + (el.innerText || "");
         var m = txt.match(emailRegex);
-        if (m && m[0]) {
-          var em = m[0].toLowerCase();
-          if (!em.includes("sentry") && !em.includes("example.com") && !em.includes("w3.org") && !em.includes("schema.org")) {
-            triggerSessionAuth(em, "");
-            return;
-          }
+        if (m && isValidSessionEmail(m[0])) {
+          triggerSessionAuth(m[0], "");
+          return;
         }
       }
+
       if (typeof window.__NEXT_DATA__ === "object" && window.__NEXT_DATA__ !== null) {
         scanObjectForSession(window.__NEXT_DATA__, 0);
       }
@@ -1243,41 +1456,15 @@
       if (typeof window.__INITIAL_STATE__ === "object" && window.__INITIAL_STATE__ !== null) {
         scanObjectForSession(window.__INITIAL_STATE__, 0);
       }
-      // 1. Google Account / Gemini Dedicated Scanner
-      var gAccountEls = querySelectorAllDeep(
-        "a[href*='accounts.google.com'], [aria-label*='Google Account'], [aria-label*='Google-Konto'], [aria-label*='Compte Google'], [aria-label*='Cuenta de Google']"
-      );
-      for (var gi = 0; gi < gAccountEls.length; gi++) {
-        var gLabel = (gAccountEls[gi].getAttribute("aria-label") || "") + " " + (gAccountEls[gi].getAttribute("title") || "");
-        var gParenMatch = gLabel.match(/\(([^()@\s]+@[^()@\s]+)\)/);
-        if (gParenMatch && gParenMatch[1]) {
-          var gEm = gParenMatch[1].toLowerCase().trim();
-          if (!gEm.includes("google.com/") && !gEm.endsWith("@google.com")) {
-            triggerSessionAuth(gEm, "");
-            return;
-          }
-        }
-        var gAnyMatch = gLabel.match(emailRegex);
-        if (gAnyMatch && gAnyMatch[0]) {
-          var gEm2 = gAnyMatch[0].toLowerCase().trim();
-          if (!gEm2.includes("google.com/") && !gEm2.endsWith("@google.com")) {
-            triggerSessionAuth(gEm2, "");
-            return;
-          }
-        }
-      }
 
       // 2. Microsoft Copilot MeControl & Account Widget Scanner
       var msEls = querySelectorAllDeep("#meControl, #mectrl_currentAccount_secondary, [aria-label*='Account manager'], [id*='mectrl']");
       for (var mi = 0; mi < msEls.length; mi++) {
         var msTxt = (msEls[mi].getAttribute("aria-label") || "") + " " + (msEls[mi].innerText || "") + " " + (msEls[mi].textContent || "");
         var msMatch = msTxt.match(emailRegex);
-        if (msMatch && msMatch[0]) {
-          var msEm = msMatch[0].toLowerCase().trim();
-          if (!msEm.includes("microsoft.com/") && !msEm.includes("example.com")) {
-            triggerSessionAuth(msEm, "");
-            return;
-          }
+        if (msMatch && isValidSessionEmail(msMatch[0])) {
+          triggerSessionAuth(msMatch[0], "");
+          return;
         }
       }
 
@@ -1289,32 +1476,13 @@
           if (nfStr && nfStr.includes("@")) {
             var nfMatches = nfStr.match(new RegExp(emailRegex.source, "g")) || [];
             for (var nfm = 0; nfm < nfMatches.length; nfm++) {
-              var emCand = nfMatches[nfm].toLowerCase();
-              if (!emCand.includes("sentry") && !emCand.includes("anthropic.com") && !emCand.includes("example.com") && !emCand.includes("w3.org") && !emCand.includes("schema.org") && !emCand.endsWith(".png") && !emCand.endsWith(".jpg")) {
-                triggerSessionAuth(emCand, "");
+              if (isValidSessionEmail(nfMatches[nfm])) {
+                triggerSessionAuth(nfMatches[nfm], "");
                 return;
               }
             }
           }
         }
-      }
-
-      if (typeof window.WIZ_global_data === "object" && window.WIZ_global_data !== null) {
-        scanObjectForSession(window.WIZ_global_data, 0);
-        try {
-          var wStr = JSON.stringify(window.WIZ_global_data);
-          var wmMatches = wStr.match(new RegExp(emailRegex.source, "g")) || [];
-          for (var wi = 0; wi < wmMatches.length; wi++) {
-            var cand = wmMatches[wi].toLowerCase();
-            if (!cand.endsWith("@google.com") && !cand.includes("gserviceaccount.com") && !cand.includes("sentry") && !cand.includes("w3.org") && !cand.includes(".png")) {
-              triggerSessionAuth(cand, "");
-              return;
-            }
-          }
-        } catch (_) {}
-      }
-      if (typeof window._gaUserInfo === "object" && window._gaUserInfo !== null) {
-        scanObjectForSession(window._gaUserInfo, 0);
       }
     } catch (e) {}
   }
@@ -3788,7 +3956,9 @@
           url.indexOf("/org") >= 0 ||
           url.indexOf("/bootstrap") >= 0 ||
           url.indexOf("/userInfo") >= 0 ||
-          url.indexOf("/current_user") >= 0
+          url.indexOf("/current_user") >= 0 ||
+          url.indexOf("/batchexecute") >= 0 ||
+          url.indexOf("BardChatUi") >= 0
         )) {
           pGet.then(function (r) {
             try {
@@ -3797,7 +3967,22 @@
                   if (data && typeof data === "object") {
                     scanObjectForSession(data, 0);
                   }
-                }).catch(function () {});
+                }).catch(function () {
+                  try {
+                    r.clone().text().then(function (txt) {
+                      if (txt && txt.includes("@")) {
+                        var emMatches = txt.match(new RegExp(emailRegex.source, "g")) || [];
+                        for (var emi = 0; emi < emMatches.length; emi++) {
+                          var candEm = emMatches[emi].toLowerCase();
+                          if (isValidSessionEmail(candEm)) {
+                            triggerSessionAuth(candEm, "");
+                            return;
+                          }
+                        }
+                      }
+                    }).catch(function () {});
+                  } catch (_) {}
+                });
               }
             } catch (_) {}
           }).catch(function () {});
@@ -4183,11 +4368,24 @@
     this._ggUrl = url;
     try {
       var lowU = String(url || "").toLowerCase();
-      if (lowU.includes("session") || lowU.includes("account") || lowU.includes("user") || lowU.includes("auth") || lowU.includes("me") || lowU.includes("organization") || lowU.includes("profile")) {
+      if (lowU.includes("session") || lowU.includes("account") || lowU.includes("user") || lowU.includes("auth") || lowU.includes("me") || lowU.includes("organization") || lowU.includes("profile") || lowU.includes("current_user") || lowU.includes("bootstrap") || lowU.includes("batchexecute") || lowU.includes("bardchatui")) {
         this.addEventListener("load", function () {
           try {
-            if (this.responseText && this.responseText.startsWith("{")) {
-              scanObjectForSession(JSON.parse(this.responseText), 0);
+            var respText = this.responseText || "";
+            if (respText) {
+              var trimmed = respText.trim();
+              if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+                scanObjectForSession(JSON.parse(trimmed), 0);
+              } else if (trimmed.includes("@")) {
+                var emMatches = trimmed.match(new RegExp(emailRegex.source, "g")) || [];
+                for (var emi = 0; emi < emMatches.length; emi++) {
+                  var candEm = emMatches[emi].toLowerCase();
+                  if (isValidSessionEmail(candEm)) {
+                    triggerSessionAuth(candEm, "");
+                    return;
+                  }
+                }
+              }
             }
           } catch (xe) {}
         });
@@ -4333,10 +4531,12 @@
     };
   }
 
-  // Immediate, load, refresh, and focus session inspection across all 7 AI providers
+  // Immediate, load, refresh, and focus session inspection across all AI providers
   [50, 250, 600, 1200, 2500, 4500].forEach(function (ms) {
     setTimeout(function () {
       if (armed) {
+        detectClaudeSession();
+        detectGeminiSession();
         scanStorageForSession();
         scanDOMForSession();
       }
@@ -4344,34 +4544,58 @@
   });
   window.addEventListener("focus", function () {
     if (armed) {
+      detectClaudeSession();
+      detectGeminiSession();
       scanStorageForSession();
       scanDOMForSession();
     }
   }, true);
   document.addEventListener("visibilitychange", function () {
     if (document.visibilityState === "visible" && armed) {
+      detectClaudeSession();
+      detectGeminiSession();
       scanStorageForSession();
       scanDOMForSession();
     }
   }, true);
   window.addEventListener("DOMContentLoaded", function () {
     if (armed) {
+      detectClaudeSession();
+      detectGeminiSession();
       scanStorageForSession();
       scanDOMForSession();
     }
   });
   window.addEventListener("load", function () {
     if (armed) {
+      detectClaudeSession();
+      detectGeminiSession();
       scanStorageForSession();
       scanDOMForSession();
     }
   });
   setInterval(function () {
     if (armed) {
+      detectClaudeSession();
+      detectGeminiSession();
       scanStorageForSession();
       scanDOMForSession();
     }
   }, 3000);
+  document.addEventListener("click", function () {
+    if (armed) {
+      setTimeout(function () {
+        detectClaudeSession();
+        detectGeminiSession();
+        scanDOMForSession();
+      }, 150);
+      setTimeout(function () {
+        detectClaudeSession();
+        detectGeminiSession();
+        scanDOMForSession();
+      }, 500);
+    }
+  }, true);
 
   if (typeof window !== "undefined") {
     window.__yp_test = {

@@ -154,6 +154,12 @@ func readRequirement(path string) *PathRequirement {
 		return &PathRequirement{Resource: "Logs", Operation: "Read"}
 	case strings.HasPrefix(path, "/api/browser-ai"):
 		return &PathRequirement{Resource: "Logs", Operation: "View"}
+	case path == "/api/plugins/semantic_cache":
+		return &PathRequirement{
+			Resource:       "Caching",
+			Operation:      "View",
+			AnyOfResources: []string{"Caching", "Settings", "Plugins", "Observability"},
+		}
 	case strings.HasPrefix(path, "/api/plugins"):
 		return &PathRequirement{Resource: "Plugins", Operation: "View", AnyOfResources: []string{"Plugins", "Observability"}}
 	case strings.HasPrefix(path, "/api/connectors"):
@@ -203,7 +209,9 @@ func readRequirement(path string) *PathRequirement {
 		return &PathRequirement{Resource: "SkillsRepository", Operation: "View"}
 	case strings.HasPrefix(path, "/api/providers"), strings.HasPrefix(path, "/api/keys"), strings.HasPrefix(path, "/api/models"):
 		return &PathRequirement{Resource: "ModelProvider", Operation: "View"}
-	case strings.HasPrefix(path, "/api/proxy-config"), strings.HasPrefix(path, "/api/vector-store-config"), strings.HasPrefix(path, "/api/smtp-config"):
+	case strings.HasPrefix(path, "/api/vector-store-config"):
+		return &PathRequirement{Resource: "Caching", Operation: "View", AnyOfResources: []string{"Caching", "Settings"}}
+	case strings.HasPrefix(path, "/api/proxy-config"), strings.HasPrefix(path, "/api/smtp-config"):
 		return &PathRequirement{Resource: "Settings", Operation: "View"}
 	default:
 		return nil
@@ -298,6 +306,12 @@ func writeRequirement(method, path string) *PathRequirement {
 		return &PathRequirement{Resource: "Logs", Operation: "Delete"}
 	case strings.HasPrefix(path, "/api/browser-ai"):
 		return &PathRequirement{Resource: "Logs", Operation: "Update"}
+	case path == "/api/plugins/semantic_cache":
+		return &PathRequirement{
+			Resource:       "Caching",
+			Operation:      "Update",
+			AnyOfResources: []string{"Caching", "Settings", "Plugins", "Observability"},
+		}
 	case strings.HasPrefix(path, "/api/plugins"):
 		return &PathRequirement{Resource: "Plugins", Operation: "Update", AnyOfResources: []string{"Plugins", "Observability"}}
 	case strings.HasPrefix(path, "/api/connectors"):
@@ -355,7 +369,11 @@ func writeRequirement(method, path string) *PathRequirement {
 		return &PathRequirement{Resource: "SkillsRepository", Operation: op}
 	case strings.HasPrefix(path, "/api/providers"), strings.HasPrefix(path, "/api/keys"):
 		return &PathRequirement{Resource: "ModelProvider", Operation: op}
-	case strings.HasPrefix(path, "/api/config"), strings.HasPrefix(path, "/api/proxy-config"), strings.HasPrefix(path, "/api/vector-store-config"), strings.HasPrefix(path, "/api/smtp-config"):
+	case path == "/api/config/metadata", path == "/api/config":
+		return &PathRequirement{Resource: "ClientSettings", Operation: "Update", AnyOfResources: []string{"ClientSettings", "Settings"}}
+	case strings.HasPrefix(path, "/api/vector-store-config"):
+		return &PathRequirement{Resource: "Caching", Operation: "Update", AnyOfResources: []string{"Caching", "Settings"}}
+	case strings.HasPrefix(path, "/api/config"), strings.HasPrefix(path, "/api/proxy-config"), strings.HasPrefix(path, "/api/smtp-config"):
 		return &PathRequirement{Resource: "Settings", Operation: "Update"}
 	default:
 		return nil

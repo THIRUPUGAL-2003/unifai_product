@@ -10,9 +10,8 @@ import { ProviderIconType, RenderProviderIcon } from "@/lib/constants/icons";
 import { EmbeddingSupportedProviders, getProviderLabel } from "@/lib/constants/logs";
 import {
 	getErrorMessage,
-	useCreatePluginMutation,
 	useGetCoreConfigQuery,
-	useGetPluginsQuery,
+	useGetPluginIfExistsQuery,
 	useGetProvidersQuery,
 	useGetVectorStoreConfigQuery,
 	useUpdatePluginMutation,
@@ -213,7 +212,8 @@ export default function CachingView() {
 		fromDB: true,
 	});
 	const isVectorStoreEnabled = gatewayConfig?.is_cache_connected ?? false;
-	const hasSettingsUpdateAccess = useRbac(RbacResource.Settings, RbacOperation.Update);
+	const hasSettingsUpdateAccess =
+		useRbac(RbacResource.Caching, RbacOperation.Update) || useRbac(RbacResource.Settings, RbacOperation.Update);
 
 	const {
 		data: vectorStoreData,
@@ -226,8 +226,11 @@ export default function CachingView() {
 	// Local cache state lives on the plugin row keyed by SEMANTIC_CACHE_PLUGIN.
 	// No dedicated /local-cache-config endpoint exists — the plugins API is
 	// the source of truth for both the enabled flag and the config blob.
-	const { data: plugins, isLoading: pluginsLoading, error: pluginsError } = useGetPluginsQuery();
-	const semanticCachePlugin = useMemo(() => plugins?.find((p) => p.name === SEMANTIC_CACHE_PLUGIN), [plugins]);
+	const {
+		data: semanticCachePlugin,
+		isLoading: cachePluginLoading,
+		error: pluginsError,
+	} = useGetPluginIfExistsQuery(SEMANTIC_CACHE_PLUGIN);
 	const enabledOnServer = Boolean(semanticCachePlugin?.enabled);
 
 	const { data: providersData, error: providersError, isLoading: providersLoading } = useGetProvidersQuery();
@@ -235,7 +238,6 @@ export default function CachingView() {
 	const embeddingProviders = useMemo(() => providers.filter(supportsEmbedding), [providers]);
 
 	const [updatePlugin, { isLoading: isUpdating }] = useUpdatePluginMutation();
-	const [createPlugin, { isLoading: isCreating }] = useCreatePluginMutation();
 	const isSaving = isUpdating || isCreating;
 
 	const [cacheConfig, setCacheConfig] = useState<EditorCacheConfig>(defaultDirectConfig);

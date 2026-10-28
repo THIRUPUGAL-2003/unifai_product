@@ -100,6 +100,12 @@ func isSectionGrantedForPath(granted, path string) bool {
 		strings.HasPrefix(path, "/api/governance/providers"):
 		return hasGrant("models", "models/model-providers", "models/model-catalog", "models/budgets-limits", "models/routing-rules", "models/circuit-breaker", "models/complexity-router", "models/pricing-overrides", "models/model-settings", "prompt-repository", "governance", "governance/virtual-keys", "observability", "browser-ai")
 
+	case path == "/api/plugins/semantic_cache":
+		return hasGrant("settings/caching", "plugins", "observability", "observability/connectors")
+
+	case strings.HasPrefix(path, "/api/vector-store-config"):
+		return hasGrant("settings", "settings/caching")
+
 	case strings.HasPrefix(path, "/api/governance"):
 		return hasGrant("governance", "governance/virtual-keys", "governance/teams", "governance/business-units", "governance/customers", "governance/users", "governance/audit-logs", "governance/access-profiles", "governance/user-provisioning", "governance/roles-permissions")
 

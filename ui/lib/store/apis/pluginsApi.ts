@@ -32,6 +32,22 @@ export const pluginsApi = baseApi.injectEndpoints({
 			providesTags: (result, error, name) => [{ type: "Plugins", id: name }],
 		}),
 
+		// Some built-in plugins are optional until first configured. Treat a missing row
+		// as an empty state while preserving real API errors for other failures.
+		getPluginIfExists: builder.query<Plugin | null, string>({
+			queryFn: async (name, _queryApi, _extraOptions, baseQuery) => {
+				const result = await baseQuery(`/plugins/${encodeURIComponent(name)}`);
+				if (result.error) {
+					if ((result.error as any)?.status === 404) {
+						return { data: null };
+					}
+					return { error: result.error };
+				}
+				return { data: result.data as Plugin };
+			},
+			providesTags: (_result, _error, name) => [{ type: "Plugins", id: name }],
+		}),
+
 		// Create new plugin
 		createPlugin: builder.mutation<Plugin, CreatePluginRequest>({
 			query: (data) => ({
@@ -112,6 +128,7 @@ export const {
 	useGetLoadedPluginsQuery,
 	useGetPluginsQuery,
 	useGetPluginQuery,
+	useGetPluginIfExistsQuery,
 	useCreatePluginMutation,
 	useUpdatePluginMutation,
 	useDeletePluginMutation,

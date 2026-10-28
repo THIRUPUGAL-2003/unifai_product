@@ -52,6 +52,16 @@ func SectionRequirementFor(method, path string) []string {
 		return nil
 	}
 	switch {
+	case path == "/api/config" || path == "/api/config/metadata":
+		return []string{"settings/client-settings"}
+	case strings.HasPrefix(path, "/api/vector-store-config") || path == "/api/plugins/semantic_cache":
+		return []string{"settings/caching"}
+	case strings.HasPrefix(path, "/api/proxy-config"):
+		return []string{"settings/proxy"}
+	case strings.HasPrefix(path, "/api/smtp-config"):
+		return []string{"settings/security"}
+	case strings.HasPrefix(path, "/api/feature-flags"):
+		return []string{"settings/feature-flags"}
 	case strings.HasPrefix(path, "/api/access-profiles"):
 		return []string{"governance/access-profiles"}
 	case strings.HasPrefix(path, "/api/roles"), strings.HasPrefix(path, "/api/permissions"), strings.HasPrefix(path, "/api/rbac"):
