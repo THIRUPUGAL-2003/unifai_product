@@ -560,24 +560,46 @@
     return "";
   }
 
-  function bodyContainsActualFile(body) {
+  function bodyContainsActualFile(body, url) {
     if (!body) return false;
-    if (typeof File !== "undefined" && body instanceof File) return true;
-    if (typeof Blob !== "undefined" && body instanceof Blob && !(typeof File !== "undefined" && body instanceof File)) {
-      if (body.size > 256) return true;
+    // 1. True File instance (e.g. user selected file from disk)
+    if (typeof File !== "undefined" && body instanceof File && body.name) {
+      return true;
     }
+    // 2. FormData containing actual File instances with real file names
     if (typeof FormData !== "undefined" && body instanceof FormData) {
       try {
-        var hasFile = false;
-        body.forEach(function (val) {
-          if (typeof File !== "undefined" && val instanceof File) {
-            hasFile = true;
-          } else if (typeof Blob !== "undefined" && val instanceof Blob && val.size > 256) {
-            hasFile = true;
+        var hasRealFile = false;
+        body.forEach(function (val, key) {
+          if (typeof File !== "undefined" && val instanceof File && val.name) {
+            hasRealFile = true;
+          } else if (val && typeof val === "object" && typeof val.name === "string" && val.name && val.size > 0) {
+            if (/\.[a-zA-Z0-9]{1,8}$/.test(val.name.trim())) {
+              hasRealFile = true;
+            }
           }
         });
-        return hasFile;
+        return hasRealFile;
       } catch (_) {}
+    }
+    // 3. Raw binary Blob: ONLY if sent directly to a dedicated file upload endpoint
+    if (url && typeof Blob !== "undefined" && body instanceof Blob && !(typeof File !== "undefined" && body instanceof File)) {
+      var lowUrl = String(url || "").toLowerCase();
+      var isUploadUrl =
+        lowUrl.includes("/backend-api/files") ||
+        lowUrl.includes("/files") ||
+        lowUrl.includes("/upload") ||
+        lowUrl.includes("blob.core.windows.net") ||
+        lowUrl.includes("amazonaws.com") ||
+        lowUrl.includes("storage.googleapis.com") ||
+        lowUrl.includes("/media/upload") ||
+        lowUrl.includes("/convert_document") ||
+        lowUrl.includes("/attachments");
+      var bType = String(body.type || "").toLowerCase();
+      var isNonFile = bType.includes("json") || bType.includes("text") || bType.includes("x-www-form-urlencoded");
+      if (isUploadUrl && !isNonFile && body.size > 512) {
+        return true;
+      }
     }
     return false;
   }
@@ -1953,8 +1975,11 @@
     return isWarn ? "Security Warning" : (isRedact ? "Data Redacted" : "YP-Raksha Blocked");
   }
 
+  var _lastBubbleAt = 0;
+  var _lastBubbleMsg = "";
   // Sleek, compact In-Page YP-Raksha Alert Toast
   function showBubble(message, ruleName, kind) {
+    var now = Date.now();
     var tone = kind === "warn" ? "warn" : (kind === "redact" ? "redact" : "block");
     var isWarn = (tone === "warn");
     var isRedact = (tone === "redact");
@@ -1962,6 +1987,9 @@
     var titleColor = isWarn ? "#fbbf24" : (isRedact ? "#38bdf8" : "#f87171");
     var defaultMsg = isWarn ? "Security Warning: Policy match detected." : (isRedact ? "Sensitive information was redacted before transmission." : "This request was blocked by corporate security policy.");
     var text = cleanAlertMessage(message, defaultMsg);
+    if (text === _lastBubbleMsg && (now - _lastBubbleAt < 2000)) return;
+    _lastBubbleAt = now;
+    _lastBubbleMsg = text;
     var titleText = resolveAlertTitle(ruleName, text, isWarn, isRedact);
     var iconText = isWarn ? "⚠️" : (isRedact ? "✂️" : "🛡️");
     var modalId = "yp-raksha-alert-card";
@@ -2305,8 +2333,14 @@
     var origInputClick = HTMLInputElement.prototype.click;
     HTMLInputElement.prototype.click = function () {
       if (armed && this.type === "file" && govBlockUpload && isControlActiveForSite(govUploadTargetWebsites)) {
-        showBubble(govUploadWarning || "File uploads and attachments to this AI platform are blocked by corporate policy.", "File Upload Policy", "block");
-        return;
+        var isUserAction = true;
+        if (typeof navigator !== "undefined" && navigator.userActivation) {
+          isUserAction = Boolean(navigator.userActivation.isActive);
+        }
+        if (isUserAction) {
+          showBubble(govUploadWarning || "File uploads and attachments to this AI platform are blocked by corporate policy.", "File Upload Policy", "block");
+          return;
+        }
       }
       return origInputClick.apply(this, arguments);
     };
@@ -2348,7 +2382,7 @@
   }, true);
 
   document.addEventListener("change", function (ev) {
-    if (!armed) return;
+    if (!ev.isTrusted || !armed) return;
     if (ev.target && ev.target.tagName === "INPUT" && ev.target.type === "file") {
       var files = ev.target.files;
       if (!files || files.length === 0) return;
@@ -3843,88 +3877,86 @@
             }
 
             // 4. Conversation messages array (ChatGPT, Claude, Gemini, etc.)
-            if (Array.isArray(parsed.messages)) {
-              for (var m = parsed.messages.length - 1; m >= 0; m--) {
-                var msg = parsed.messages[m];
-                if (!msg) continue;
-                var role = msg.role || (msg.author && msg.author.role) || "";
-                if (role === "user") {
-                  if (typeof msg.content === "string") {
-                    promptText = msg.content;
-                  }
-                  // ChatGPT / Gemini parts array
-                  else if (msg.content && Array.isArray(msg.content.parts)) {
-                    var strParts = [];
-                    for (var p = 0; p < msg.content.parts.length; p++) {
-                      var pt = msg.content.parts[p];
-                      if (typeof pt === "string") {
-                        strParts.push(pt);
-                      } else if (pt && typeof pt === "object") {
-                        var ptName = pt.name || (pt.asset_pointer ? ("file_" + (pt.asset_pointer.split("/").pop() || "upload")) : "");
-                        if (ptName && !netFiles.some(function (x) { return x.name === ptName; })) {
-                          netFiles.push({ name: ptName, size: pt.size_bytes || 0, type: pt.content_type || "" });
-                        }
+            if (Array.isArray(parsed.messages) && parsed.messages.length > 0) {
+              // ONLY evaluate the LATEST message submitted by the user.
+              // Never extract attachments from previous conversation turns in history!
+              var lastMsg = parsed.messages[parsed.messages.length - 1];
+              var lastRole = lastMsg ? (lastMsg.role || (lastMsg.author && lastMsg.author.role) || "") : "";
+              if (lastRole === "user") {
+                if (typeof lastMsg.content === "string") {
+                  promptText = lastMsg.content;
+                }
+                // ChatGPT / Gemini parts array
+                else if (lastMsg.content && Array.isArray(lastMsg.content.parts)) {
+                  var strParts = [];
+                  for (var p = 0; p < lastMsg.content.parts.length; p++) {
+                    var pt = lastMsg.content.parts[p];
+                    if (typeof pt === "string") {
+                      strParts.push(pt);
+                    } else if (pt && typeof pt === "object") {
+                      var ptName = pt.name || (pt.asset_pointer ? ("file_" + (pt.asset_pointer.split("/").pop() || "upload")) : "");
+                      if (ptName && !netFiles.some(function (x) { return x.name === ptName; })) {
+                        netFiles.push({ name: ptName, size: pt.size_bytes || 0, type: pt.content_type || "" });
                       }
                     }
-                    if (strParts.length) promptText = strParts.join(" ");
                   }
-                  // Claude content blocks array
-                  else if (Array.isArray(msg.content)) {
-                    var cParts = [];
-                    for (var c = 0; c < msg.content.length; c++) {
-                      var blk = msg.content[c];
-                      if (!blk) continue;
-                      if (blk.type === "text" && typeof blk.text === "string") {
-                        var bText = blk.text.trim();
-                        var bLow = bText.toLowerCase();
-                        if (bLow !== "@ upload_attachment" && bLow !== "@upload_attachment" && bLow !== "upload_attachment" && !bLow.startsWith("@ upload_attachment") && !bLow.startsWith("upload_attachment")) {
-                          cParts.push(blk.text);
-                        }
-                      } else if (blk.type === "document" || blk.type === "file") {
-                        var docName = blk.title || blk.name || "document";
-                        var docText = (blk.source && blk.source.data) ? blk.source.data : "";
-                        var docType = (blk.source && blk.source.media_type) || "application/pdf";
-                        if (!netFiles.some(function (x) { return x.name === docName; })) {
-                          netFiles.push({ name: docName, size: docText.length, type: docType, text: blk.text || "" });
-                        }
-                      } else if (blk.type === "image") {
-                        var imgName = blk.title || blk.name || "image.png";
-                        if (!netFiles.some(function (x) { return x.name === imgName; })) {
-                          netFiles.push({ name: imgName, size: 0, type: (blk.source && blk.source.media_type) || "image/png" });
-                        }
+                  if (strParts.length) promptText = strParts.join(" ");
+                }
+                // Claude content blocks array
+                else if (Array.isArray(lastMsg.content)) {
+                  var cParts = [];
+                  for (var c = 0; c < lastMsg.content.length; c++) {
+                    var blk = lastMsg.content[c];
+                    if (!blk) continue;
+                    if (blk.type === "text" && typeof blk.text === "string") {
+                      var bText = blk.text.trim();
+                      var bLow = bText.toLowerCase();
+                      if (bLow !== "@ upload_attachment" && bLow !== "@upload_attachment" && bLow !== "upload_attachment" && !bLow.startsWith("@ upload_attachment") && !bLow.startsWith("upload_attachment")) {
+                        cParts.push(blk.text);
+                      }
+                    } else if (blk.type === "document" || blk.type === "file") {
+                      var docName = blk.title || blk.name || "document";
+                      var docText = (blk.source && blk.source.data) ? blk.source.data : "";
+                      var docType = (blk.source && blk.source.media_type) || "application/pdf";
+                      if (!netFiles.some(function (x) { return x.name === docName; })) {
+                        netFiles.push({ name: docName, size: docText.length, type: docType, text: blk.text || "" });
+                      }
+                    } else if (blk.type === "image") {
+                      var imgName = blk.title || blk.name || "image.png";
+                      if (!netFiles.some(function (x) { return x.name === imgName; })) {
+                        netFiles.push({ name: imgName, size: 0, type: (blk.source && blk.source.media_type) || "image/png" });
                       }
                     }
-                    if (cParts.length) promptText = cParts.join(" ");
                   }
+                  if (cParts.length) promptText = cParts.join(" ");
+                }
 
-                  // ChatGPT metadata.attachments
-                  if (msg.metadata && Array.isArray(msg.metadata.attachments)) {
-                    for (var ma = 0; ma < msg.metadata.attachments.length; ma++) {
-                      var matt = msg.metadata.attachments[ma];
-                      if (matt) {
-                        var mattName = matt.name || matt.file_name || matt.title || "";
-                        var mattSize = matt.size || 0;
-                        var mattType = matt.mime_type || matt.mimeType || matt.type || "";
-                        if (mattName && !netFiles.some(function (x) { return x.name === mattName; })) {
-                          netFiles.push({ name: mattName, size: mattSize, type: mattType });
-                        }
+                // ChatGPT metadata.attachments
+                if (lastMsg.metadata && Array.isArray(lastMsg.metadata.attachments)) {
+                  for (var ma = 0; ma < lastMsg.metadata.attachments.length; ma++) {
+                    var matt = lastMsg.metadata.attachments[ma];
+                    if (matt) {
+                      var mattName = matt.name || matt.file_name || matt.title || "";
+                      var mattSize = matt.size || 0;
+                      var mattType = matt.mime_type || matt.mimeType || matt.type || "";
+                      if (mattName && !netFiles.some(function (x) { return x.name === mattName; })) {
+                        netFiles.push({ name: mattName, size: mattSize, type: mattType });
                       }
                     }
                   }
+                }
 
-                  // Claude / generic msg.attachments
-                  if (Array.isArray(msg.attachments)) {
-                    for (var ma2 = 0; ma2 < msg.attachments.length; ma2++) {
-                      var matt2 = msg.attachments[ma2];
-                      if (matt2) {
-                        var m2Name = matt2.file_name || matt2.name || "";
-                        if (m2Name && !netFiles.some(function (x) { return x.name === m2Name; })) {
-                          netFiles.push({ name: m2Name, size: matt2.file_size || matt2.size || 0, type: matt2.file_type || "" });
-                        }
+                // Claude / generic msg.attachments
+                if (Array.isArray(lastMsg.attachments)) {
+                  for (var ma2 = 0; ma2 < lastMsg.attachments.length; ma2++) {
+                    var matt2 = lastMsg.attachments[ma2];
+                    if (matt2) {
+                      var m2Name = matt2.file_name || matt2.name || "";
+                      if (m2Name && !netFiles.some(function (x) { return x.name === m2Name; })) {
+                        netFiles.push({ name: m2Name, size: matt2.file_size || matt2.size || 0, type: matt2.file_type || "" });
                       }
                     }
                   }
-                  break;
                 }
               }
             }
@@ -3936,12 +3968,13 @@
         try {
           var formUploadBlocked = false;
           body.forEach(function (val, key) {
-            if (val && typeof val.name === "string") {
+            var isFileVal = (typeof File !== "undefined" && val instanceof File) || (val && typeof val === "object" && typeof val.name === "string" && val.name && /\.[a-zA-Z0-9]{1,8}$/.test(val.name.trim()));
+            if (isFileVal) {
               if (!checkFileUploadAllowed(val)) {
                 formUploadBlocked = true;
               }
               inspectAndStageFile(val);
-              netFiles.push({ name: val.name, size: val.size, type: val.type });
+              netFiles.push({ name: val.name, size: val.size || 0, type: val.type || "" });
             } else if (typeof val === "string" && (key.indexOf("prompt") >= 0 || key.indexOf("query") >= 0 || key.indexOf("message") >= 0)) {
               promptText = val;
             }
@@ -3951,13 +3984,19 @@
           }
         } catch (err) { }
       }
-      // Handle Blob / File body (e.g. direct PUT / POST to Azure Blob, CDN, or file storage)
-      else if (body && (body instanceof Blob || (typeof File !== "undefined" && body instanceof File))) {
-        try {
-          var fBlobName = body.name || lastCreatedFileName || "upload_attachment";
-          inspectAndStageFile(body, fBlobName);
-          netFiles.push({ name: fBlobName, size: body.size, type: body.type });
-        } catch (_) {}
+      // Handle File body or Blob sent to a dedicated file upload endpoint
+      else if (body && ((typeof File !== "undefined" && body instanceof File && body.name) || (body instanceof Blob && isPureUploadEndpoint))) {
+        var bType = String(body.type || "").toLowerCase();
+        var isNonFile = bType.includes("json") || bType.includes("text") || bType.includes("x-www-form-urlencoded");
+        if (!isNonFile) {
+          try {
+            var fBlobName = body.name || lastCreatedFileName || (isPureUploadEndpoint ? "upload_attachment" : "");
+            if (fBlobName) {
+              inspectAndStageFile(body, fBlobName);
+              netFiles.push({ name: fBlobName, size: body.size, type: body.type });
+            }
+          } catch (_) {}
+        }
       }
 
       // Check if URL looks like a pure file upload endpoint (ChatGPT /files, Claude upload, Azure Blob, S3, etc.)
@@ -3975,7 +4014,10 @@
 
       // Check if master upload block is active on this site
       if (govBlockUpload && isControlActiveForSite(govUploadTargetWebsites)) {
-        var hasUploadedFile = (netFiles && netFiles.length > 0) || bodyContainsActualFile(body);
+        var hasUploadedFile = (isPureUploadEndpoint && netFiles.length > 0) || bodyContainsActualFile(body, url);
+        if (promptText && netFiles.length > 0) {
+          hasUploadedFile = true;
+        }
         if (hasUploadedFile) {
           showBubble(govUploadWarning || "File uploads and attachments to this AI platform are blocked by corporate policy.", "File Upload Policy", "block");
           return Promise.reject(new TypeError("File uploads and attachments to this AI platform are blocked by corporate policy."));
@@ -4158,7 +4200,7 @@
 
     var xhrUrl = String(this._ggUrl || "").toLowerCase();
     if (armed && govBlockUpload && isControlActiveForSite(govUploadTargetWebsites)) {
-      var hasXhrFile = bodyContainsActualFile(body);
+      var hasXhrFile = bodyContainsActualFile(body, xhrUrl);
       if (hasXhrFile) {
         showBubble(govUploadWarning || "File uploads and attachments to this AI platform are blocked by corporate policy.", "File Upload Policy", "block");
         try {

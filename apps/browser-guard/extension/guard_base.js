@@ -25,8 +25,12 @@ function rememberGuardBase(base) {
   _guardResolved = base;
   _guardResolvedAt = Date.now();
   try {
-    if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
-      chrome.storage.local.set({ guard_base: base });
+    if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.id && chrome.storage && chrome.storage.local) {
+      chrome.storage.local.set({ guard_base: base }, function () {
+        try {
+          if (chrome.runtime && chrome.runtime.lastError) return;
+        } catch (_) {}
+      });
     }
   } catch (e) {}
 }
@@ -83,7 +87,7 @@ function resolveGuardBase(done) {
   }
 
   try {
-    if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
+    if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.id && chrome.storage && chrome.storage.local) {
       chrome.storage.local.get(["guard_base"], function (res) {
         var saved = res && res.guard_base ? String(res.guard_base) : "";
         saved = saved.trim().replace(/\/+$/, "");

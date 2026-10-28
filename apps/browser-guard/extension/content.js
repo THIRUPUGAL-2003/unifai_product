@@ -48,6 +48,40 @@
     return;
   }
 
+  function isExtensionValid() {
+    try {
+      if (typeof chrome === "undefined" || !chrome.runtime || !chrome.runtime.id) {
+        return false;
+      }
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // Intercept and cleanly suppress harmless orphan context errors when extension is updated/reloaded
+  if (typeof window !== "undefined") {
+    window.addEventListener("error", function (e) {
+      var msg = (e && (e.message || (e.error && e.error.message))) || "";
+      if (typeof msg === "string" && msg.indexOf("Extension context invalidated") !== -1) {
+        try {
+          if (e.preventDefault) e.preventDefault();
+          if (e.stopPropagation) e.stopPropagation();
+          if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+        } catch (_) {}
+        return true;
+      }
+    }, true);
+    window.addEventListener("unhandledrejection", function (e) {
+      var reason = (e && (e.reason && (e.reason.message || e.reason))) || "";
+      if (typeof reason === "string" && reason.indexOf("Extension context invalidated") !== -1) {
+        try {
+          if (e.preventDefault) e.preventDefault();
+        } catch (_) {}
+      }
+    }, true);
+  }
+
   var monitoredSitesForPolicy = [];
   var clipboardPolicy = { enabled: false, targetSites: "", message: "", monitoredSites: [] };
 
@@ -216,6 +250,7 @@
   }
 
   function clipboardPolicyApplies() {
+    if (!isExtensionValid()) return false;
     if (!clipboardPolicy.enabled) return false;
     if (isServerHost(location.hostname)) return false;
     var raw = String(clipboardPolicy.targetSites || "").trim();
@@ -297,6 +332,7 @@
   var _lastDragDropBlockLoggedAt = 0;
   var _lastScreenshotBlockLoggedAt = 0;
   function recordIsolatedGovernanceLog(promptText, ruleName) {
+    if (!isExtensionValid()) return;
     var now = Date.now();
     if (ruleName === "Clipboard Policy" || (promptText && promptText.indexOf("--copy paste") === 0)) {
       if (now - _lastClipboardBlockLoggedAt < 2000) return;
@@ -405,6 +441,7 @@
   }
 
   function blockClipboardEvent(ev) {
+    if (!isExtensionValid()) return;
     if (!clipboardPolicyApplies()) return;
     if (document.getElementById("yp-blur-curtain") || document.getElementById("yp-screenshot-shield")) {
       ev.preventDefault();
@@ -454,6 +491,7 @@
   }
 
   function handleBeforeInputEvent(ev) {
+    if (!isExtensionValid()) return;
     if (!clipboardPolicyApplies()) return;
     if (document.getElementById("yp-blur-curtain") || document.getElementById("yp-screenshot-shield")) return;
     var inputType = (ev.inputType || "").toLowerCase();
@@ -478,6 +516,7 @@
   }
 
   function handleClipboardKeys(e) {
+    if (!isExtensionValid()) return;
     if (!clipboardPolicyApplies()) return;
     if (document.getElementById("yp-blur-curtain") || document.getElementById("yp-screenshot-shield")) return;
     var isCtrlOrMeta = e.ctrlKey || e.metaKey;
@@ -521,6 +560,7 @@
 
   // Prevent right-click copy on selected text
   function handleContextMenuEvent(ev) {
+    if (!isExtensionValid()) return;
     if (!clipboardPolicyApplies()) return;
     try {
       var sel = window.getSelection();
@@ -538,6 +578,7 @@
 
   // Prevent selection of AI output text when clipboard policy is active
   function handleSelectStartEvent(ev) {
+    if (!isExtensionValid()) return;
     if (!clipboardPolicyApplies()) return;
     var t = ev.target;
     var tag = (t && t.tagName || "").toLowerCase();
@@ -567,6 +608,7 @@
 
   // Intercept clicks, mousedown, pointerdown on AI "Copy" and "Copy code" buttons in isolated world
   function handleCopyButtonIsolated(ev) {
+    if (!isExtensionValid()) return;
     if (!clipboardPolicyApplies()) return;
     var target = (ev.composedPath && ev.composedPath()[0]) || ev.target;
     var el = (target && target.closest) ? target.closest("button, [role='button'], a, [aria-label*='copy' i], [title*='copy' i], [data-testid*='copy' i], [class*='copy' i], [id*='copy' i], [data-tooltip*='copy' i]") : null;
@@ -655,6 +697,7 @@
 
   var corporatePolicy = { enabled: false, targetSites: "", emailDomains: "", blockMessage: "", monitoredSites: [] };
   function corporatePolicyApplies() {
+    if (!isExtensionValid()) return false;
     if (!corporatePolicy.enabled) return false;
     if (isServerHost(location.hostname)) return false;
     var raw = String(corporatePolicy.targetSites || "").trim();
@@ -683,6 +726,7 @@
 
   var dragDropPolicy = { enabled: false, targetSites: "", message: "", monitoredSites: [] };
   function dragDropPolicyApplies() {
+    if (!isExtensionValid()) return false;
     if (!dragDropPolicy.enabled) return false;
     if (isServerHost(location.hostname)) return false;
     var raw = String(dragDropPolicy.targetSites || "").trim();
@@ -748,6 +792,7 @@
   }
 
   function blockDragDropEvent(ev) {
+    if (!isExtensionValid()) return;
     if (!dragDropPolicyApplies()) return;
     var dt = ev.dataTransfer;
     var hasFiles = dt && dt.files && dt.files.length > 0;
@@ -804,6 +849,7 @@
 
   var screenshotPolicy = { enabled: false, targetSites: "", message: "", monitoredSites: [] };
   function screenshotPolicyApplies() {
+    if (!isExtensionValid()) return false;
     if (!screenshotPolicy.enabled) return false;
     if (isServerHost(location.hostname)) return false;
     var raw = String(screenshotPolicy.targetSites || "").trim();
@@ -848,6 +894,7 @@
   }
 
   function applyIsolatedCurtain() {
+    if (!isExtensionValid()) return;
     if (!screenshotPolicyApplies()) return;
     dismissAllClipboardNotices();
     var curtain = document.getElementById("yp-blur-curtain");
@@ -865,14 +912,22 @@
     if (curtain) curtain.remove();
   }
 
-  window.addEventListener("blur", applyIsolatedCurtain, true);
-  window.addEventListener("focus", removeIsolatedCurtain, true);
+  window.addEventListener("blur", function () {
+    if (!isExtensionValid()) return;
+    applyIsolatedCurtain();
+  }, true);
+  window.addEventListener("focus", function () {
+    if (!isExtensionValid()) return;
+    removeIsolatedCurtain();
+  }, true);
   document.addEventListener("visibilitychange", function () {
+    if (!isExtensionValid()) return;
     if (document.hidden) applyIsolatedCurtain();
     else removeIsolatedCurtain();
   }, true);
 
   function handleIsolatedCaptureKeys(e) {
+    if (!isExtensionValid()) return;
     if (!screenshotPolicyApplies()) return;
     var isPrtScn = e.key === "PrintScreen" || e.keyCode === 44 || e.code === "PrintScreen";
     var isWinShiftS = (e.key === "s" || e.key === "S" || e.code === "KeyS") && e.shiftKey && (e.metaKey || e.altKey);
@@ -895,6 +950,7 @@
   window.addEventListener("keydown", handleIsolatedCaptureKeys, true);
   document.addEventListener("keydown", handleIsolatedCaptureKeys, true);
   window.addEventListener("keyup", function (e) {
+    if (!isExtensionValid()) return;
     if (!screenshotPolicyApplies()) return;
     if (e.key === "PrintScreen" || e.keyCode === 44 || e.code === "PrintScreen") {
       applyIsolatedCurtain();
@@ -902,14 +958,19 @@
     }
   }, true);
 
-  if (chrome.storage && chrome.storage.local) {
-    chrome.storage.local.get([
-      "cached_sites", "block_clipboard", "clipboard_target_websites", "clipboard_block_message", "governance_block_message",
-      "block_screenshot", "screenshot_target_websites", "screenshot_block_message",
-      "block_drag_drop", "drag_drop_target_websites", "drag_drop_block_message",
-      "enforce_corporate_domains", "corporate_email_domains", "allowed_workspace_ids", "corporate_target_websites", "corporate_block_message",
-      "governance_target_websites"
-    ], applyClipboardPolicyState);
+  if (isExtensionValid() && chrome.storage && chrome.storage.local) {
+    try {
+      chrome.storage.local.get([
+        "cached_sites", "block_clipboard", "clipboard_target_websites", "clipboard_block_message", "governance_block_message",
+        "block_screenshot", "screenshot_target_websites", "screenshot_block_message",
+        "block_drag_drop", "drag_drop_target_websites", "drag_drop_block_message",
+        "enforce_corporate_domains", "corporate_email_domains", "allowed_workspace_ids", "corporate_target_websites", "corporate_block_message",
+        "governance_target_websites"
+      ], function (res) {
+        if (!isExtensionValid()) return;
+        applyClipboardPolicyState(res);
+      });
+    } catch (_) {}
   }
 
   // Accurate client-side browser detector across Chrome, Edge, Safari, Firefox, Brave, Opera, Vivaldi
@@ -929,6 +990,10 @@
 
   var hookInjected = false;
   function injectHook(done) {
+    if (!isExtensionValid()) {
+      if (done) done();
+      return;
+    }
     if (hookInjected) {
       if (done) done();
       return;
@@ -1004,11 +1069,13 @@
 
   // Policy reaches the page only while this frame is an armed Target Website.
   function postPolicyToPage() {
-    if (!armedHere || !chrome.storage || !chrome.storage.local) return;
-    chrome.storage.local.get(POLICY_KEYS, function (res) {
-      if (!armedHere) return;
-      window.postMessage(policyMessage(res), "*");
-    });
+    if (!isExtensionValid() || !armedHere || !chrome.storage || !chrome.storage.local) return;
+    try {
+      chrome.storage.local.get(POLICY_KEYS, function (res) {
+        if (!isExtensionValid() || !armedHere) return;
+        window.postMessage(policyMessage(res), "*");
+      });
+    } catch (_) {}
   }
 
   function disarmPage() {
@@ -1018,6 +1085,7 @@
   }
 
   function evaluateSite(state) {
+    if (!isExtensionValid()) return;
     state = state || {};
     // The agent may report its own loopback address; never let it replace the gateway domain.
     var storedHost = normalizeDomainHost(state.server_host);
@@ -1054,65 +1122,78 @@
 
   var lastSyncRequestAt = 0;
   function requestBackgroundSync() {
+    if (!isExtensionValid()) return;
     var now = Date.now();
     if (now - lastSyncRequestAt < 2000) return; // Reduced from 5000ms → faster policy pickup
     lastSyncRequestAt = now;
     try {
       chrome.runtime.sendMessage({ type: "guard_sync_now" }, function () {
-        if (chrome.runtime.lastError) return;
+        try {
+          if (!isExtensionValid() || chrome.runtime.lastError) return;
+        } catch (_) {}
       });
     } catch (e) { }
   }
 
   function armIfMonitored() {
-    if (!chrome.storage || !chrome.storage.local) return;
-    chrome.storage.local.get(SITE_KEYS.concat(CLIPBOARD_KEYS), function (res) {
-      res = res || {};
-      if (Array.isArray(res.cached_sites)) {
-        monitoredSitesForPolicy = res.cached_sites;
-        applyClipboardPolicyState(res);
-      } else {
-        // First run, nothing cached yet: background fills storage and onChanged arms us.
-        requestBackgroundSync();
-      }
-      evaluateSite(res);
-    });
+    if (!isExtensionValid() || !chrome.storage || !chrome.storage.local) return;
+    try {
+      chrome.storage.local.get(SITE_KEYS.concat(CLIPBOARD_KEYS), function (res) {
+        if (!isExtensionValid()) return;
+        res = res || {};
+        if (Array.isArray(res.cached_sites)) {
+          monitoredSitesForPolicy = res.cached_sites;
+          applyClipboardPolicyState(res);
+        } else {
+          // First run, nothing cached yet: background fills storage and onChanged arms us.
+          requestBackgroundSync();
+        }
+        evaluateSite(res);
+      });
+    } catch (_) {}
   }
 
   // All updates arrive through storage written by background.js.
-  if (chrome.storage && chrome.storage.onChanged) {
-    chrome.storage.onChanged.addListener(function (changes, areaName) {
-      if (areaName !== "local") return;
-      var clipboardState = {};
-      CLIPBOARD_KEYS.forEach(function (key) {
-        if (changes[key]) clipboardState[key] = changes[key].newValue;
-      });
-      if (Object.keys(clipboardState).length) {
-        clipboardState.cached_sites = clipboardState.cached_sites || monitoredSitesForPolicy;
-        applyClipboardPolicyState(clipboardState);
-      }
-      var sitesChanged = SITE_KEYS.some(function (key) { return Boolean(changes[key]); });
-      var clipChanged = CLIPBOARD_KEYS.some(function (key) { return Boolean(changes[key]); });
-      if (sitesChanged || clipChanged) {
-        var wasArmed = armedHere;
-        chrome.storage.local.get(SITE_KEYS.concat(CLIPBOARD_KEYS), function (res) {
-          evaluateSite(res);
-          if (armedHere && POLICY_KEYS.some(function (key) { return Boolean(changes[key]); })) postPolicyToPage();
+  if (isExtensionValid() && chrome.storage && chrome.storage.onChanged) {
+    try {
+      chrome.storage.onChanged.addListener(function (changes, areaName) {
+        if (!isExtensionValid() || areaName !== "local") return;
+        var clipboardState = {};
+        CLIPBOARD_KEYS.forEach(function (key) {
+          if (changes[key]) clipboardState[key] = changes[key].newValue;
         });
-        return;
-      }
-      if (armedHere && POLICY_KEYS.some(function (key) { return Boolean(changes[key]); })) {
-        postPolicyToPage();
-      }
-    });
+        if (Object.keys(clipboardState).length) {
+          clipboardState.cached_sites = clipboardState.cached_sites || monitoredSitesForPolicy;
+          applyClipboardPolicyState(clipboardState);
+        }
+        var sitesChanged = SITE_KEYS.some(function (key) { return Boolean(changes[key]); });
+        var clipChanged = CLIPBOARD_KEYS.some(function (key) { return Boolean(changes[key]); });
+        if (sitesChanged || clipChanged) {
+          var wasArmed = armedHere;
+          try {
+            chrome.storage.local.get(SITE_KEYS.concat(CLIPBOARD_KEYS), function (res) {
+              if (!isExtensionValid()) return;
+              evaluateSite(res);
+              if (armedHere && POLICY_KEYS.some(function (key) { return Boolean(changes[key]); })) postPolicyToPage();
+            });
+          } catch (_) {}
+          return;
+        }
+        if (armedHere && POLICY_KEYS.some(function (key) { return Boolean(changes[key]); })) {
+          postPolicyToPage();
+        }
+      });
+    } catch (_) {}
   }
 
   window.addEventListener("focus", function () {
+    if (!isExtensionValid()) return;
     if (armedHere) requestBackgroundSync();
   });
 
   // On laptop wake/resume: tab becomes visible again → re-arm check immediately
   document.addEventListener("visibilitychange", function () {
+    if (!isExtensionValid()) return;
     if (document.visibilityState === "visible") {
       // Re-evaluate arm status in case EXE restarted after sleep
       armIfMonitored();
@@ -1120,6 +1201,7 @@
   });
 
   window.addEventListener("message", function (ev) {
+    if (!isExtensionValid()) return;
     if (ev.source !== window || !ev.data || ev.data.source !== "gateway-guard-page") return;
     var msg = ev.data;
     // Verify anti-tamper nonce
@@ -1265,16 +1347,18 @@
     };
 
     // Record prompt check in chrome.storage.local (middle-box persistence)
-    if (chrome.storage && chrome.storage.local) {
-      chrome.storage.local.set({
-        last_prompt_check: {
-          timestamp: Date.now(),
-          host: checkPayload.host,
-          prompt_preview: (checkPayload.prompt || "").slice(0, 100),
-          file_count: checkPayload.files.length,
-          image_count: checkPayload.upload_images.length
-        }
-      });
+    if (isExtensionValid() && chrome.storage && chrome.storage.local) {
+      try {
+        chrome.storage.local.set({
+          last_prompt_check: {
+            timestamp: Date.now(),
+            host: checkPayload.host,
+            prompt_preview: (checkPayload.prompt || "").slice(0, 100),
+            file_count: checkPayload.files.length,
+            image_count: checkPayload.upload_images.length
+          }
+        });
+      } catch (_) {}
     }
 
     var reqHost = msg.host || location.hostname;
@@ -1290,17 +1374,19 @@
             .then(function (decision) {
               var dec = decision || { blocked: false };
               // Save EXE evaluation decision into chrome.storage.local
-              if (chrome.storage && chrome.storage.local) {
-                chrome.storage.local.set({
-                  last_decision: {
-                    timestamp: Date.now(),
-                    host: checkPayload.host,
-                    blocked: Boolean(dec.blocked),
-                    action: dec.action || (dec.blocked ? "Blocked" : "Allowed"),
-                    rule: dec.rule || "",
-                    message: dec.message || ""
-                  }
-                });
+              if (isExtensionValid() && chrome.storage && chrome.storage.local) {
+                try {
+                  chrome.storage.local.set({
+                    last_decision: {
+                      timestamp: Date.now(),
+                      host: checkPayload.host,
+                      blocked: Boolean(dec.blocked),
+                      action: dec.action || (dec.blocked ? "Blocked" : "Allowed"),
+                      rule: dec.rule || "",
+                      message: dec.message || ""
+                    }
+                  });
+                } catch (_) {}
               }
               window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "decision", id: msg.id, decision: dec }, "*");
             })
@@ -1327,27 +1413,35 @@
       });
     }
 
-    if (chrome.storage && chrome.storage.local) {
-      chrome.storage.local.get(["cached_blocked_sites"], function (res) {
-        var blockedList = (res && Array.isArray(res.cached_blocked_sites)) ? res.cached_blocked_sites : [];
-        if (hostBlockedMatches(reqHost, blockedList)) {
-          renderBlockedPage(reqHost);
-          window.postMessage({
-            source: "gateway-guard",
-            nonce: guardNonce,
-            type: "decision",
-            id: msg.id,
-            decision: {
-              blocked: true,
-              action: "Blocked",
-              rule: "Site Blocked",
-              message: "Access to this website is blocked by company security policy."
-            }
-          }, "*");
-          return;
-        }
+    if (isExtensionValid() && chrome.storage && chrome.storage.local) {
+      try {
+        chrome.storage.local.get(["cached_blocked_sites"], function (res) {
+          if (!isExtensionValid()) {
+            doCheck();
+            return;
+          }
+          var blockedList = (res && Array.isArray(res.cached_blocked_sites)) ? res.cached_blocked_sites : [];
+          if (hostBlockedMatches(reqHost, blockedList)) {
+            renderBlockedPage(reqHost);
+            window.postMessage({
+              source: "gateway-guard",
+              nonce: guardNonce,
+              type: "decision",
+              id: msg.id,
+              decision: {
+                blocked: true,
+                action: "Blocked",
+                rule: "Site Blocked",
+                message: "Access to this website is blocked by company security policy."
+              }
+            }, "*");
+            return;
+          }
+          doCheck();
+        });
+      } catch (_) {
         doCheck();
-      });
+      }
     } else {
       doCheck();
     }
