@@ -1275,76 +1275,6 @@ def check_prompt(
             if extracted and len(extracted.strip()) > 3:
                 eval_text += f"\n{extracted[:100000]}"
 
-        # Anti-spoofing real file type check against restricted or allowed extensions
-        restricted_str = str(_governance_cache.get("restricted_file_extensions") or "")
-        allowed_str = str(_governance_cache.get("allowed_file_extensions") or "")
-        mode = str(_governance_cache.get("file_extension_mode") or "block_listed")
-
-        violating_ext_files = []
-        violating_ext_types = []
-        for cf in files_list:
-            cf_name = (cf.get("name") if isinstance(cf, dict) else str(cf)).strip()
-            cf_ext = os.path.splitext(cf_name)[1].lower()
-            cf_norm = cf_ext.lstrip('.').lower()
-            cf_raw = b""
-            cf_text = ""
-            cf_type = ""
-            if isinstance(cf, dict):
-                cf_type = str(cf.get("type") or "application/octet-stream").strip()
-                cf_b64 = str(cf.get("base64") or "").strip()
-                cf_text = str(cf.get("text") or "").strip()
-                if cf_b64:
-                    try:
-                        import base64
-                        cf_raw = base64.b64decode(cf_b64)
-                    except Exception:
-                        pass
-                if not cf_raw and cf_text:
-                    try:
-                        cf_raw = cf_text.encode("utf-8", errors="ignore")
-                    except Exception:
-                        pass
-            cf_real = detect_real_file_type(cf_raw, cf_text, cf_name, cf_type)
-            if mode == "allow_listed" and allowed_str:
-                allowed_list = [x.strip().lstrip('.').lower() for x in re.split(r'[,;\s]+', allowed_str) if x.strip()]
-                is_allowed = (cf_real and cf_real in allowed_list) or (cf_norm and cf_norm in allowed_list)
-                if not is_allowed:
-                    if cf_name and cf_name not in violating_ext_files:
-                        violating_ext_files.append(cf_name)
-            elif mode != "allow_listed" and restricted_str:
-                restricted_list = [x.strip().lstrip('.').lower() for x in re.split(r'[,;\s]+', restricted_str) if x.strip()]
-                m_ext = cf_real if (cf_real and cf_real in restricted_list) else (cf_norm if (cf_norm and cf_norm in restricted_list) else "")
-                if m_ext:
-                    if cf_name and cf_name not in violating_ext_files:
-                        violating_ext_files.append(cf_name)
-                    ext_tag = f".{m_ext}"
-                    if ext_tag not in violating_ext_types:
-                        violating_ext_types.append(ext_tag)
-
-        if violating_ext_files:
-            f_str = ", ".join(f"'{fn}'" for fn in violating_ext_files)
-            types_str = ", ".join(violating_ext_types) if violating_ext_types else ""
-            if mode == "allow_listed":
-                msg = (
-                    f"File {f_str} is not permitted. Only approved file types ({', '.join('.' + e for e in allowed_list)}) may be uploaded. Please remove this file before sending."
-                    if len(violating_ext_files) == 1 else
-                    f"Files {f_str} are not permitted. Only approved file types ({', '.join('.' + e for e in allowed_list)}) may be uploaded. Please remove these files before sending."
-                )
-            else:
-                msg = (
-                    f"File {f_str} ({types_str}) is restricted by corporate DLP policy. Please remove this file before sending."
-                    if len(violating_ext_files) == 1 else
-                    f"Files {f_str} ({types_str}) are restricted by corporate DLP policy. Please remove these files before sending."
-                )
-            return {
-                "blocked": True,
-                "action": "Blocked",
-                "message": msg,
-                "rule": f"Restricted File Type ({types_str.upper()})" if types_str else "Restricted File Type",
-                "violating_files": violating_ext_files,
-                "redacted_prompt": "",
-            }
-
             if fext in (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".svg") and fb64:
                 img_data = fb64 if fb64.startswith("data:") else f"data:image/{norm_fext or 'png'};base64,{fb64}"
                 if img_data not in images_list:
@@ -1353,8 +1283,76 @@ def check_prompt(
             fn = f.strip()
             if fn not in file_names:
                 file_names.append(fn)
-            if fn not in file_names:
-                file_names.append(fn)
+
+    # Anti-spoofing real file type check against restricted or allowed extensions
+    restricted_str = str(_governance_cache.get("restricted_file_extensions") or "")
+    allowed_str = str(_governance_cache.get("allowed_file_extensions") or "")
+    mode = str(_governance_cache.get("file_extension_mode") or "block_listed")
+
+    violating_ext_files = []
+    violating_ext_types = []
+    for cf in files_list:
+        cf_name = (cf.get("name") if isinstance(cf, dict) else str(cf)).strip()
+        cf_ext = os.path.splitext(cf_name)[1].lower()
+        cf_norm = cf_ext.lstrip('.').lower()
+        cf_raw = b""
+        cf_text = ""
+        cf_type = ""
+        if isinstance(cf, dict):
+            cf_type = str(cf.get("type") or "application/octet-stream").strip()
+            cf_b64 = str(cf.get("base64") or "").strip()
+            cf_text = str(cf.get("text") or "").strip()
+            if cf_b64:
+                try:
+                    import base64
+                    cf_raw = base64.b64decode(cf_b64)
+                except Exception:
+                    pass
+            if not cf_raw and cf_text:
+                try:
+                    cf_raw = cf_text.encode("utf-8", errors="ignore")
+                except Exception:
+                    pass
+        cf_real = detect_real_file_type(cf_raw, cf_text, cf_name, cf_type)
+        if mode == "allow_listed" and allowed_str:
+            allowed_list = [x.strip().lstrip('.').lower() for x in re.split(r'[,;\s]+', allowed_str) if x.strip()]
+            is_allowed = (cf_real and cf_real in allowed_list) or (cf_norm and cf_norm in allowed_list)
+            if not is_allowed:
+                if cf_name and cf_name not in violating_ext_files:
+                    violating_ext_files.append(cf_name)
+        elif mode != "allow_listed" and restricted_str:
+            restricted_list = [x.strip().lstrip('.').lower() for x in re.split(r'[,;\s]+', restricted_str) if x.strip()]
+            m_ext = cf_real if (cf_real and cf_real in restricted_list) else (cf_norm if (cf_norm and cf_norm in restricted_list) else "")
+            if m_ext:
+                if cf_name and cf_name not in violating_ext_files:
+                    violating_ext_files.append(cf_name)
+                ext_tag = f".{m_ext}"
+                if ext_tag not in violating_ext_types:
+                    violating_ext_types.append(ext_tag)
+
+    if violating_ext_files:
+        f_str = ", ".join(f"'{fn}'" for fn in violating_ext_files)
+        types_str = ", ".join(violating_ext_types) if violating_ext_types else ""
+        if mode == "allow_listed":
+            msg = (
+                f"File {f_str} is not permitted. Only approved file types ({', '.join('.' + e for e in allowed_list)}) may be uploaded. Please remove this file before sending."
+                if len(violating_ext_files) == 1 else
+                f"Files {f_str} are not permitted. Only approved file types ({', '.join('.' + e for e in allowed_list)}) may be uploaded. Please remove these files before sending."
+            )
+        else:
+            msg = (
+                f"File {f_str} ({types_str}) is restricted by corporate DLP policy. Please remove this file before sending."
+                if len(violating_ext_files) == 1 else
+                f"Files {f_str} ({types_str}) are restricted by corporate DLP policy. Please remove these files before sending."
+            )
+        return {
+            "blocked": True,
+            "action": "Blocked",
+            "message": msg,
+            "rule": f"Restricted File Type ({types_str.upper()})" if types_str else "Restricted File Type",
+            "violating_files": violating_ext_files,
+            "redacted_prompt": "",
+        }
 
     violating_files = []
     prompt_violated = False
@@ -2649,12 +2647,30 @@ def local_base_url() -> str:
     return ""
 
 
+def get_root_domain(host: str) -> str:
+    if not host:
+        return ""
+    h = host.lower().replace("www.", "").strip(".")
+    parts = h.split(".")
+    if len(parts) <= 2:
+        return h
+    two_part_tlds = {"co.uk", "org.uk", "com.au", "net.au", "co.in", "co.jp", "com.br", "gov.in"}
+    last_two = ".".join(parts[-2:])
+    if last_two in two_part_tlds and len(parts) > 2:
+        return ".".join(parts[-3:])
+    return ".".join(parts[-2:])
+
+
 def are_related_ai_hosts(h1: str, h2: str) -> bool:
     h1 = (h1 or "").lower().replace("www.", "").strip(".")
     h2 = (h2 or "").lower().replace("www.", "").strip(".")
     if not h1 or not h2:
         return False
     if h1 == h2:
+        return True
+    r1 = get_root_domain(h1)
+    r2 = get_root_domain(h2)
+    if r1 and r2 and r1 == r2:
         return True
     pairs = [
         ("chatgpt.com", "openai.com"),
@@ -2671,6 +2687,9 @@ def are_related_ai_hosts(h1: str, h2: str) -> bool:
         ("deepseek.com", "chat.deepseek.com"),
         ("mistral.ai", "chat.mistral.ai"),
         ("perplexity.ai", "www.perplexity.ai"),
+        ("lovable.dev", "lovable.app"),
+        ("lovable.dev", "app.lovable.dev"),
+        ("poe.com", "quora.com"),
     ]
     for p0, p1 in pairs:
         if (h1 == p0 or h1.endswith("." + p0)) and (h2 == p1 or h2.endswith("." + p1)):

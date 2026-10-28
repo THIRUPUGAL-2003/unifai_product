@@ -183,11 +183,28 @@
     return matchDomainInMap(host, blockedSitesMap, blockedDomains);
   }
 
+  function getRootDomain(host) {
+    if (!host) return "";
+    var clean = normalizeDomainHost(host).toLowerCase();
+    var parts = clean.split(".");
+    if (parts.length <= 2) return clean;
+    var twoPartTlds = ["co.uk", "org.uk", "com.au", "net.au", "co.in", "co.jp", "com.br", "gov.in"];
+    var lastTwo = parts.slice(-2).join(".");
+    if (twoPartTlds.indexOf(lastTwo) !== -1 && parts.length > 2) {
+      return parts.slice(-3).join(".");
+    }
+    return parts.slice(-2).join(".");
+  }
+
   function areRelatedAIHosts(h1, h2) {
     if (!h1 || !h2) return false;
     h1 = normalizeDomainHost(h1);
     h2 = normalizeDomainHost(h2);
     if (h1 === h2) return true;
+    var r1 = getRootDomain(h1);
+    var r2 = getRootDomain(h2);
+    if (r1 && r2 && r1 === r2) return true;
+
     var pairs = [
       ["chatgpt.com", "openai.com"],
       ["chat.openai.com", "chatgpt.com"],
@@ -202,7 +219,10 @@
       ["copilot.microsoft.com", "githubcopilot.com"],
       ["deepseek.com", "chat.deepseek.com"],
       ["mistral.ai", "chat.mistral.ai"],
-      ["perplexity.ai", "www.perplexity.ai"]
+      ["perplexity.ai", "www.perplexity.ai"],
+      ["lovable.dev", "lovable.app"],
+      ["lovable.dev", "app.lovable.dev"],
+      ["poe.com", "quora.com"]
     ];
     for (var i = 0; i < pairs.length; i++) {
       var p0 = pairs[i][0];
@@ -222,6 +242,8 @@
     if (h.includes("deepseek")) return "deepseek";
     if (h.includes("mistral")) return "mistral";
     if (h.includes("perplexity")) return "perplexity";
+    if (h.includes("lovable")) return "lovable";
+    if (h.includes("poe.com")) return "poe";
     return "";
   }
 
@@ -242,8 +264,11 @@
         if (currentProv && item.toLowerCase() === currentProv) return true;
         continue;
       }
-      if (current === itemHost || current.endsWith("." + itemHost)) return true;
+      if (current === itemHost || current.endsWith("." + itemHost) || itemHost.endsWith("." + current)) return true;
       if (!itemHost.includes(".") && current.includes(itemHost)) return true;
+      var curR = getRootDomain(current);
+      var itmR = getRootDomain(itemHost);
+      if (curR && itmR && curR === itmR) return true;
       if (areRelatedAIHosts(current, itemHost)) return true;
     }
     return false;

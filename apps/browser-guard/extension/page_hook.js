@@ -438,11 +438,28 @@
     return false;
   }
 
+  function getRootDomain(host) {
+    if (!host) return "";
+    var clean = normalizeDomainHost(host).toLowerCase();
+    var parts = clean.split(".");
+    if (parts.length <= 2) return clean;
+    var twoPartTlds = ["co.uk", "org.uk", "com.au", "net.au", "co.in", "co.jp", "com.br", "gov.in"];
+    var lastTwo = parts.slice(-2).join(".");
+    if (twoPartTlds.indexOf(lastTwo) !== -1 && parts.length > 2) {
+      return parts.slice(-3).join(".");
+    }
+    return parts.slice(-2).join(".");
+  }
+
   function areRelatedAIHosts(h1, h2) {
     if (!h1 || !h2) return false;
     h1 = normalizeDomainHost(h1);
     h2 = normalizeDomainHost(h2);
     if (h1 === h2) return true;
+    var r1 = getRootDomain(h1);
+    var r2 = getRootDomain(h2);
+    if (r1 && r2 && r1 === r2) return true;
+
     var pairs = [
       ["chatgpt.com", "openai.com"],
       ["chat.openai.com", "chatgpt.com"],
@@ -457,7 +474,10 @@
       ["copilot.microsoft.com", "githubcopilot.com"],
       ["deepseek.com", "chat.deepseek.com"],
       ["mistral.ai", "chat.mistral.ai"],
-      ["perplexity.ai", "www.perplexity.ai"]
+      ["perplexity.ai", "www.perplexity.ai"],
+      ["lovable.dev", "lovable.app"],
+      ["lovable.dev", "app.lovable.dev"],
+      ["poe.com", "quora.com"]
     ];
     for (var i = 0; i < pairs.length; i++) {
       var p0 = pairs[i][0];
@@ -481,7 +501,7 @@
     for (var i = 0; i < parts.length; i++) {
       var item = parts[i].trim().replace(/^\*\./, "").replace(/^\./, "");
       if (!item) continue;
-      // 1. Direct provider keyword match (e.g. "chatgpt", "gemini", "claude", "deepseek", "perplexity", "mistral", "copilot")
+      // 1. Direct provider keyword match (e.g. "chatgpt", "gemini", "claude", "deepseek", "perplexity", "mistral", "copilot", "lovable")
       if (item === currentProv) return true;
       if (item.indexOf("://") < 0) {
         item = item.indexOf(":") >= 0 && (item.match(/:/g) || []).length > 1 ? "https://[" + item + "]" : "https://" + item;
@@ -492,14 +512,20 @@
         continue;
       }
       // 2. Exact or subdomain match
-      if (currentHost === itemHost || currentHost.endsWith("." + itemHost)) {
+      if (currentHost === itemHost || currentHost.endsWith("." + itemHost) || itemHost.endsWith("." + currentHost)) {
         return true;
       }
       // 3. Keyword / partial host match (e.g. item="copilot", currentHost="copilot.microsoft.com")
       if (!itemHost.includes(".") && currentHost.includes(itemHost)) {
         return true;
       }
-      // 4. Related AI platform sibling hosts
+      // 4. Common root domain match (e.g. any subdomain of lovable.dev, deepseek.com, mistral.ai, google.com)
+      var curRoot = getRootDomain(currentHost);
+      var itemRoot = getRootDomain(itemHost);
+      if (curRoot && itemRoot && curRoot === itemRoot) {
+        return true;
+      }
+      // 5. Related AI platform sibling hosts
       if (areRelatedAIHosts(currentHost, itemHost)) {
         return true;
       }
@@ -616,7 +642,10 @@
     var fileType = String(file.type || "").toLowerCase().trim();
     // Check 1: Master upload block - applies to any target domain if govUploadTargetWebsites is empty/all or matches
     if (govBlockUpload && isControlActiveForSite(govUploadTargetWebsites)) {
-      showBubble(govUploadWarning || "File uploads and attachments to this AI platform are blocked by corporate policy.", "File Upload Policy", "block");
+      var uploadMsg = govUploadWarning || (fileName
+        ? ("File '" + fileName + "' upload to this AI platform is blocked by corporate policy.")
+        : "File uploads and attachments to this AI platform are blocked by corporate policy.");
+      showBubble(uploadMsg, "File Upload Policy", "block");
       return false;
     }
     // Check 2: File extension and true file type restrictions (anti-spoofing)
@@ -634,8 +663,8 @@
         });
         if (!isAllowed) {
           var msg = govFileExtensionBlockMessage || (hasAllowed
-            ? ("File type for '" + fileName + "' is not permitted. Only approved file types (" + govAllowedExtensions.map(function (e) { return "." + e; }).join(", ") + ") may be uploaded.")
-            : "No file types are currently permitted by corporate policy.");
+            ? ("File '" + (fileName || "unnamed") + "' is not permitted. Only approved file types (" + govAllowedExtensions.map(function (e) { return "." + e; }).join(", ") + ") may be uploaded. Please remove this file before sending.")
+            : ("File '" + (fileName || "unnamed") + "' upload is not permitted by corporate policy."));
           showBubble(msg, "File Extension Policy", "block");
           return false;
         }
@@ -647,15 +676,113 @@
         if (blockedExtension) {
           var cleanBlockedExtension = String(blockedExtension).replace(/^\./, "").toLowerCase().trim();
           var isRenamed = sniffedType && sniffedType === cleanBlockedExtension && !lowerFileName.endsWith("." + cleanBlockedExtension);
+          var fLabel = fileName ? ("File '" + fileName + "' (." + cleanBlockedExtension + ")") : ("Files with type '." + cleanBlockedExtension + "'");
           var msg2 = govFileExtensionBlockMessage || (isRenamed
-            ? ("File '" + fileName + "' matches restricted file type '." + cleanBlockedExtension + "' (file renaming detected). Upload blocked by security policy.")
-            : ("Uploading '." + cleanBlockedExtension + "' files is restricted by corporate DLP policy."));
-          showBubble(msg2, "File Extension Policy", "block");
+            ? ("File '" + (fileName || "unnamed") + "' matches restricted file type '." + cleanBlockedExtension + "' (file renaming detected). Upload blocked by corporate DLP policy.")
+            : (fLabel + " is restricted by corporate DLP policy. Please remove this file before sending."));
+          showBubble(msg2, "Restricted File Type (." + cleanBlockedExtension.toUpperCase() + ")", "block");
           return false;
         }
       }
     }
     return true;
+  }
+
+  function checkMultipleFilesAllowed(files) {
+    if (!files || !files.length) return { allowed: true };
+
+    // 1. Master upload block
+    if (govBlockUpload && isControlActiveForSite(govUploadTargetWebsites)) {
+      var allNames = [];
+      for (var ni = 0; ni < files.length; ni++) {
+        var nItem = files[ni];
+        var nName = (nItem && nItem.name) || "";
+        if (nName && allNames.indexOf(nName) === -1) allNames.push(nName);
+      }
+      var nameStr = allNames.length > 1
+        ? ("Files '" + allNames.join("', '") + "'")
+        : (allNames.length === 1 ? ("File '" + allNames[0] + "'") : "File attachments");
+      return {
+        allowed: false,
+        message: govUploadWarning || (nameStr + " to this AI platform are blocked by corporate policy."),
+        rule: "File Upload Policy",
+        violating_files: allNames
+      };
+    }
+
+    // 2. File extension block
+    var fileExtTarget = govFileExtensionTargetWebsites || govUploadTargetWebsites;
+    if (govBlockFileExtension && isControlActiveForSite(fileExtTarget)) {
+      var hasAllowed = govAllowedExtensions && govAllowedExtensions.length > 0;
+      var violatingFiles = [];
+      var violatingExts = [];
+
+      for (var i = 0; i < files.length; i++) {
+        var file = files[i];
+        if (!file) continue;
+        var fName = file.name || ("File " + (i + 1));
+        var lowerName = String(fName).toLowerCase();
+        var fType = String(file.type || "").toLowerCase().trim();
+        var mimeExt = MIME_TO_EXT_MAP[fType] || "";
+        var sniffed = file.sniffedType || "";
+
+        if (govFileExtensionMode === "allow_listed") {
+          var isAllowed = hasAllowed && govAllowedExtensions.some(function (a) {
+            var ext = String(a).replace(/^\./, "").toLowerCase().trim();
+            return ext && (lowerName.endsWith("." + ext) || mimeExt === ext || sniffed === ext);
+          });
+          if (!isAllowed) {
+            if (violatingFiles.indexOf(fName) === -1) {
+              violatingFiles.push(fName);
+            }
+          }
+        } else {
+          var blockedExtension = govRestrictedExtensions && govRestrictedExtensions.find(function (b) {
+            var ext = String(b).replace(/^\./, "").toLowerCase().trim();
+            return ext && (lowerName.endsWith("." + ext) || mimeExt === ext || sniffed === ext);
+          });
+          if (blockedExtension) {
+            var cleanExt = String(blockedExtension).replace(/^\./, "").toLowerCase().trim();
+            if (violatingFiles.indexOf(fName) === -1) {
+              violatingFiles.push(fName);
+            }
+            if (violatingExts.indexOf("." + cleanExt) === -1) {
+              violatingExts.push("." + cleanExt);
+            }
+          }
+        }
+      }
+
+      if (violatingFiles.length > 0) {
+        var extTag = violatingExts.join(", ");
+        var msg = "";
+        if (govFileExtensionBlockMessage) {
+          msg = govFileExtensionBlockMessage;
+        } else if (govFileExtensionMode === "allow_listed") {
+          var allowedTypes = hasAllowed ? (" (" + govAllowedExtensions.map(function (e) { return "." + e; }).join(", ") + ")") : "";
+          if (violatingFiles.length === 1) {
+            msg = "File '" + violatingFiles[0] + "' is not permitted. Only approved file types" + allowedTypes + " may be uploaded. Please remove this file before sending.";
+          } else {
+            msg = "Files '" + violatingFiles.join("', '") + "' are not permitted. Only approved file types" + allowedTypes + " may be uploaded. Please remove these files before sending.";
+          }
+        } else {
+          if (violatingFiles.length === 1) {
+            msg = "File '" + violatingFiles[0] + "' (" + extTag + ") is restricted by corporate DLP policy. Please remove this file before sending.";
+          } else {
+            msg = "Files '" + violatingFiles.join("', '") + "' (" + extTag + ") are restricted by corporate DLP policy. Please remove these files before sending.";
+          }
+        }
+        var ruleTitle = extTag ? ("Restricted File Type (" + extTag.toUpperCase() + ")") : "Restricted File Type";
+        return {
+          allowed: false,
+          message: msg,
+          rule: ruleTitle,
+          violating_files: violatingFiles
+        };
+      }
+    }
+
+    return { allowed: true };
   }
 
   // --- Anti-Screenshot & Screen Capture Protection ---
@@ -1787,7 +1914,7 @@
   function extractStringsFromBase64(b64, maxLen) {
     if (!b64 || typeof b64 !== "string") return "";
     try {
-      var raw = atob(b64.slice(0, 1000000)); // Decode up to 1MB
+      var raw = atob(b64.slice(0, 300000)); // Decode up to 300KB fast without thread hitch
       var matches = raw.match(/[\x20-\x7E\t\r\n]{4,}/g);
       if (matches && matches.length > 0) {
         return matches.join(" ").slice(0, maxLen || 100000);
@@ -1802,20 +1929,33 @@
     var fileItems = Array.isArray(files) ? files : [];
 
     // Check if any file was already detected and marked as blocked during upload staging
+    var stagedBlockedFiles = [];
+    var stagedBlockedReasons = [];
     for (var f0 = 0; f0 < fileItems.length; f0++) {
       var item0 = fileItems[f0];
       if (item0 && item0.is_blocked) {
         var fn0 = item0.name || ("File " + (f0 + 1));
         var rN0 = item0.blocked_reason || "Restricted Content";
-        var bMsg0 = item0.blocked_message || ("File '" + fn0 + "' contains restricted content (" + rN0 + "). Upload blocked by security policy.");
-        return {
-          blocked: true,
-          action: "Blocked",
-          message: bMsg0.indexOf("Please remove") >= 0 ? bMsg0 : (bMsg0 + " Please remove this file before sending."),
-          rule: rN0,
-          violating_files: [fn0]
-        };
+        if (stagedBlockedFiles.indexOf(fn0) === -1) {
+          stagedBlockedFiles.push(fn0);
+        }
+        if (stagedBlockedReasons.indexOf(rN0) === -1) {
+          stagedBlockedReasons.push(rN0);
+        }
       }
+    }
+    if (stagedBlockedFiles.length > 0) {
+      var rTitle = stagedBlockedReasons.join(", ") || "Restricted Content";
+      var stagedMsg = stagedBlockedFiles.length === 1
+        ? ("File '" + stagedBlockedFiles[0] + "' contains restricted content (" + rTitle + "). Upload blocked by corporate DLP policy. Please remove this file before sending.")
+        : ("Files '" + stagedBlockedFiles.join("', '") + "' contain restricted content (" + rTitle + "). Upload blocked by corporate DLP policy. Please remove these files before sending.");
+      return {
+        blocked: true,
+        action: "Blocked",
+        message: stagedMsg,
+        rule: rTitle,
+        violating_files: stagedBlockedFiles
+      };
     }
 
     // Ensure each file has text extracted if base64 is present
@@ -2757,7 +2897,7 @@
           }
         }
       };
-      rText.readAsText(file.slice(0, 1000000)); // Scan first 1MB of text
+      rText.readAsText(file.slice(0, 500000)); // Scan first 500KB of text fast
     }
     // 4. Binary Documents (PDF, Word, Excel, PowerPoint, ODF, RTF, ZIP, Archives)
     else if (
@@ -2797,9 +2937,9 @@
           }
         }
       };
-      rDoc.readAsDataURL(file.slice(0, 5000000)); // Read first 5MB for deep backend extraction
+      rDoc.readAsDataURL(file.slice(0, 1500000)); // Read first 1.5MB fast for deep client inspection
     } else {
-      // 5. General fallback: read first 3MB as Base64 so desktop proxy/agent extracts & scans it
+      // 5. General fallback: read first 1.5MB as Base64 so desktop proxy/agent extracts & scans it
       var rAny = new FileReader();
       rAny.onload = function (e) {
         if (e.target && typeof e.target.result === "string") {
@@ -2830,7 +2970,7 @@
           }
         }
       };
-      rAny.readAsDataURL(file.slice(0, 3000000));
+      rAny.readAsDataURL(file.slice(0, 1500000));
     }
     return true;
   }
@@ -2900,8 +3040,15 @@
         showBubble(govUploadWarning || "File uploads and attachments to this AI platform are blocked by corporate policy.", "File Upload Policy", "block");
         return;
       }
-      var files = ev.target.files;
       if (files && files.length) {
+        var multiCheck = checkMultipleFilesAllowed(files);
+        if (!multiCheck.allowed) {
+          ev.target.value = "";
+          ev.preventDefault();
+          ev.stopImmediatePropagation();
+          showBubble(multiCheck.message, multiCheck.rule, "block");
+          return;
+        }
         for (var i = 0; i < files.length; i++) {
           if (!inspectAndStageFile(files[i])) {
             ev.target.value = ""; // Clear file input on block
@@ -3001,9 +3148,12 @@
         for (var ufi = 0; ufi < ev.dataTransfer.files.length; ufi++) upNames.push(ev.dataTransfer.files[ufi].name);
         if (ev.dataTransfer) {
           ev.dataTransfer.dropEffect = "none";
-          try { ev.dataTransfer.clearData(); } catch (_) {}
         }
-        showBubble(govUploadWarning || "File uploads and attachments to this AI platform are blocked by corporate policy.", "File Upload Policy", "block");
+        try { ev.dataTransfer.clearData(); } catch (_) {}
+        var upBlockMsg = govUploadWarning || (upNames.length > 1
+          ? ("Files '" + upNames.join("', '") + "' upload to this AI platform is blocked by corporate policy.")
+          : (upNames.length === 1 ? ("File '" + upNames[0] + "' upload to this AI platform is blocked by corporate policy.") : "File uploads and attachments to this AI platform are blocked by corporate policy."));
+        showBubble(upBlockMsg, "File Upload Policy", "block");
         window.postMessage({
           source: "gateway-guard-page",
           nonce: guardNonce,
@@ -3021,6 +3171,14 @@
     }
     if (ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files.length) {
       var files = ev.dataTransfer.files;
+      var multiDropCheck = checkMultipleFilesAllowed(files);
+      if (!multiDropCheck.allowed) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        ev.stopImmediatePropagation();
+        showBubble(multiDropCheck.message, multiDropCheck.rule, "block");
+        return;
+      }
       for (var i = 0; i < files.length; i++) {
         if (!inspectAndStageFile(files[i])) {
           ev.preventDefault();
@@ -3196,6 +3354,14 @@
 
     // 1. Files & Screenshots inspection
     if (cd.files && cd.files.length) {
+      var multiPasteCheck = checkMultipleFilesAllowed(cd.files);
+      if (!multiPasteCheck.allowed) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        ev.stopImmediatePropagation();
+        showBubble(multiPasteCheck.message, multiPasteCheck.rule, "block");
+        return;
+      }
       for (var i = 0; i < cd.files.length; i++) {
         if (!inspectAndStageFile(cd.files[i])) {
           ev.preventDefault();
@@ -3718,24 +3884,26 @@
       return;
     }
 
-    if (govBlockUpload && isControlActiveForSite(govUploadTargetWebsites)) {
-      if (effectiveFiles.length > 0 || stagedImages.length > 0) {
+    if (effectiveFiles.length > 0) {
+      var multiFileCheck = checkMultipleFilesAllowed(effectiveFiles);
+      if (!multiFileCheck.allowed) {
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
-        showBubble(govUploadWarning || "File uploads and attachments to this AI platform are blocked by corporate policy.", "File Upload Policy", "block");
+        showBubble(multiFileCheck.message, multiFileCheck.rule, "block");
+        if (multiFileCheck.violating_files) {
+          for (var vfi = 0; vfi < multiFileCheck.violating_files.length; vfi++) {
+            removeStagedFile(multiFileCheck.violating_files[vfi]);
+          }
+        }
         return;
       }
-    }
-
-    for (var fi = 0; fi < effectiveFiles.length; fi++) {
-      if (!checkFileUploadAllowed(effectiveFiles[fi])) {
-        e.preventDefault();
-        e.stopPropagation();
-        e.stopImmediatePropagation();
-        removeStagedFile(effectiveFiles[fi].name);
-        return;
-      }
+    } else if (govBlockUpload && isControlActiveForSite(govUploadTargetWebsites) && stagedImages.length > 0) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      showBubble(govUploadWarning || "File uploads and attachments to this AI platform are blocked by corporate policy.", "File Upload Policy", "block");
+      return;
     }
 
     var clientDecision = evaluateClientRules(text, effectiveFiles);
@@ -3927,9 +4095,23 @@
             removedAny = true;
           }
         }
+        if (!removedAny && card && card.parentElement) {
+          try {
+            var container = card.parentElement;
+            var siblings = Array.from(container.children).filter(function (el) {
+              return el.querySelector && el.querySelector("button, [role='button']") !== null;
+            });
+            var idx = siblings.indexOf(card);
+            if (idx >= 0 && idx < stagedFiles.length) {
+              removeStagedFile(stagedFiles[idx].name);
+              removedAny = true;
+            }
+          } catch (_) {}
+        }
         if (!removedAny && stagedFiles.length === 1) {
           removeStagedFile(stagedFiles[0].name);
         }
+        dismissAlertCard();
         lastDecisionCache = { text: "", time: 0, decision: null };
         _lastAskSig = "";
         _lastBlockedPromptText = "";
@@ -4000,24 +4182,26 @@
       return;
     }
 
-    if (govBlockUpload && isControlActiveForSite(govUploadTargetWebsites)) {
-      if (effectiveFiles.length > 0 || stagedImages.length > 0) {
+    if (effectiveFiles.length > 0) {
+      var multiFileCheck2 = checkMultipleFilesAllowed(effectiveFiles);
+      if (!multiFileCheck2.allowed) {
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
-        showBubble(govUploadWarning || "File uploads and attachments to this AI platform are blocked by corporate policy.", "File Upload Policy", "block");
+        showBubble(multiFileCheck2.message, multiFileCheck2.rule, "block");
+        if (multiFileCheck2.violating_files) {
+          for (var vfi2 = 0; vfi2 < multiFileCheck2.violating_files.length; vfi2++) {
+            removeStagedFile(multiFileCheck2.violating_files[vfi2]);
+          }
+        }
         return;
       }
-    }
-
-    for (var fi2 = 0; fi2 < effectiveFiles.length; fi2++) {
-      if (!checkFileUploadAllowed(effectiveFiles[fi2])) {
-        e.preventDefault();
-        e.stopPropagation();
-        e.stopImmediatePropagation();
-        removeStagedFile(effectiveFiles[fi2].name);
-        return;
-      }
+    } else if (govBlockUpload && isControlActiveForSite(govUploadTargetWebsites) && stagedImages.length > 0) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      showBubble(govUploadWarning || "File uploads and attachments to this AI platform are blocked by corporate policy.", "File Upload Policy", "block");
+      return;
     }
 
     var clientDecision = evaluateClientRules(text, effectiveFiles);
@@ -4514,21 +4698,25 @@
       // Handle FormData body (File uploads)
       else if (body && typeof body.forEach === "function") {
         try {
-          var formUploadBlocked = false;
+          var formFiles = [];
           body.forEach(function (val, key) {
             var isFileVal = (typeof File !== "undefined" && val instanceof File) || (val && typeof val === "object" && typeof val.name === "string" && val.name && /\.[a-zA-Z0-9]{1,8}$/.test(val.name.trim()));
             if (isFileVal) {
-              if (!checkFileUploadAllowed(val)) {
-                formUploadBlocked = true;
-              }
-              inspectAndStageFile(val);
+              formFiles.push(val);
               netFiles.push({ name: val.name, size: val.size || 0, type: val.type || "" });
             } else if (typeof val === "string" && (key.indexOf("prompt") >= 0 || key.indexOf("query") >= 0 || key.indexOf("message") >= 0)) {
               promptText = val;
             }
           });
-          if (formUploadBlocked) {
-            return Promise.resolve(new Response(null, { status: 204 }));
+          if (formFiles.length > 0) {
+            var multiFormCheck = checkMultipleFilesAllowed(formFiles);
+            if (!multiFormCheck.allowed) {
+              showBubble(multiFormCheck.message, multiFormCheck.rule, "block");
+              return Promise.resolve(new Response(null, { status: 204 }));
+            }
+            for (var fmi = 0; fmi < formFiles.length; fmi++) {
+              inspectAndStageFile(formFiles[fmi]);
+            }
           }
         } catch (err) { }
       }
