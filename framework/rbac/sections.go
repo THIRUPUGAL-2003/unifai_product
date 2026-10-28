@@ -26,6 +26,26 @@ func SectionRequirementFor(method, path string) []string {
 			return []string{"adaptive-routing/dashboard"}
 		}
 		return []string{"adaptive-routing/settings"}
+	case strings.HasPrefix(path, "/api/vector-store-config"), strings.HasPrefix(path, "/api/cache/clear"):
+		return []string{"settings/caching"}
+	case path == "/api/plugins/semantic_cache":
+		return []string{"settings/caching", "plugins", "observability/connectors"}
+	case strings.HasPrefix(path, "/api/proxy-config"):
+		return []string{"settings/proxy"}
+	case strings.HasPrefix(path, "/api/smtp-config"):
+		return []string{"settings/security"}
+	case strings.HasPrefix(path, "/api/feature-flags"):
+		return []string{"settings/feature-flags"}
+	case strings.HasPrefix(path, "/api/pricing"):
+		return []string{"models/pricing-overrides"}
+	case strings.HasPrefix(path, "/api/cluster"):
+		return []string{"guardrails/cluster-config"}
+	case path == "/api/guardrails/rules":
+		return []string{"guardrails/rules"}
+	case path == "/api/guardrails/providers":
+		return []string{"guardrails/providers"}
+	case strings.HasPrefix(path, "/api/guardrails"):
+		return []string{"guardrails"}
 	case strings.HasPrefix(path, "/api/mcp"), strings.HasPrefix(path, "/api/oauth/config"), strings.HasPrefix(path, "/api/oauth2/sessions"):
 		if section := mcpSectionForPath(path); section != "" {
 			return []string{section}
