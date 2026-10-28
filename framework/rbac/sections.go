@@ -44,6 +44,8 @@ func SectionRequirementFor(method, path string) []string {
 		return []string{"guardrails/rules"}
 	case path == "/api/guardrails/providers":
 		return []string{"guardrails/providers"}
+	case path == "/api/guardrails/config":
+		return []string{"guardrails/rules", "guardrails/providers"}
 	case strings.HasPrefix(path, "/api/guardrails"):
 		return []string{"guardrails"}
 	case strings.HasPrefix(path, "/api/mcp"), strings.HasPrefix(path, "/api/oauth/config"), strings.HasPrefix(path, "/api/oauth2/sessions"):
@@ -179,7 +181,9 @@ func mcpSectionForPath(path string) string {
 		return "mcp-gateway/auth-sessions"
 	case strings.HasPrefix(path, "/api/mcp/clients"), strings.HasPrefix(path, "/api/mcp/client"):
 		return "mcp-gateway/mcp-catalog"
-	case strings.HasPrefix(path, "/api/oauth/config"), strings.HasPrefix(path, "/api/oauth2/sessions"):
+	case strings.HasPrefix(path, "/api/oauth/config"):
+		return "mcp-gateway/mcp-catalog"
+	case strings.HasPrefix(path, "/api/oauth2/sessions"):
 		return "mcp-gateway/oauth-grants"
 	case strings.HasPrefix(path, "/api/mcp"):
 		return "mcp-gateway"

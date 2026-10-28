@@ -76,7 +76,7 @@ const RESOURCE_TO_SECTION_MAP: Record<string, string[]> = {
 	LogsSettings: ["observability/logs-settings"],
 
 	// Browser AI
-	BrowserAIOverview: ["browser-ai/overview", "browser-ai"],
+	BrowserAIOverview: ["browser-ai/overview"],
 	BrowserAITargets: ["browser-ai/targets"],
 	BrowserAIRules: ["browser-ai/rules"],
 	BrowserAILogs: ["browser-ai/logs"],
@@ -121,7 +121,7 @@ const RESOURCE_TO_SECTION_MAP: Record<string, string[]> = {
 	Cluster: ["guardrails/cluster-config"],
 
 	// Adaptive Routing
-	AdaptiveRoutingDashboard: ["adaptive-routing/dashboard", "adaptive-routing"],
+	AdaptiveRoutingDashboard: ["adaptive-routing/dashboard"],
 	AdaptiveRoutingSettings: ["adaptive-routing/settings"],
 	PromptRepository: ["prompt-repository"],
 	SkillsRepository: ["skills-repository"],

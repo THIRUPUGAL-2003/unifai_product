@@ -141,7 +141,9 @@ func mcpResourceForPath(path string) string {
 		return "MCPAuthSessions"
 	case strings.HasPrefix(path, "/api/mcp/clients"), strings.HasPrefix(path, "/api/mcp/client"):
 		return "MCPCatalog"
-	case strings.HasPrefix(path, "/api/oauth/config"), strings.HasPrefix(path, "/api/oauth2/sessions"):
+	case strings.HasPrefix(path, "/api/oauth/config"):
+		return "MCPCatalog"
+	case strings.HasPrefix(path, "/api/oauth2/sessions"):
 		return "MCPOAuthGrants"
 	case strings.HasPrefix(path, "/api/mcp"):
 		return "MCPGateway"
@@ -246,6 +248,9 @@ func readRequirement(path string) *PathRequirement {
 		}
 		if path == "/api/guardrails/providers" {
 			return &PathRequirement{Resource: "GuardrailsProviders", Operation: "View", AnyOfResources: []string{"GuardrailsProviders", "GuardrailsConfig"}}
+		}
+		if path == "/api/guardrails/config" {
+			return &PathRequirement{Resource: "GuardrailsConfig", Operation: "View", AnyOfResources: []string{"GuardrailRules", "GuardrailsProviders", "GuardrailsConfig"}}
 		}
 		// Shared /api/guardrails/config blob; Rules UI uses GuardrailsConfig, Providers UI uses GuardrailsProviders.
 		return &PathRequirement{

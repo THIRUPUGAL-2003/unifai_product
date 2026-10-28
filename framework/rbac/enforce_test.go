@@ -101,6 +101,9 @@ func TestSidebarResourcesReachTheirAPIs(t *testing.T) {
 		{"GET", "/api/governance/routing-rules", "View", []string{"RoutingRules", "Governance"}},
 		{"PUT", "/api/governance/complexity-analyzer-config", "Update", []string{"ComplexityRouter", "Governance"}},
 		{"GET", "/api/governance/pricing-overrides", "View", []string{"PricingOverrides", "Settings", "Governance"}},
+		{"GET", "/api/load-balancer", "View", []string{"AdaptiveRoutingSettings", "AdaptiveRouter"}},
+		{"PUT", "/api/load-balancer", "Update", []string{"AdaptiveRoutingSettings", "AdaptiveRouter"}},
+		{"GET", "/api/load-balancer/routes", "View", []string{"AdaptiveRoutingDashboard", "AdaptiveRouter"}},
 		{"GET", "/api/mcp/clients", "View", []string{"MCPCatalog", "MCPGateway"}},
 		{"POST", "/api/mcp/client", "Create", []string{"MCPCatalog", "MCPGateway"}},
 		{"PUT", "/api/mcp/client/client-1", "Update", []string{"MCPCatalog", "MCPGateway"}},
@@ -112,8 +115,8 @@ func TestSidebarResourcesReachTheirAPIs(t *testing.T) {
 		{"GET", "/api/mcp/sessions", "View", []string{"MCPAuthSessions", "MCPGateway"}},
 		{"POST", "/api/mcp/sessions/session-1/reauth", "Update", []string{"MCPAuthSessions", "MCPGateway"}},
 		{"DELETE", "/api/mcp/sessions/session-1", "Delete", []string{"MCPAuthSessions", "MCPGateway"}},
-		{"GET", "/api/oauth/config/oauth-1/status", "View", []string{"MCPOAuthGrants", "MCPGateway"}},
-		{"DELETE", "/api/oauth/config/oauth-1", "Delete", []string{"MCPOAuthGrants", "MCPGateway"}},
+		{"GET", "/api/oauth/config/oauth-1/status", "View", []string{"MCPCatalog", "MCPGateway"}},
+		{"DELETE", "/api/oauth/config/oauth-1", "Delete", []string{"MCPCatalog", "MCPGateway"}},
 		{"GET", "/api/oauth2/sessions", "View", []string{"MCPOAuthGrants", "MCPGateway"}},
 		{"GET", "/api/mcp-logs", "Read", []string{"MCPLogs", "Logs"}},
 		{"DELETE", "/api/mcp-logs", "Delete", []string{"MCPLogs", "Logs"}},
@@ -162,8 +165,8 @@ func TestMCPFeaturePermissionsStayScoped(t *testing.T) {
 		{"catalog cannot create library entry", "POST", "/api/mcp/library", "MCPCatalog", "Create", false},
 		{"auth sessions can revoke session", "DELETE", "/api/mcp/sessions/s1", "MCPAuthSessions", "Delete", true},
 		{"oauth grants cannot revoke auth session", "DELETE", "/api/mcp/sessions/s1", "MCPOAuthGrants", "Delete", false},
-		{"oauth grants can revoke grant", "DELETE", "/api/oauth/config/o1", "MCPOAuthGrants", "Delete", true},
-		{"catalog cannot revoke grant", "DELETE", "/api/oauth/config/o1", "MCPCatalog", "Delete", false},
+		{"catalog can revoke OAuth config", "DELETE", "/api/oauth/config/o1", "MCPCatalog", "Delete", true},
+		{"OAuth grants cannot revoke client OAuth config", "DELETE", "/api/oauth/config/o1", "MCPOAuthGrants", "Delete", false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

@@ -53,7 +53,7 @@ func isSectionGrantedForPath(granted, path string) bool {
 
 	case strings.HasPrefix(path, "/api/governance/teams"),
 		strings.HasPrefix(path, "/api/teams"):
-		return hasGrant("governance", "governance/teams", "governance/business-units")
+		return hasGrant("governance", "governance/teams", "governance/business-units", "governance/users", "governance/virtual-keys", "governance/access-profiles", "governance/roles-permissions")
 
 	case strings.HasPrefix(path, "/api/governance/business-units"),
 		strings.HasPrefix(path, "/api/business-units"):
@@ -136,6 +136,8 @@ func isSectionGrantedForPath(granted, path string) bool {
 			return hasGrant("guardrails/rules")
 		case "/api/guardrails/providers":
 			return hasGrant("guardrails/providers")
+		case "/api/guardrails/config":
+			return hasGrant("guardrails", "guardrails/rules", "guardrails/providers")
 		default:
 			return hasGrant("guardrails")
 		}

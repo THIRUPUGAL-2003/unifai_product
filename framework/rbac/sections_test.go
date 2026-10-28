@@ -59,12 +59,17 @@ func TestSectionRequirementFor(t *testing.T) {
 		{"API keys section can create a virtual key", "POST", "/api/governance/virtual-keys", "settings/api-keys", true},
 		{"Browser AI rules section can create a rule", "POST", "/api/browser-ai/rules", "browser-ai/rules", true},
 		{"Browser AI rules cannot create a target", "POST", "/api/browser-ai/targets", "browser-ai/rules", false},
+		{"adaptive dashboard grant can read routes", "GET", "/api/load-balancer/routes", "adaptive-routing/dashboard", true},
+		{"adaptive dashboard cannot read settings", "GET", "/api/load-balancer", "adaptive-routing/dashboard", false},
+		{"adaptive settings grant can update config", "PUT", "/api/load-balancer", "adaptive-routing/settings", true},
+		{"guardrails rules can read combined config", "GET", "/api/guardrails/config", "guardrails/rules", true},
 		{"MCP catalog section can read clients", "GET", "/api/mcp/clients", "mcp-gateway/mcp-catalog", true},
 		{"MCP library section cannot read clients", "GET", "/api/mcp/clients", "mcp-gateway/mcp-library", false},
 		{"MCP library section can sync catalog", "POST", "/api/mcp/library/force-sync", "mcp-gateway/mcp-library", true},
 		{"MCP catalog section cannot sync library", "POST", "/api/mcp/library/force-sync", "mcp-gateway/mcp-catalog", false},
 		{"MCP auth sessions section can revoke session", "DELETE", "/api/mcp/sessions/s1", "mcp-gateway/auth-sessions", true},
-		{"MCP auth sessions section cannot revoke OAuth grant", "DELETE", "/api/oauth/config/o1", "mcp-gateway/auth-sessions", false},
+		{"MCP auth sessions section cannot revoke client OAuth config", "DELETE", "/api/oauth/config/o1", "mcp-gateway/auth-sessions", false},
+		{"MCP catalog section can check OAuth config", "GET", "/api/oauth/config/o1/status", "mcp-gateway/mcp-catalog", true},
 		{"OAuth grants section can list grants", "GET", "/api/oauth2/sessions", "mcp-gateway/oauth-grants", true},
 	}
 	for _, c := range cases {
