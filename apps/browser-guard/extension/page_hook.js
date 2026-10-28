@@ -894,14 +894,6 @@
       if (msgEl && message) msgEl.textContent = message;
       var emailEl = existing.querySelector(".yp-corp-email");
       if (emailEl && email) emailEl.textContent = email;
-      var exBtn = existing.querySelector("#yp-btn-signout");
-      if (exBtn && !exBtn._bound) {
-        exBtn._bound = true;
-        exBtn.addEventListener("click", function (e) {
-          if (e) { e.preventDefault(); e.stopPropagation(); }
-          performAutoLogout();
-        }, true);
-      }
       return;
     }
 
@@ -909,7 +901,8 @@
       var kf = document.createElement("style");
       kf.id = "yp-corp-keyframes";
       kf.textContent = "@keyframes ypFadeInModal{from{opacity:0;transform:scale(0.92)}to{opacity:1;transform:scale(1)}}" +
-        "@keyframes ypFadeInOverlay{from{opacity:0}to{opacity:1}}";
+        "@keyframes ypFadeInOverlay{from{opacity:0}to{opacity:1}}" +
+        "@keyframes ypPulse{from{opacity:0.4;transform:scale(0.85)}to{opacity:1;transform:scale(1.2)}}";
       (document.head || document.documentElement).appendChild(kf);
     }
 
@@ -937,39 +930,15 @@
       '  <p class="yp-corp-msg" style="font-size:13.5px;color:#cbd5e1;line-height:1.55;margin:4px 0 8px 0;max-width:440px;">' +
       (message || "Personal accounts are restricted by corporate security policy. Please log in with your company account.") +
       '  </p>' +
-      '  <button id="yp-btn-signout" style="background:#ef4444;color:#ffffff;border:none;border-radius:10px;padding:12px 32px;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 4px 14px rgba(239,68,68,0.4);transition:all 0.2s ease;letter-spacing:0.02em;">Sign Out</button>' +
-      '  <div id="yp-corp-timer-notice" style="font-size:11.5px;color:#94a3b8;margin-top:2px;">Auto signing out in <span id="yp-corp-countdown" style="color:#f87171;font-weight:700;">8</span>s...</div>' +
+      '  <div id="yp-corp-timer-notice" style="font-size:12.5px;color:#fca5a5;margin-top:6px;display:flex;align-items:center;gap:7px;background:rgba(239,68,68,0.14);padding:8px 16px;border-radius:20px;border:1px solid rgba(239,68,68,0.28);">' +
+      '    <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#ef4444;box-shadow:0 0 8px #ef4444;animation:ypPulse 1s infinite alternate;"></span>' +
+      '    <span>Auto signing out in <strong id="yp-corp-countdown" style="color:#ef4444;font-size:13.5px;font-weight:800;">2</strong>s...</span>' +
+      '  </div>' +
       '</div>';
 
     (document.body || document.documentElement).appendChild(overlay);
 
-    var btnSignout = overlay.querySelector("#yp-btn-signout");
-    if (btnSignout) {
-      btnSignout._bound = true;
-      btnSignout.addEventListener("click", function (e) {
-        if (e) { e.preventDefault(); e.stopPropagation(); }
-        performAutoLogout();
-      }, true);
-      btnSignout.addEventListener("pointerdown", function (e) {
-        if (e) { e.preventDefault(); e.stopPropagation(); }
-        performAutoLogout();
-      }, true);
-      btnSignout.onclick = function (e) {
-        if (e) { e.preventDefault(); e.stopPropagation(); }
-        performAutoLogout();
-        return false;
-      };
-      btnSignout.addEventListener("mouseenter", function () {
-        btnSignout.style.background = "#dc2626";
-        btnSignout.style.transform = "translateY(-1px)";
-      });
-      btnSignout.addEventListener("mouseleave", function () {
-        btnSignout.style.background = "#ef4444";
-        btnSignout.style.transform = "translateY(0)";
-      });
-    }
-
-    var secondsLeft = 8;
+    var secondsLeft = 2;
     var timerEl = document.getElementById("yp-corp-countdown");
     var countdownInterval = setInterval(function () {
       secondsLeft--;

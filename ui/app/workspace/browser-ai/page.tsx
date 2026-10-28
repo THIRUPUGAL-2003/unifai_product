@@ -4445,7 +4445,7 @@ export default function BrowserAiPage() {
 
 					{/* Individual Data Loss Prevention Policies */}
 					<div className="space-y-4">
-						{/* POLICY 1: File Upload Policy (Includes Block All Files & File Type / Extension Filtering) */}
+						{/* POLICY 1: File Upload & Download Policy */}
 						<Card className="border border-border bg-card overflow-hidden">
 							<div
 								className="flex items-center justify-between p-4 cursor-pointer select-none hover:bg-muted/30 transition-colors"
@@ -4453,38 +4453,42 @@ export default function BrowserAiPage() {
 							>
 								<div className="flex items-center gap-3.5 min-w-0">
 									<div className="p-2.5 rounded-lg border border-border bg-muted/40 text-muted-foreground">
-										<Upload className="h-5 w-5" />
+										<ArrowUpDown className="h-5 w-5" />
 									</div>
 									<div>
-										<div className="flex items-center gap-2">
-											<p className="text-sm font-semibold">1. File Upload Policy</p>
-											{controls.block_upload ? (
-												<Badge variant="outline" className="text-[10px] px-2 py-0.5 border-emerald-500/50 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10">Block All Files</Badge>
+										<div className="flex items-center gap-2 flex-wrap">
+											<p className="text-sm font-semibold">1. File Upload &amp; Download Policy</p>
+											{(controls.block_upload || controls.block_file_extension) && controls.block_download ? (
+												<Badge variant="outline" className="text-[10px] px-2 py-0.5 border-emerald-500/50 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10">Upload &amp; Download Active</Badge>
+											) : controls.block_upload ? (
+												<Badge variant="outline" className="text-[10px] px-2 py-0.5 border-emerald-500/50 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10">Upload Block Active</Badge>
 											) : controls.block_file_extension ? (
 												<Badge variant="outline" className="text-[10px] px-2 py-0.5 border-blue-500/50 text-blue-600 dark:text-blue-400 bg-blue-500/10">
-													{controls.file_extension_mode === "allow_listed" ? "Allowlist Active" : "Blocklist Active"}
+													{controls.file_extension_mode === "allow_listed" ? "Upload Allowlist Active" : "Upload Blocklist Active"}
 												</Badge>
+											) : controls.block_download ? (
+												<Badge variant="outline" className="text-[10px] px-2 py-0.5 border-emerald-500/50 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10">Download Block Active</Badge>
 											) : (
 												<Badge variant="outline" className="text-[10px] text-muted-foreground">Disabled</Badge>
 											)}
 										</div>
 										<p className="text-xs text-muted-foreground mt-0.5">
-											Block all file attachments or filter specific file extensions on monitored AI platforms.
+											Block file attachments, filter file extensions, and restrict file downloads or page exports on AI platforms.
 										</p>
 									</div>
 								</div>
 								<div className="flex items-center gap-3 shrink-0" onClick={(e) => e.stopPropagation()}>
 									<Switch
-										checked={!!(controls.block_upload || controls.block_file_extension)}
+										checked={!!(controls.block_upload || controls.block_file_extension || controls.block_download)}
 										onCheckedChange={(val) => {
 											if (val) {
 												setExpandedPolicies((p) => ({ ...p, upload: true }));
-												void patchControlWithErrorToast({ block_upload: true, block_file_extension: false }, "Could not enable file upload blocking");
+												void patchControlWithErrorToast({ block_upload: true, block_file_extension: false, block_download: true }, "Could not enable file transfer policy");
 											} else {
-												void patchControlWithErrorToast({ block_upload: false, block_file_extension: false }, "Could not disable file upload blocking");
+												void patchControlWithErrorToast({ block_upload: false, block_file_extension: false, block_download: false }, "Could not disable file transfer policy");
 											}
 										}}
-										aria-label="Toggle file upload blocking"
+										aria-label="Toggle file upload and download policy"
 									/>
 									<button
 										type="button"
@@ -4829,136 +4833,113 @@ export default function BrowserAiPage() {
 					/>
 				</div>
 			)}
-		</div>
-	)}
-</Card>
 
-{/* POLICY 2: File Download & Export Policy */}
-<Card className="border border-border bg-card overflow-hidden">
-	<div
-		className="flex items-center justify-between p-4 cursor-pointer select-none hover:bg-muted/30 transition-colors"
-		onClick={() => togglePolicyExpanded("download")}
-	>
-		<div className="flex items-center gap-3.5 min-w-0">
-			<div className="p-2.5 rounded-lg border border-border bg-muted/40 text-muted-foreground">
-				<HardDriveDownload className="h-5 w-5" />
-			</div>
-			<div>
-				<div className="flex items-center gap-2">
-					<p className="text-sm font-semibold">2. File Download &amp; Export Policy</p>
-					{controls.block_download ? (
-						<Badge variant="outline" className="text-[10px] px-2 py-0.5 border-emerald-500/50 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10">Active</Badge>
-					) : (
-						<Badge variant="outline" className="text-[10px] text-muted-foreground">Disabled</Badge>
-					)}
-				</div>
-				<p className="text-xs text-muted-foreground mt-0.5">
-					Block page export actions and browser-managed downloads on AI platforms.
-				</p>
-			</div>
-		</div>
-		<div className="flex items-center gap-3 shrink-0" onClick={(e) => e.stopPropagation()}>
-			<Switch
-				checked={!!controls.block_download}
-				onCheckedChange={(val) => {
-					if (val) setExpandedPolicies((p) => ({ ...p, download: true }));
-					handleToggleDownloadGovernance(val);
-				}}
-				aria-label="Toggle download blocking"
-			/>
-			<button
-				type="button"
-				onClick={() => togglePolicyExpanded("download")}
-				className="p-1 rounded-md text-muted-foreground hover:text-foreground transition-transform"
-			>
-				<ChevronDown className={`h-4 w-4 transition-transform duration-200 ${expandedPolicies.download ? "rotate-180" : ""}`} />
-			</button>
-		</div>
-	</div>
+			{/* Divider between Upload and Download */}
+			<div className="border-t border-border/60 my-4" />
 
-	{expandedPolicies.download && (
-		<div className="p-4 pt-0 border-t border-border/60 space-y-4 mt-2">
-			<div className="rounded-lg border border-border/70 bg-muted/15 p-4 space-y-3.5 pt-3.5">
-				<div className="space-y-1.5">
-					<div className="flex items-center justify-between">
-						<Label className="text-xs font-semibold">Download &amp; Export Warning Message</Label>
-						{downloadMsgEditing || !(controls.download_block_message || "").trim() ? null : (
-							<Button
-								type="button"
-								size="sm"
-								variant="ghost"
-								className="h-6 text-xs text-muted-foreground hover:text-foreground"
-								onClick={() => {
-									setDownloadMsgDraft(controls.download_block_message || "");
-									setDownloadMsgEditing(true);
-								}}
-							>
-								<Pencil className="h-3 w-3 mr-1" />
-								Edit
-							</Button>
-						)}
+			{/* PART B: File Download & Export Restrictions */}
+			<div className="space-y-4">
+				<div className="flex items-center justify-between pb-2 border-b border-border/40">
+					<div className="flex items-center gap-2.5">
+						<div className="p-1.5 rounded-md border border-border bg-muted/40 text-muted-foreground">
+							<HardDriveDownload className="h-4 w-4" />
+						</div>
+						<div>
+							<p className="text-xs font-semibold">File Download &amp; Export Policy</p>
+							<p className="text-[11px] text-muted-foreground">Block page export actions and browser-managed downloads on AI platforms.</p>
+						</div>
 					</div>
-					{downloadMsgEditing || !(controls.download_block_message || "").trim() ? (
-						<div className="space-y-2">
-							<Input
-								placeholder="e.g. File downloads and exports are blocked by corporate policy."
-								value={downloadMsgDraft}
-								onChange={(e) => setDownloadMsgDraft(e.target.value)}
-								className="text-xs font-sans"
-								onKeyDown={(e) => {
-									if (e.key === "Enter") {
-										e.preventDefault();
-										void saveDownloadMsg();
-									}
-								}}
-							/>
-							<div className="flex items-center justify-between gap-2">
-								<p className="text-[11px] text-muted-foreground">
-									Message shown when file download or export is blocked.
-								</p>
-								<div className="flex items-center gap-2">
-									{downloadMsgEditing && (controls.download_block_message || "").trim() ? (
-										<Button
-											type="button"
-											size="sm"
-											variant="ghost"
-											className="h-7 text-xs"
-											onClick={() => {
-												setDownloadMsgDraft(controls.download_block_message || "");
-												setDownloadMsgEditing(false);
-											}}
-										>
-											Cancel
-										</Button>
-									) : null}
+					<Switch
+						checked={!!controls.block_download}
+						onCheckedChange={(val) => handleToggleDownloadGovernance(val)}
+						aria-label="Toggle download blocking"
+					/>
+				</div>
+
+				{controls.block_download && (
+					<div className="rounded-lg border border-border/70 bg-muted/15 p-4 space-y-3.5">
+						<div className="space-y-1.5">
+							<div className="flex items-center justify-between">
+								<Label className="text-xs font-semibold">Download &amp; Export Warning Message</Label>
+								{downloadMsgEditing || !(controls.download_block_message || "").trim() ? null : (
 									<Button
 										type="button"
 										size="sm"
-										variant="outline"
-										className="h-7 text-xs"
-										onClick={saveDownloadMsg}
+										variant="ghost"
+										className="h-6 text-xs text-muted-foreground hover:text-foreground"
+										onClick={() => {
+											setDownloadMsgDraft(controls.download_block_message || "");
+											setDownloadMsgEditing(true);
+										}}
 									>
-										<Save className="h-3 w-3 mr-1" />
-										Save
+										<Pencil className="h-3 w-3 mr-1" />
+										Edit
 									</Button>
-								</div>
+								)}
 							</div>
+							{downloadMsgEditing || !(controls.download_block_message || "").trim() ? (
+								<div className="space-y-2">
+									<Input
+										placeholder="e.g. File downloads and exports are blocked by corporate policy."
+										value={downloadMsgDraft}
+										onChange={(e) => setDownloadMsgDraft(e.target.value)}
+										className="text-xs font-sans"
+										onKeyDown={(e) => {
+											if (e.key === "Enter") {
+												e.preventDefault();
+												void saveDownloadMsg();
+											}
+										}}
+									/>
+									<div className="flex items-center justify-between gap-2">
+										<p className="text-[11px] text-muted-foreground">
+											Message shown when file download or export is blocked.
+										</p>
+										<div className="flex items-center gap-2">
+											{downloadMsgEditing && (controls.download_block_message || "").trim() ? (
+												<Button
+													type="button"
+													size="sm"
+													variant="ghost"
+													className="h-7 text-xs"
+													onClick={() => {
+														setDownloadMsgDraft(controls.download_block_message || "");
+														setDownloadMsgEditing(false);
+													}}
+												>
+													Cancel
+												</Button>
+											) : null}
+											<Button
+												type="button"
+												size="sm"
+												variant="outline"
+												className="h-7 text-xs"
+												onClick={saveDownloadMsg}
+											>
+												<Save className="h-3 w-3 mr-1" />
+												Save
+											</Button>
+										</div>
+									</div>
+								</div>
+							) : (
+								<div className="rounded-md border border-border bg-muted/30 px-3 py-2">
+									<p className="text-xs text-foreground whitespace-pre-wrap break-words font-mono">
+										{(controls.download_block_message || "").trim()}
+									</p>
+								</div>
+							)}
 						</div>
-					) : (
-						<div className="rounded-md border border-border bg-muted/30 px-3 py-2">
-							<p className="text-xs text-foreground whitespace-pre-wrap break-words font-mono">
-								{(controls.download_block_message || "").trim()}
-							</p>
-						</div>
-					)}
-				</div>
 
-				<PolicyTargetWebsitesSelector
-					policyName="Download"
-					value={controls.download_target_websites || "none"}
-					targets={targets}
-					onChange={(val) => void patchControlWithErrorToast({ download_target_websites: val }, "Could not save download target websites")}
-				/>
+						<PolicyTargetWebsitesSelector
+							policyName="Download"
+							value={controls.download_target_websites || "none"}
+							targets={targets}
+							onChange={(val) => void patchControlWithErrorToast({ download_target_websites: val }, "Could not save download target websites")}
+						/>
+					</div>
+				)}
 			</div>
 		</div>
 	)}
@@ -4976,7 +4957,7 @@ export default function BrowserAiPage() {
 			</div>
 			<div>
 				<div className="flex items-center gap-2">
-					<p className="text-sm font-semibold">3. Drag &amp; Drop Blocking</p>
+					<p className="text-sm font-semibold">2. Drag &amp; Drop Blocking</p>
 					{controls.block_drag_drop ? (
 						<Badge variant="outline" className="text-[10px] px-2 py-0.5 border-emerald-500/50 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10">Active</Badge>
 					) : (
@@ -5104,7 +5085,7 @@ export default function BrowserAiPage() {
 			</div>
 			<div>
 				<div className="flex items-center gap-2">
-					<p className="text-sm font-semibold">4. Clipboard Restriction (Copy &amp; Paste)</p>
+					<p className="text-sm font-semibold">3. Clipboard Restriction (Copy &amp; Paste)</p>
 					{controls.block_clipboard ? (
 						<Badge variant="outline" className="text-[10px] px-2 py-0.5 border-emerald-500/50 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10">Active</Badge>
 					) : (
@@ -5232,7 +5213,7 @@ export default function BrowserAiPage() {
 			</div>
 			<div>
 				<div className="flex items-center gap-2">
-					<p className="text-sm font-semibold">5. Screenshot Deterrent</p>
+					<p className="text-sm font-semibold">4. Screenshot Deterrent</p>
 					{controls.block_screenshot ? (
 						<Badge variant="outline" className="text-[10px] px-2 py-0.5 border-emerald-500/50 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10">Active</Badge>
 					) : (
@@ -5360,7 +5341,7 @@ export default function BrowserAiPage() {
 			</div>
 			<div>
 				<div className="flex items-center gap-2">
-					<p className="text-sm font-semibold">6. File Storage &amp; Retention</p>
+					<p className="text-sm font-semibold">5. File Storage &amp; Retention</p>
 					<Badge variant="outline" className="text-[10px] px-2 py-0.5 border-emerald-500/50 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10">
 						Auto-Purge: {controls.attachment_retention || "1h"}
 					</Badge>
