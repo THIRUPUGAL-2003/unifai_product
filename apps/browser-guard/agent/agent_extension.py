@@ -518,6 +518,7 @@ def ingest_chrome_storage(data: dict) -> None:
                         "pattern": pat,
                         "action": str(r.get("action") or "BLOCK"),
                         "warning_message": str(r.get("warning_message") or ""),
+                        "description": str(r.get("description") or ""),
                     })
         if active_rules:
             with _rules_lock:
@@ -668,6 +669,7 @@ def dynamic_rules() -> list[dict]:
                                 "pattern": pattern,
                                 "action": str(r.get("action") or "BLOCK"),
                                 "warning_message": str(r.get("warning_message") or ""),
+                                "description": str(r.get("description") or ""),
                             })
                 global _governance_cache
                 if "block_clipboard" in data or "block_upload" in data:
@@ -1400,6 +1402,7 @@ def check_prompt(
         except Exception:
             pass
 
+        matched_rule_dict = None
         if not is_blocked:
             for r in dynamic_rules():
                 pat = str(r.get("pattern") or "")
@@ -1422,25 +1425,38 @@ def check_prompt(
                                 rule = str(r.get("name") or "Security Policy")
                                 prompt_violated = p_match
                                 violating_files = f_matches
+                                matched_rule_dict = r
                                 break
                     except Exception:
                         pass
 
     if is_blocked:
         r_name = rule or "Restricted Content"
+        if not matched_rule_dict and r_name:
+            for dr in dynamic_rules():
+                if dr.get("name") == r_name or dr.get("id") == r_name:
+                    matched_rule_dict = dr
+                    break
+        rule_reason = ""
+        if matched_rule_dict:
+            rule_reason = str(matched_rule_dict.get("warning_message") or matched_rule_dict.get("description") or "").strip()
+        reason_display = f" (Reason: {rule_reason})" if (rule_reason and rule_reason.lower() != r_name.lower()) else (f" ({rule_reason})" if rule_reason else "")
+
         if violating_files and prompt_violated:
             f_str = ", ".join(f"'{fn}'" for fn in violating_files)
-            block_message = f"Prompt and file(s) {f_str} contain restricted content ({r_name}). Request blocked by security policy."
+            block_message = f"Prompt and file(s) {f_str} contain restricted data: {r_name}{reason_display}. Request blocked by security policy. Please remove the file(s) before sending."
         elif violating_files:
             if len(violating_files) == 1:
-                block_message = f"File '{violating_files[0]}' contains restricted content ({r_name}). Upload blocked by security policy."
+                block_message = f"File '{violating_files[0]}' contains restricted data: {r_name}{reason_display}. Upload blocked by corporate DLP policy. Please remove this file before sending."
             else:
                 f_str = ", ".join(f"'{fn}'" for fn in violating_files)
-                block_message = f"Files {f_str} contain restricted content ({r_name}). Upload blocked by security policy."
+                block_message = f"Files {f_str} contain restricted data: {r_name}{reason_display}. Upload blocked by corporate DLP policy. Please remove these files before sending."
         elif prompt_violated:
-            block_message = f"Prompt contains restricted content ({r_name}). Request blocked by security policy."
+            block_message = f"Prompt contains restricted data: {r_name}{reason_display}. Request blocked by security policy."
         else:
-            block_message = f"Blocked by security policy: {r_name}."
+            block_message = f"Blocked by corporate DLP policy: {r_name}{reason_display}."
+        if rule_reason and rule_reason.lower() != r_name.lower():
+            rule = f"{r_name}: {rule_reason}"
 
     if not text and not images_list and not files_list:
         return {"blocked": False, "message": "", "rule": ""}
@@ -1514,22 +1530,28 @@ def check_prompt(
                     if p_match or f_matches:
                         act = str(r.get("action") or "BLOCK").upper()
                         r_name = str(r.get("name") or "Security Policy")
+                        r_reason = str(r.get("warning_message") or r.get("description") or "").strip()
+                        reason_display = f" (Reason: {r_reason})" if (r_reason and r_reason.lower() != r_name.lower()) else (f" ({r_reason})" if r_reason else "")
+
                         warn_msg = ""
                         if f_matches and p_match:
-                            warn_msg = f"Prompt and file(s) {', '.join(repr(x) for x in f_matches)} contain restricted content ({r_name}). Request blocked by security policy."
+                            warn_msg = f"Prompt and file(s) {', '.join(repr(x) for x in f_matches)} contain restricted data: {r_name}{reason_display}. Request blocked by security policy. Please remove the file(s) before sending."
                         elif f_matches:
                             if len(f_matches) == 1:
-                                warn_msg = f"File '{f_matches[0]}' contains restricted content ({r_name}). Upload blocked by security policy."
+                                warn_msg = f"File '{f_matches[0]}' contains restricted data: {r_name}{reason_display}. Upload blocked by corporate DLP policy. Please remove this file before sending."
                             else:
-                                warn_msg = f"Files {', '.join(repr(x) for x in f_matches)} contain restricted content ({r_name}). Upload blocked by security policy."
+                                warn_msg = f"Files {', '.join(repr(x) for x in f_matches)} contain restricted data: {r_name}{reason_display}. Upload blocked by corporate DLP policy. Please remove these files before sending."
                         elif p_match:
-                            warn_msg = f"Prompt contains restricted content ({r_name}). Request blocked by security policy."
+                            warn_msg = f"Prompt contains restricted data: {r_name}{reason_display}. Request blocked by security policy."
+
+                        rule_label = f"{r_name}: {r_reason}" if (r_reason and r_reason.lower() != r_name.lower()) else (r_reason or r_name)
+
                         if act in ("BLOCK", "BLOCKED"):
-                            return {"blocked": True, "action": "Blocked", "message": warn_msg or f"Blocked by {r_name}", "rule": r_name, "violating_files": f_matches, "redacted_prompt": ""}
+                            return {"blocked": True, "action": "Blocked", "message": warn_msg or f"Blocked by {r_name}", "rule": rule_label, "violating_files": f_matches, "redacted_prompt": ""}
                         if act in ("REDACT", "REDACTED"):
-                            return {"blocked": False, "action": "Redacted", "message": warn_msg or "Sensitive text redacted by YP-Raksha", "rule": r_name, "violating_files": f_matches, "redacted_prompt": redact_prompt_text(text, r_name)}
+                            return {"blocked": False, "action": "Redacted", "message": warn_msg or "Sensitive text redacted by YP-Raksha", "rule": rule_label, "violating_files": f_matches, "redacted_prompt": redact_prompt_text(text, r_name)}
                         if act in ("WARN", "WARNED", "ALERT"):
-                            return {"blocked": False, "action": "Warned", "message": warn_msg or "This request triggered a YP-Raksha warning", "rule": r_name, "violating_files": f_matches, "redacted_prompt": ""}
+                            return {"blocked": False, "action": "Warned", "message": warn_msg or "This request triggered a YP-Raksha warning", "rule": rule_label, "violating_files": f_matches, "redacted_prompt": ""}
                 except Exception:
                     pass
         return {"blocked": False, "passthrough": True, "action": "Allowed", "message": "", "rule": ""}

@@ -238,11 +238,15 @@
       if (!r || !r.pattern) continue;
       var rx = compileRegex(r.pattern);
       if (rx) {
+        var reason = (r.warning_message || r.description || "").trim();
         compiled.push({
           id: r.id || "",
           name: r.name || "Custom Rule",
           action: (r.action || "BLOCK").toUpperCase(),
-          msg: r.warning_message || ("Blocked by security policy: " + (r.name || "Restricted pattern")),
+          msg: reason || ("Blocked by security policy: " + (r.name || "Restricted pattern")),
+          warning_message: r.warning_message || "",
+          description: r.description || "",
+          reason: reason,
           re: rx
         });
       }
@@ -1937,24 +1941,26 @@
     // Check if any file was already detected and marked as blocked during upload staging
     var stagedBlockedFiles = [];
     var stagedBlockedReasons = [];
+    var stagedDetailMsgs = [];
     for (var f0 = 0; f0 < fileItems.length; f0++) {
       var item0 = fileItems[f0];
       if (item0 && item0.is_blocked) {
         var fn0 = item0.name || ("File " + (f0 + 1));
         var rN0 = item0.blocked_reason || "Restricted Content";
+        var rReason0 = (item0.blocked_reason_detail || "").trim();
         if (stagedBlockedFiles.indexOf(fn0) === -1) {
           stagedBlockedFiles.push(fn0);
         }
         if (stagedBlockedReasons.indexOf(rN0) === -1) {
           stagedBlockedReasons.push(rN0);
         }
+        var reasonDisp0 = (rReason0 && rReason0.toLowerCase() !== rN0.toLowerCase()) ? (" (Reason: " + rReason0 + ")") : (rReason0 ? (" (" + rReason0 + ")") : "");
+        stagedDetailMsgs.push("File '" + fn0 + "' contains restricted data: " + rN0 + reasonDisp0);
       }
     }
     if (stagedBlockedFiles.length > 0) {
       var rTitle = stagedBlockedReasons.join(", ") || "Restricted Content";
-      var stagedMsg = stagedBlockedFiles.length === 1
-        ? ("File '" + stagedBlockedFiles[0] + "' contains restricted content (" + rTitle + "). Upload blocked by corporate DLP policy. Please remove this file before sending.")
-        : ("Files '" + stagedBlockedFiles.join("', '") + "' contain restricted content (" + rTitle + "). Upload blocked by corporate DLP policy. Please remove these files before sending.");
+      var stagedMsg = stagedDetailMsgs.join("; ") + ". Upload blocked by corporate DLP policy. Please remove " + (stagedBlockedFiles.length === 1 ? "this file" : "these files") + " before sending.";
       return {
         blocked: true,
         action: "Blocked",
@@ -2005,20 +2011,24 @@
         if (pMatch || matchedFiles.length > 0) {
           var act = String(r.action || "BLOCK").toUpperCase();
           var rName = r.name || "Restricted Content";
+          var rReason = (r.reason || r.warning_message || r.description || "").trim();
+          var reasonDisp = (rReason && rReason.toLowerCase() !== rName.toLowerCase()) ? (" (Reason: " + rReason + ")") : (rReason ? (" (" + rReason + ")") : "");
 
-          // Construct precise, informative message naming offending file(s)
+          // Construct precise, informative message naming offending file(s) and the exact reason
           var blockMsg = "";
           if (matchedFiles.length > 0 && pMatch) {
-            blockMsg = "Prompt and file(s) '" + matchedFiles.join("', '") + "' contain restricted content (" + rName + "). Request blocked by security policy.";
+            blockMsg = "Prompt and file(s) '" + matchedFiles.join("', '") + "' contain restricted data: " + rName + reasonDisp + ". Request blocked by security policy.";
           } else if (matchedFiles.length > 0) {
             if (matchedFiles.length === 1) {
-              blockMsg = "File '" + matchedFiles[0] + "' contains restricted content (" + rName + "). Upload blocked by security policy.";
+              blockMsg = "File '" + matchedFiles[0] + "' contains restricted data: " + rName + reasonDisp + ". Upload blocked by corporate DLP policy.";
             } else {
-              blockMsg = "Files '" + matchedFiles.join("', '") + "' contain restricted content (" + rName + "). Upload blocked by security policy.";
+              blockMsg = "Files '" + matchedFiles.join("', '") + "' contain restricted data: " + rName + reasonDisp + ". Upload blocked by corporate DLP policy.";
             }
           } else {
-            blockMsg = "Prompt contains restricted content (" + rName + "). Request blocked by security policy.";
+            blockMsg = "Prompt contains restricted data: " + rName + reasonDisp + ". Request blocked by security policy.";
           }
+
+          var ruleLabel = (rReason && rReason.toLowerCase() !== rName.toLowerCase()) ? (rName + ": " + rReason) : (rReason || rName);
 
           if (act === "BLOCK" || act === "BLOCKED") {
             for (var mIdx = 0; mIdx < matchedFiles.length; mIdx++) {
@@ -2027,14 +2037,17 @@
               if (stagedObj) {
                 stagedObj.is_blocked = true;
                 stagedObj.blocked_reason = rName;
+                stagedObj.blocked_reason_detail = rReason;
                 stagedObj.blocked_message = blockMsg;
               }
             }
             return {
               blocked: true,
               action: "Blocked",
-              message: blockMsg + " Please remove this file before sending.",
-              rule: rName,
+              message: blockMsg + " Please remove " + (matchedFiles.length > 1 ? "these files" : "this file") + " before sending.",
+              rule: ruleLabel,
+              rule_name: rName,
+              rule_reason: rReason,
               violating_files: matchedFiles,
               matchedRule: r
             };
@@ -2047,7 +2060,9 @@
                 blocked: false,
                 action: "Warned",
                 message: blockMsg.replace("blocked by", "warned by").replace("Upload blocked", "Upload warning"),
-                rule: rName,
+                rule: ruleLabel,
+                rule_name: rName,
+                rule_reason: rReason,
                 violating_files: matchedFiles,
                 matchedRule: r
               };
@@ -2559,7 +2574,13 @@
 
   function resolveAlertTitle(ruleName, text, isWarn, isRedact) {
     var r = (ruleName || "").trim().replace(/^\[?custom\]?\s*[:\-–—]?\s*/i, "");
-    if (r && !/^yp-raksha\s*blocked$/i.test(r)) return r;
+    if (r && !/^yp-raksha\s*blocked$/i.test(r)) {
+      if (r.indexOf(":") !== -1) {
+        var clean = r.split(":")[0].trim();
+        if (clean) return clean;
+      }
+      return r;
+    }
     var lower = (text || "").toLowerCase();
     if (lower.indexOf("drag") !== -1 || lower.indexOf("drop") !== -1) {
       return "Drag & Drop Restricted";
@@ -2897,10 +2918,11 @@
               type: type,
               text: fContent,
               is_blocked: true,
-              blocked_reason: fileDecision.rule,
+              blocked_reason: fileDecision.rule_name || fileDecision.rule,
+              blocked_reason_detail: fileDecision.rule_reason || "",
               blocked_message: fileDecision.message
             });
-            showBubble(fileDecision.message, fileDecision.rule, "block");
+            showBubble(fileDecision.message, fileDecision.rule_name || fileDecision.rule, "block");
             return;
           }
         }
@@ -2936,10 +2958,11 @@
                 base64: b64,
                 text: extractedStr,
                 is_blocked: true,
-                blocked_reason: fileDecision.rule,
+                blocked_reason: fileDecision.rule_name || fileDecision.rule,
+                blocked_reason_detail: fileDecision.rule_reason || "",
                 blocked_message: fileDecision.message
               });
-              showBubble(fileDecision.message, fileDecision.rule, "block");
+              showBubble(fileDecision.message, fileDecision.rule_name || fileDecision.rule, "block");
               return;
             }
           }
@@ -2969,10 +2992,11 @@
                 base64: b64,
                 text: extractedStr,
                 is_blocked: true,
-                blocked_reason: fileDecision.rule,
+                blocked_reason: fileDecision.rule_name || fileDecision.rule,
+                blocked_reason_detail: fileDecision.rule_reason || "",
                 blocked_message: fileDecision.message
               });
-              showBubble(fileDecision.message, fileDecision.rule, "block");
+              showBubble(fileDecision.message, fileDecision.rule_name || fileDecision.rule, "block");
               return;
             }
           }

@@ -33,6 +33,7 @@ func (h *BrowserAIHandler) getRules(ctx *fasthttp.RequestCtx) {
 			row := map[string]any{
 				"id":              r.ID,
 				"name":            r.Name,
+				"description":     r.Description,
 				"rule_type":       r.RuleType,
 				"pattern":         r.Pattern,
 				"action":          r.Action,
