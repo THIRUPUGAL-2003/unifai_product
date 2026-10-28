@@ -77,7 +77,14 @@ export default function SecurityView() {
 		use_tls: true,
 		notify_on_login: false,
 		notify_on_user_create: true,
+		email_provider: "smtp" as "smtp" | "outlook",
+		outlook_enabled: false,
+		outlook_client_id: "",
+		outlook_client_secret: "",
+		outlook_tenant_id: "",
+		outlook_email: "",
 	});
+	const [testEmailRecipient, setTestEmailRecipient] = useState("");
 
 	const [localValues, setLocalValues] = useState<{
 		allowed_origins: string;
@@ -127,35 +134,70 @@ export default function SecurityView() {
 			use_tls: smtpData.use_tls,
 			notify_on_login: smtpData.notify_on_login,
 			notify_on_user_create: smtpData.notify_on_user_create,
+			email_provider: (smtpData.email_provider as "smtp" | "outlook") || (smtpData.outlook_enabled ? "outlook" : "smtp"),
+			outlook_enabled: !!smtpData.outlook_enabled,
+			outlook_client_id: smtpData.outlook_client_id || "",
+			outlook_client_secret: "",
+			outlook_tenant_id: smtpData.outlook_tenant_id || "",
+			outlook_email: smtpData.outlook_email || "",
 		});
+		setTestEmailRecipient((prev) => prev || smtpData.outlook_email || smtpData.from_email || smtpData.username || "");
 	}, [smtpData]);
 
 	const handleSaveSMTP = async () => {
-		if (smtpForm.enabled && !smtpForm.host.trim()) {
-			toast.error("SMTP host is required");
-			return;
+		if (smtpForm.enabled) {
+			if (!smtpForm.host.trim()) {
+				toast.error("SMTP host is required");
+				return;
+			}
+			if (!smtpForm.password && !smtpData?.password) {
+				toast.error("SMTP password is required (Gmail: use an App Password)");
+				return;
+			}
+			if (
+				smtpForm.host.includes("gmail.com") &&
+				smtpForm.from_email &&
+				smtpForm.username &&
+				smtpForm.from_email.trim().toLowerCase() !== smtpForm.username.trim().toLowerCase()
+			) {
+				toast.message("Gmail tip: From email should usually match SMTP username, or send may fail.");
+			}
 		}
-		if (smtpForm.enabled && !smtpForm.password && !smtpData?.password) {
-			toast.error("SMTP password is required (Gmail: use an App Password)");
-			return;
+
+		if (smtpForm.outlook_enabled) {
+			if (!smtpForm.outlook_client_id.trim()) {
+				toast.error("Outlook Client ID is required");
+				return;
+			}
+			if (!smtpForm.outlook_tenant_id.trim()) {
+				toast.error("Outlook Tenant ID is required");
+				return;
+			}
+			if (!smtpForm.outlook_email.trim()) {
+				toast.error("Outlook From email is required");
+				return;
+			}
+			if (!smtpForm.outlook_client_secret && !smtpData?.outlook_client_secret) {
+				toast.error("Outlook Client Secret (secret ID) is required");
+				return;
+			}
 		}
-		if (
-			smtpForm.enabled &&
-			smtpForm.host.includes("gmail.com") &&
-			smtpForm.from_email &&
-			smtpForm.username &&
-			smtpForm.from_email.trim().toLowerCase() !== smtpForm.username.trim().toLowerCase()
-		) {
-			toast.message("Gmail tip: From email should usually match SMTP username, or send may fail.");
-		}
+
 		try {
 			await updateSMTP({
 				...smtpForm,
 				password: smtpForm.password || "<redacted>",
+				outlook_client_secret: smtpForm.outlook_client_secret || "<redacted>",
 			}).unwrap();
-			toast.success("SMTP settings saved");
+			toast.success(
+				smtpForm.outlook_enabled
+					? "Microsoft Outlook settings saved"
+					: smtpForm.enabled
+					? "SMTP settings saved"
+					: "Email settings saved"
+			);
 		} catch (error) {
-			toast.error(getErrorMessage(error) || "Failed to save SMTP settings.");
+			toast.error(getErrorMessage(error) || "Failed to save email settings.");
 		}
 	};
 
@@ -320,129 +362,266 @@ export default function SecurityView() {
 			) : null}
 
 			<div className="space-y-4">
+				{/* Email Delivery Services: SMTP & Microsoft Outlook (Office 365) */}
 				<div className="space-y-4 rounded-sm border p-4">
-					<div className="flex items-center justify-between gap-4">
-						<div>
-							<h3 className="text-sm font-medium">Email / SMTP</h3>
-							<p className="text-muted-foreground text-sm">
-								Used for welcome emails, login notices, and password-reset OTP. Passwords are stored encrypted in Postgres.
-							</p>
-						</div>
-						<Switch
-							checked={smtpForm.enabled}
-							onCheckedChange={(enabled) => setSmtpForm((f) => ({ ...f, enabled }))}
-							disabled={!hasSettingsUpdateAccess}
-						/>
+					<div>
+						<h3 className="text-sm font-medium">Email Delivery Service</h3>
+						<p className="text-muted-foreground text-sm">
+							Used for welcome emails, login security notices, and password-reset OTP. Choose between standard SMTP or Microsoft Outlook (OAuth2 / Graph API).
+						</p>
 					</div>
-					<div className="grid gap-3 sm:grid-cols-2">
-						<div className="space-y-2">
-							<Label>SMTP host</Label>
-							<Input
-								placeholder="smtp.gmail.com"
-								value={smtpForm.host}
-								onChange={(e) => setSmtpForm((f) => ({ ...f, host: e.target.value }))}
-								disabled={!smtpForm.enabled || !hasSettingsUpdateAccess}
+
+					{/* Option 1: Standard SMTP */}
+					<div
+						className={`space-y-3 rounded-sm border p-3.5 transition-all ${
+							smtpForm.enabled ? "border-primary/50 bg-accent/20 shadow-xs" : "bg-muted/10 opacity-75"
+						}`}
+					>
+						<div className="flex items-center justify-between gap-4">
+							<div className="space-y-0.5">
+								<div className="flex items-center gap-2">
+									<span className="text-sm font-semibold">Option 1: Standard SMTP</span>
+									<Badge variant={smtpForm.enabled ? "default" : "secondary"} className="text-xs">
+										{smtpForm.enabled ? "ACTIVE" : "INACTIVE"}
+									</Badge>
+								</div>
+								<p className="text-muted-foreground text-xs">
+									Send via Gmail, SendGrid, Amazon SES, or custom SMTP server.
+								</p>
+							</div>
+							<Switch
+								checked={smtpForm.enabled}
+								onCheckedChange={(checked) => {
+									setSmtpForm((f) => ({
+										...f,
+										enabled: checked,
+										outlook_enabled: checked ? false : f.outlook_enabled,
+										email_provider: checked ? "smtp" : (f.outlook_enabled ? "outlook" : "smtp"),
+									}));
+								}}
+								disabled={!hasSettingsUpdateAccess}
 							/>
 						</div>
-						<div className="space-y-2">
-							<Label>Port</Label>
-							<Input
-								type="number"
-								value={smtpForm.port}
-								onChange={(e) => setSmtpForm((f) => ({ ...f, port: Number(e.target.value) || 587 }))}
-								disabled={!smtpForm.enabled || !hasSettingsUpdateAccess}
-							/>
+
+						<div className="grid gap-3 pt-1 sm:grid-cols-2">
+							<div className="space-y-2">
+								<Label>SMTP host</Label>
+								<Input
+									placeholder="smtp.gmail.com"
+									value={smtpForm.host}
+									onChange={(e) => setSmtpForm((f) => ({ ...f, host: e.target.value }))}
+									disabled={!smtpForm.enabled || !hasSettingsUpdateAccess}
+								/>
+							</div>
+							<div className="space-y-2">
+								<Label>Port</Label>
+								<Input
+									type="number"
+									value={smtpForm.port}
+									onChange={(e) => setSmtpForm((f) => ({ ...f, port: Number(e.target.value) || 587 }))}
+									disabled={!smtpForm.enabled || !hasSettingsUpdateAccess}
+								/>
+							</div>
+							<div className="space-y-2">
+								<Label>SMTP username / mail ID</Label>
+								<Input
+									placeholder="you@company.com"
+									value={smtpForm.username}
+									onChange={(e) => setSmtpForm((f) => ({ ...f, username: e.target.value }))}
+									disabled={!smtpForm.enabled || !hasSettingsUpdateAccess}
+								/>
+							</div>
+							<div className="space-y-2">
+								<Label>SMTP password</Label>
+								<Input
+									type="password"
+									placeholder={smtpData?.password ? "•••••••• (leave blank to keep)" : "App password"}
+									value={smtpForm.password}
+									onChange={(e) => setSmtpForm((f) => ({ ...f, password: e.target.value }))}
+									disabled={!smtpForm.enabled || !hasSettingsUpdateAccess}
+								/>
+							</div>
+							<div className="space-y-2">
+								<Label>From email</Label>
+								<Input
+									placeholder="noreply@company.com"
+									value={smtpForm.from_email}
+									onChange={(e) => setSmtpForm((f) => ({ ...f, from_email: e.target.value }))}
+									disabled={!smtpForm.enabled || !hasSettingsUpdateAccess}
+								/>
+							</div>
+							<div className="space-y-2">
+								<Label>From name</Label>
+								<Input
+									value={smtpForm.from_name}
+									onChange={(e) => setSmtpForm((f) => ({ ...f, from_name: e.target.value }))}
+									disabled={!smtpForm.enabled || !hasSettingsUpdateAccess}
+								/>
+							</div>
 						</div>
-						<div className="space-y-2">
-							<Label>SMTP username / mail ID</Label>
-							<Input
-								placeholder="you@company.com"
-								value={smtpForm.username}
-								onChange={(e) => setSmtpForm((f) => ({ ...f, username: e.target.value }))}
-								disabled={!smtpForm.enabled || !hasSettingsUpdateAccess}
-							/>
-						</div>
-						<div className="space-y-2">
-							<Label>SMTP password</Label>
-							<Input
-								type="password"
-								placeholder={smtpData?.password ? "•••••••• (leave blank to keep)" : "App password"}
-								value={smtpForm.password}
-								onChange={(e) => setSmtpForm((f) => ({ ...f, password: e.target.value }))}
-								disabled={!smtpForm.enabled || !hasSettingsUpdateAccess}
-							/>
-						</div>
-						<div className="space-y-2">
-							<Label>From email</Label>
-							<Input
-								placeholder="noreply@company.com"
-								value={smtpForm.from_email}
-								onChange={(e) => setSmtpForm((f) => ({ ...f, from_email: e.target.value }))}
-								disabled={!smtpForm.enabled || !hasSettingsUpdateAccess}
-							/>
-						</div>
-						<div className="space-y-2">
-							<Label>From name</Label>
-							<Input
-								value={smtpForm.from_name}
-								onChange={(e) => setSmtpForm((f) => ({ ...f, from_name: e.target.value }))}
-								disabled={!smtpForm.enabled || !hasSettingsUpdateAccess}
-							/>
-						</div>
-					</div>
-					<div className="flex flex-wrap items-center gap-4">
-						<div className="flex items-center gap-2">
+
+						<div className="flex items-center gap-2 pt-1">
 							<Switch
 								checked={smtpForm.use_tls}
 								onCheckedChange={(use_tls) => setSmtpForm((f) => ({ ...f, use_tls }))}
 								disabled={!smtpForm.enabled || !hasSettingsUpdateAccess}
 							/>
-							<Label>Use TLS / STARTTLS</Label>
+							<Label className="text-xs">Use TLS / STARTTLS</Label>
 						</div>
+					</div>
+
+					{/* Option 2: Microsoft Outlook / Office 365 (Microsoft Graph API) */}
+					<div
+						className={`space-y-3 rounded-sm border p-3.5 transition-all ${
+							smtpForm.outlook_enabled ? "border-primary/50 bg-accent/20 shadow-xs" : "bg-muted/10 opacity-75"
+						}`}
+					>
+						<div className="flex items-center justify-between gap-4">
+							<div className="space-y-0.5">
+								<div className="flex items-center gap-2">
+									<span className="text-sm font-semibold">Option 2: Microsoft Outlook / Office 365</span>
+									<Badge variant={smtpForm.outlook_enabled ? "default" : "secondary"} className="text-xs">
+										{smtpForm.outlook_enabled ? "ACTIVE" : "INACTIVE"}
+									</Badge>
+									<Badge variant="outline" className="text-[10px]">
+										GRAPH API OAUTH2
+									</Badge>
+								</div>
+								<p className="text-muted-foreground text-xs">
+									Azure AD OAuth2 Client Credentials flow via Microsoft Graph API. No SMTP relay needed.
+								</p>
+							</div>
+							<Switch
+								checked={smtpForm.outlook_enabled}
+								onCheckedChange={(checked) => {
+									setSmtpForm((f) => ({
+										...f,
+										outlook_enabled: checked,
+										enabled: checked ? false : f.enabled,
+										email_provider: checked ? "outlook" : (f.enabled ? "smtp" : "outlook"),
+									}));
+								}}
+								disabled={!hasSettingsUpdateAccess}
+							/>
+						</div>
+
+						<div className="grid gap-3 pt-1 sm:grid-cols-2">
+							<div className="space-y-2">
+								<Label>Outlook Client ID (Application ID)</Label>
+								<Input
+									placeholder="e.g. 00000000-0000-0000-0000-000000000000"
+									value={smtpForm.outlook_client_id}
+									onChange={(e) => setSmtpForm((f) => ({ ...f, outlook_client_id: e.target.value }))}
+									disabled={!smtpForm.outlook_enabled || !hasSettingsUpdateAccess}
+								/>
+							</div>
+							<div className="space-y-2">
+								<Label>Client Secret (Secret ID / Key Value)</Label>
+								<Input
+									type="password"
+									placeholder={smtpData?.outlook_client_secret ? "•••••••• (leave blank to keep)" : "Azure Client Secret value"}
+									value={smtpForm.outlook_client_secret}
+									onChange={(e) => setSmtpForm((f) => ({ ...f, outlook_client_secret: e.target.value }))}
+									disabled={!smtpForm.outlook_enabled || !hasSettingsUpdateAccess}
+								/>
+							</div>
+							<div className="space-y-2">
+								<Label>Outlook Tenant ID (Directory ID)</Label>
+								<Input
+									placeholder="e.g. 00000000-0000-0000-0000-000000000000 or domain"
+									value={smtpForm.outlook_tenant_id}
+									onChange={(e) => setSmtpForm((f) => ({ ...f, outlook_tenant_id: e.target.value }))}
+									disabled={!smtpForm.outlook_enabled || !hasSettingsUpdateAccess}
+								/>
+							</div>
+							<div className="space-y-2">
+								<Label>From email</Label>
+								<Input
+									placeholder="noreply@company.com or your Microsoft 365 email"
+									value={smtpForm.outlook_email}
+									onChange={(e) => setSmtpForm((f) => ({ ...f, outlook_email: e.target.value }))}
+									disabled={!smtpForm.outlook_enabled || !hasSettingsUpdateAccess}
+								/>
+							</div>
+						</div>
+					</div>
+
+					{/* Shared Notification Preferences */}
+					<div className="flex flex-wrap items-center gap-4 pt-1">
 						<div className="flex items-center gap-2">
 							<Switch
 								checked={smtpForm.notify_on_user_create}
 								onCheckedChange={(notify_on_user_create) => setSmtpForm((f) => ({ ...f, notify_on_user_create }))}
-								disabled={!smtpForm.enabled || !hasSettingsUpdateAccess}
+								disabled={(!smtpForm.enabled && !smtpForm.outlook_enabled) || !hasSettingsUpdateAccess}
 							/>
-							<Label>Email on user create</Label>
+							<Label className="text-xs">Email on user create</Label>
 						</div>
 						<div className="flex items-center gap-2">
 							<Switch
 								checked={smtpForm.notify_on_login}
 								onCheckedChange={(notify_on_login) => setSmtpForm((f) => ({ ...f, notify_on_login }))}
-								disabled={!smtpForm.enabled || !hasSettingsUpdateAccess}
+								disabled={(!smtpForm.enabled && !smtpForm.outlook_enabled) || !hasSettingsUpdateAccess}
 							/>
-							<Label>Email on first login / new device</Label>
+							<Label className="text-xs">Email on first login / new device</Label>
 						</div>
 					</div>
+
 					<p className="text-muted-foreground text-xs">
 						Login security: after 3 wrong passwords the account locks for 20 minutes; resetting the password via the emailed code
-						unlocks it immediately.
-						Reset password uses a 6-digit email OTP (15 min) and cannot reuse the current password. Login emails only on first
+						unlocks it immediately. Reset password uses a 6-digit email OTP (15 min) and cannot reuse the current password. Login emails only on first
 						sign-in or a new device/browser.
 					</p>
-					<div className="flex justify-end gap-2">
-						<Button
-							type="button"
-							variant="outline"
-							disabled={!hasSettingsUpdateAccess || isTestingSMTP || !smtpForm.enabled}
-							onClick={() => {
-								void (async () => {
-									try {
-										const res = await testSMTP({ to: smtpForm.from_email || smtpForm.username }).unwrap();
-										toast.success(`Test email sent to ${res.to || "inbox"}`);
-									} catch (error) {
-										toast.error(getErrorMessage(error) || "Failed to send test email.");
-									}
-								})();
-							}}
-						>
-							{isTestingSMTP ? "Testing..." : "Send test email"}
-						</Button>
-						<Button type="button" disabled={!hasSettingsUpdateAccess || isSavingSMTP} onClick={() => void handleSaveSMTP()}>
-							{isSavingSMTP ? "Saving..." : "Save SMTP"}
-						</Button>
+
+					<div className="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between">
+						<div className="flex items-center gap-2 max-w-sm flex-1">
+							<Label className="text-xs text-muted-foreground whitespace-nowrap">Send test to:</Label>
+							<Input
+								type="email"
+								placeholder="recipient@example.com"
+								value={testEmailRecipient}
+								onChange={(e) => setTestEmailRecipient(e.target.value)}
+								className="h-8 text-xs"
+								disabled={(!smtpForm.enabled && !smtpForm.outlook_enabled) || isTestingSMTP || !hasSettingsUpdateAccess}
+							/>
+						</div>
+						<div className="flex items-center justify-end gap-2">
+							<Button
+								type="button"
+								variant="outline"
+								disabled={!hasSettingsUpdateAccess || isTestingSMTP || (!smtpForm.enabled && !smtpForm.outlook_enabled)}
+								onClick={() => {
+									void (async () => {
+										try {
+											const fallbackEmail = smtpForm.outlook_enabled
+												? smtpForm.outlook_email || smtpForm.from_email || smtpForm.username
+												: smtpForm.from_email || smtpForm.username;
+											const targetEmail = testEmailRecipient.trim() || fallbackEmail;
+											if (!targetEmail) {
+												toast.error("Please enter a recipient email address for the test email.");
+												return;
+											}
+											const res = await testSMTP({ to: targetEmail }).unwrap();
+											toast.success(
+												`Test email sent via ${res.provider || (smtpForm.outlook_enabled ? "Outlook" : "SMTP")} to ${res.to || targetEmail}`
+											);
+										} catch (error) {
+											toast.error(getErrorMessage(error) || "Failed to send test email.");
+										}
+									})();
+								}}
+							>
+								{isTestingSMTP ? "Testing..." : smtpForm.outlook_enabled ? "Send test email (Outlook)" : "Send test email (SMTP)"}
+							</Button>
+							<Button type="button" disabled={!hasSettingsUpdateAccess || isSavingSMTP} onClick={() => void handleSaveSMTP()}>
+								{isSavingSMTP
+									? "Saving..."
+									: smtpForm.outlook_enabled
+									? "Save Outlook"
+									: smtpForm.enabled
+									? "Save SMTP"
+									: "Save Email Settings"}
+							</Button>
+						</div>
 					</div>
 				</div>
 

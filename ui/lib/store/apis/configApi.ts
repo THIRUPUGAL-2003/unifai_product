@@ -93,6 +93,12 @@ export const configApi = baseApi.injectEndpoints({
 				use_tls: boolean;
 				notify_on_login: boolean;
 				notify_on_user_create: boolean;
+				email_provider?: string;
+				outlook_enabled?: boolean;
+				outlook_client_id?: string;
+				outlook_client_secret?: string;
+				outlook_tenant_id?: string;
+				outlook_email?: string;
 			},
 			void
 		>({
@@ -101,7 +107,7 @@ export const configApi = baseApi.injectEndpoints({
 		}),
 
 		updateSMTPConfig: builder.mutation<
-			{ status: string },
+			{ status: string; provider?: string },
 			{
 				enabled: boolean;
 				host: string;
@@ -113,6 +119,12 @@ export const configApi = baseApi.injectEndpoints({
 				use_tls: boolean;
 				notify_on_login: boolean;
 				notify_on_user_create: boolean;
+				email_provider?: string;
+				outlook_enabled?: boolean;
+				outlook_client_id?: string;
+				outlook_client_secret?: string;
+				outlook_tenant_id?: string;
+				outlook_email?: string;
 			}
 		>({
 			query: (data) => ({
@@ -123,7 +135,7 @@ export const configApi = baseApi.injectEndpoints({
 			invalidatesTags: ["Config"],
 		}),
 
-		testSMTPConfig: builder.mutation<{ status: string; to?: string }, { to?: string }>({
+		testSMTPConfig: builder.mutation<{ status: string; to?: string; provider?: string }, { to?: string }>({
 			query: (data) => ({
 				url: "/smtp-config/test",
 				method: "POST",

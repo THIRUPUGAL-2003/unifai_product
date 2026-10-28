@@ -17,13 +17,19 @@ type TableSMTPConfig struct {
 	Username         string    `gorm:"type:varchar(255)" json:"username"`
 	Password         string    `gorm:"type:text" json:"password"`
 	FromEmail        string    `gorm:"type:varchar(255)" json:"from_email"`
-	FromName         string    `gorm:"type:varchar(255)" json:"from_name"`
-	UseTLS           bool      `json:"use_tls"`
-	NotifyOnLogin    bool      `json:"notify_on_login"`
-	NotifyOnUserCreate bool   `json:"notify_on_user_create"`
-	EncryptionStatus string    `gorm:"type:varchar(20);default:'plain_text'" json:"-"`
-	CreatedAt        time.Time `json:"created_at"`
-	UpdatedAt        time.Time `json:"updated_at"`
+	FromName           string    `gorm:"type:varchar(255)" json:"from_name"`
+	UseTLS             bool      `json:"use_tls"`
+	NotifyOnLogin      bool      `json:"notify_on_login"`
+	NotifyOnUserCreate bool      `json:"notify_on_user_create"`
+	EmailProvider      string    `gorm:"type:varchar(50);default:'smtp'" json:"email_provider"`
+	OutlookEnabled     bool      `json:"outlook_enabled"`
+	OutlookClientID    string    `gorm:"type:varchar(255)" json:"outlook_client_id"`
+	OutlookClientSecret string   `gorm:"type:text" json:"outlook_client_secret"`
+	OutlookTenantID    string    `gorm:"type:varchar(255)" json:"outlook_tenant_id"`
+	OutlookEmail       string    `gorm:"type:varchar(255)" json:"outlook_email"`
+	EncryptionStatus   string    `gorm:"type:varchar(20);default:'plain_text'" json:"-"`
+	CreatedAt          time.Time `json:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
 }
 
 func (TableSMTPConfig) TableName() string { return "config_smtp" }
@@ -33,9 +39,7 @@ func (s *TableSMTPConfig) BeforeSave(tx *gorm.DB) error {
 	if restored, ok := restoreKeptCiphertext(s.TableName(), smtpRowKey(s.ID), "password", s.Password, s.Password == ""); ok {
 		s.Password = restored
 		s.EncryptionStatus = EncryptionStatusEncrypted
-		return nil
-	}
-	if encrypt.IsEnabled() && s.Password != "" {
+	} else if encrypt.IsEnabled() && s.Password != "" {
 		enc, err := encryptOrKeep(s.Password)
 		if err != nil {
 			return fmt.Errorf("encrypt smtp password: %w", err)
@@ -43,16 +47,35 @@ func (s *TableSMTPConfig) BeforeSave(tx *gorm.DB) error {
 		s.Password = enc
 		s.EncryptionStatus = EncryptionStatusEncrypted
 	}
+
+	if restoredSecret, ok := restoreKeptCiphertext(s.TableName(), smtpRowKey(s.ID), "outlook_client_secret", s.OutlookClientSecret, s.OutlookClientSecret == ""); ok {
+		s.OutlookClientSecret = restoredSecret
+		s.EncryptionStatus = EncryptionStatusEncrypted
+	} else if encrypt.IsEnabled() && s.OutlookClientSecret != "" {
+		encSecret, err := encryptOrKeep(s.OutlookClientSecret)
+		if err == nil {
+			s.OutlookClientSecret = encSecret
+			s.EncryptionStatus = EncryptionStatusEncrypted
+		}
+	}
 	return nil
 }
 
 func (s *TableSMTPConfig) AfterFind(tx *gorm.DB) error {
-	if s.EncryptionStatus == EncryptionStatusEncrypted && s.Password != "" {
-		// Undecryptable password stays as stored ciphertext so a later save keeps it.
-		if dec, ok := decryptRowBlob(s.TableName(), smtpRowKey(s.ID), "password", s.Password); ok {
-			s.Password = dec
-		} else {
-			undecryptable.Store(s.Password, struct{}{})
+	if s.EncryptionStatus == EncryptionStatusEncrypted {
+		if s.Password != "" {
+			if dec, ok := decryptRowBlob(s.TableName(), smtpRowKey(s.ID), "password", s.Password); ok {
+				s.Password = dec
+			} else {
+				undecryptable.Store(s.Password, struct{}{})
+			}
+		}
+		if s.OutlookClientSecret != "" {
+			if dec, ok := decryptRowBlob(s.TableName(), smtpRowKey(s.ID), "outlook_client_secret", s.OutlookClientSecret); ok {
+				s.OutlookClientSecret = dec
+			} else {
+				undecryptable.Store(s.OutlookClientSecret, struct{}{})
+			}
 		}
 	}
 	return nil

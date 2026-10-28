@@ -46,16 +46,22 @@ func (h *SMTPHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.Ga
 }
 
 type smtpConfigPayload struct {
-	Enabled            bool   `json:"enabled"`
-	Host               string `json:"host"`
-	Port               int    `json:"port"`
-	Username           string `json:"username"`
-	Password           string `json:"password"`
-	FromEmail          string `json:"from_email"`
-	FromName           string `json:"from_name"`
-	UseTLS             bool   `json:"use_tls"`
-	NotifyOnLogin      bool   `json:"notify_on_login"`
-	NotifyOnUserCreate bool   `json:"notify_on_user_create"`
+	Enabled             bool   `json:"enabled"`
+	Host                string `json:"host"`
+	Port                int    `json:"port"`
+	Username            string `json:"username"`
+	Password            string `json:"password"`
+	FromEmail           string `json:"from_email"`
+	FromName            string `json:"from_name"`
+	UseTLS              bool   `json:"use_tls"`
+	NotifyOnLogin       bool   `json:"notify_on_login"`
+	NotifyOnUserCreate  bool   `json:"notify_on_user_create"`
+	EmailProvider       string `json:"email_provider"` // "smtp" or "outlook"
+	OutlookEnabled      bool   `json:"outlook_enabled"`
+	OutlookClientID     string `json:"outlook_client_id"`
+	OutlookClientSecret string `json:"outlook_client_secret"`
+	OutlookTenantID     string `json:"outlook_tenant_id"`
+	OutlookEmail        string `json:"outlook_email"`
 }
 
 func (h *SMTPHandler) requireStore(ctx *fasthttp.RequestCtx) configstore.ConfigStore {
@@ -76,21 +82,74 @@ func (h *SMTPHandler) getSMTPConfig(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusInternalServerError, err.Error())
 		return
 	}
+	envClientID := strings.TrimSpace(os.Getenv("OUTLOOK_CLIENT_ID"))
+	envTenantID := strings.TrimSpace(os.Getenv("OUTLOOK_TENANT_ID"))
+	envEmail := strings.TrimSpace(os.Getenv("OUTLOOK_EMAIL"))
+	envSecret := strings.TrimSpace(os.Getenv("OUTLOOK_CLIENT_SECRET"))
+	if envSecret == "" {
+		envSecret = strings.TrimSpace(os.Getenv("OUTLOOK_SECRET_ID"))
+	}
+
 	if row == nil {
-		SendJSON(ctx, smtpConfigPayload{Port: 587, UseTLS: true, NotifyOnUserCreate: true})
+		secretPlaceholder := ""
+		if envSecret != "" {
+			secretPlaceholder = "<redacted>"
+		}
+		SendJSON(ctx, smtpConfigPayload{
+			Port:                587,
+			UseTLS:              true,
+			NotifyOnUserCreate:  true,
+			EmailProvider:       "smtp",
+			OutlookClientID:     envClientID,
+			OutlookClientSecret: secretPlaceholder,
+			OutlookTenantID:     envTenantID,
+			OutlookEmail:        envEmail,
+		})
 		return
 	}
+
+	clientID := row.OutlookClientID
+	if clientID == "" {
+		clientID = envClientID
+	}
+	tenantID := row.OutlookTenantID
+	if tenantID == "" {
+		tenantID = envTenantID
+	}
+	outlookEmail := row.OutlookEmail
+	if outlookEmail == "" {
+		outlookEmail = envEmail
+	}
+	secretPlaceholder := ""
+	if row.OutlookClientSecret != "" || envSecret != "" {
+		secretPlaceholder = "<redacted>"
+	}
+	provider := row.EmailProvider
+	if provider == "" {
+		if row.OutlookEnabled {
+			provider = "outlook"
+		} else {
+			provider = "smtp"
+		}
+	}
+
 	SendJSON(ctx, smtpConfigPayload{
-		Enabled:            row.Enabled,
-		Host:               row.Host,
-		Port:               row.Port,
-		Username:           row.Username,
-		Password:           "<redacted>",
-		FromEmail:          row.FromEmail,
-		FromName:           row.FromName,
-		UseTLS:             row.UseTLS,
-		NotifyOnLogin:      row.NotifyOnLogin,
-		NotifyOnUserCreate: row.NotifyOnUserCreate,
+		Enabled:             row.Enabled,
+		Host:                row.Host,
+		Port:                row.Port,
+		Username:            row.Username,
+		Password:            "<redacted>",
+		FromEmail:           row.FromEmail,
+		FromName:            row.FromName,
+		UseTLS:              row.UseTLS,
+		NotifyOnLogin:       row.NotifyOnLogin,
+		NotifyOnUserCreate:  row.NotifyOnUserCreate,
+		EmailProvider:       provider,
+		OutlookEnabled:      row.OutlookEnabled,
+		OutlookClientID:     clientID,
+		OutlookClientSecret: secretPlaceholder,
+		OutlookTenantID:     tenantID,
+		OutlookEmail:        outlookEmail,
 	})
 }
 
@@ -104,7 +163,71 @@ func (h *SMTPHandler) updateSMTPConfig(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusBadRequest, "invalid payload")
 		return
 	}
-	if payload.Enabled {
+
+	// Mutual exclusivity: enabling one disables the other
+	if payload.OutlookEnabled {
+		payload.Enabled = false
+		payload.EmailProvider = "outlook"
+	} else if payload.Enabled {
+		payload.OutlookEnabled = false
+		payload.EmailProvider = "smtp"
+	} else if payload.EmailProvider == "outlook" {
+		payload.OutlookEnabled = true
+		payload.Enabled = false
+	} else if payload.EmailProvider == "smtp" {
+		payload.Enabled = true
+		payload.OutlookEnabled = false
+	}
+
+	existing, err := store.GetSMTPConfig(ctx)
+	if err != nil {
+		SendError(ctx, fasthttp.StatusInternalServerError, err.Error())
+		return
+	}
+
+	envSecret := strings.TrimSpace(os.Getenv("OUTLOOK_CLIENT_SECRET"))
+	if envSecret == "" {
+		envSecret = strings.TrimSpace(os.Getenv("OUTLOOK_SECRET_ID"))
+	}
+	outlookSecret := payload.OutlookClientSecret
+	if outlookSecret == "" || strings.EqualFold(outlookSecret, "<redacted>") || strings.Contains(outlookSecret, "*") {
+		if existing != nil && existing.OutlookClientSecret != "" {
+			outlookSecret = existing.OutlookClientSecret
+		} else {
+			outlookSecret = envSecret
+		}
+	}
+
+	if payload.OutlookEnabled {
+		cid := strings.TrimSpace(payload.OutlookClientID)
+		if cid == "" {
+			cid = strings.TrimSpace(os.Getenv("OUTLOOK_CLIENT_ID"))
+		}
+		if cid == "" {
+			SendError(ctx, fasthttp.StatusBadRequest, "Outlook Client ID is required")
+			return
+		}
+		tid := strings.TrimSpace(payload.OutlookTenantID)
+		if tid == "" {
+			tid = strings.TrimSpace(os.Getenv("OUTLOOK_TENANT_ID"))
+		}
+		if tid == "" {
+			SendError(ctx, fasthttp.StatusBadRequest, "Outlook Tenant ID is required")
+			return
+		}
+		oEmail := strings.TrimSpace(payload.OutlookEmail)
+		if oEmail == "" {
+			oEmail = strings.TrimSpace(os.Getenv("OUTLOOK_EMAIL"))
+		}
+		if oEmail == "" {
+			SendError(ctx, fasthttp.StatusBadRequest, "Outlook From email is required")
+			return
+		}
+		if strings.TrimSpace(outlookSecret) == "" {
+			SendError(ctx, fasthttp.StatusBadRequest, "Outlook Client Secret (secret ID) is required when Outlook is enabled")
+			return
+		}
+	} else if payload.Enabled {
 		if strings.TrimSpace(payload.Host) == "" {
 			SendError(ctx, fasthttp.StatusBadRequest, "SMTP host is required")
 			return
@@ -114,15 +237,11 @@ func (h *SMTPHandler) updateSMTPConfig(ctx *fasthttp.RequestCtx) {
 			return
 		}
 	}
+
 	if payload.Port <= 0 {
 		payload.Port = 587
 	}
 
-	existing, err := store.GetSMTPConfig(ctx)
-	if err != nil {
-		SendError(ctx, fasthttp.StatusInternalServerError, err.Error())
-		return
-	}
 	password := payload.Password
 	if password == "" || strings.EqualFold(password, "<redacted>") || strings.Contains(password, "*") {
 		if existing != nil {
@@ -141,23 +260,29 @@ func (h *SMTPHandler) updateSMTPConfig(ctx *fasthttp.RequestCtx) {
 	}
 
 	row := &tables.TableSMTPConfig{
-		Enabled:            payload.Enabled,
-		Host:               strings.TrimSpace(payload.Host),
-		Port:               payload.Port,
-		Username:           strings.TrimSpace(payload.Username),
-		Password:           password,
-		FromEmail:          strings.TrimSpace(payload.FromEmail),
-		FromName:           strings.TrimSpace(payload.FromName),
-		UseTLS:             payload.UseTLS,
-		NotifyOnLogin:      payload.NotifyOnLogin,
-		NotifyOnUserCreate: payload.NotifyOnUserCreate,
-		EncryptionStatus:   tables.EncryptionStatusPlainText,
+		Enabled:             payload.Enabled,
+		Host:                strings.TrimSpace(payload.Host),
+		Port:                payload.Port,
+		Username:            strings.TrimSpace(payload.Username),
+		Password:            password,
+		FromEmail:           strings.TrimSpace(payload.FromEmail),
+		FromName:            strings.TrimSpace(payload.FromName),
+		UseTLS:              payload.UseTLS,
+		NotifyOnLogin:       payload.NotifyOnLogin,
+		NotifyOnUserCreate:  payload.NotifyOnUserCreate,
+		EmailProvider:       payload.EmailProvider,
+		OutlookEnabled:      payload.OutlookEnabled,
+		OutlookClientID:     strings.TrimSpace(payload.OutlookClientID),
+		OutlookClientSecret: outlookSecret,
+		OutlookTenantID:     strings.TrimSpace(payload.OutlookTenantID),
+		OutlookEmail:        strings.TrimSpace(payload.OutlookEmail),
+		EncryptionStatus:    tables.EncryptionStatusPlainText,
 	}
 	if err := store.UpdateSMTPConfig(ctx, row); err != nil {
 		SendError(ctx, fasthttp.StatusInternalServerError, err.Error())
 		return
 	}
-	SendJSON(ctx, map[string]any{"status": "ok"})
+	SendJSON(ctx, map[string]any{"status": "ok", "provider": payload.EmailProvider})
 }
 
 func (h *SMTPHandler) testSMTPConfig(ctx *fasthttp.RequestCtx) {
@@ -170,28 +295,42 @@ func (h *SMTPHandler) testSMTPConfig(ctx *fasthttp.RequestCtx) {
 	}
 	_ = json.Unmarshal(ctx.PostBody(), &payload)
 	row, err := store.GetSMTPConfig(ctx)
-	if err != nil || row == nil || !row.Enabled {
-		SendError(ctx, fasthttp.StatusBadRequest, "enable and save SMTP settings first")
+	if err != nil || row == nil || (!row.Enabled && !row.OutlookEnabled) {
+		SendError(ctx, fasthttp.StatusBadRequest, "enable and save email settings first (SMTP or Outlook)")
 		return
 	}
 	to := strings.TrimSpace(payload.To)
 	if to == "" {
-		to = row.FromEmail
+		if row.OutlookEnabled || row.EmailProvider == "outlook" {
+			to = row.OutlookEmail
+			if to == "" {
+				to = strings.TrimSpace(os.Getenv("OUTLOOK_EMAIL"))
+			}
+		} else {
+			to = row.FromEmail
+			if to == "" {
+				to = row.Username
+			}
+		}
 	}
 	if to == "" {
-		to = row.Username
+		to = "test@example.com"
 	}
-	err = mailer.Send(smtpToMailer(row), mailer.Message{
-		To:      to,
-		Subject: "Gateway SMTP test",
-		Body:    "This is a test email from Gateway Security → SMTP settings.",
-	})
-	recordEmailAudit(store, ctx, to, "Gateway SMTP test", err)
+
+	providerName := "SMTP"
+	if row.OutlookEnabled || row.EmailProvider == "outlook" {
+		providerName = "Microsoft Outlook"
+	}
+	subject := fmt.Sprintf("Gateway %s test", providerName)
+	body := fmt.Sprintf("This is a test email from Gateway Security → %s settings.", providerName)
+
+	err = sendConfiguredEmail(ctx, store, row, to, subject, body)
+	recordEmailAudit(store, ctx, to, subject, err)
 	if err != nil {
-		SendError(ctx, fasthttp.StatusBadRequest, fmt.Sprintf("SMTP test failed: %v", err))
+		SendError(ctx, fasthttp.StatusBadRequest, fmt.Sprintf("%s test failed: %v", providerName, err))
 		return
 	}
-	SendJSON(ctx, map[string]any{"status": "ok", "to": to})
+	SendJSON(ctx, map[string]any{"status": "ok", "to": to, "provider": providerName})
 }
 
 func smtpToMailer(row *tables.TableSMTPConfig) mailer.Config {
@@ -218,6 +357,60 @@ func smtpToMailer(row *tables.TableSMTPConfig) mailer.Config {
 	}
 }
 
+func rowToOutlook(row *tables.TableSMTPConfig) mailer.OutlookConfig {
+	if row == nil {
+		return mailer.OutlookConfig{}
+	}
+	fromName := strings.TrimSpace(row.FromName)
+	if fromName == "" {
+		brand := strings.TrimSpace(os.Getenv("GATEWAY_BRAND_NAME"))
+		if brand == "" {
+			brand = "Raksha"
+		}
+		fromName = brand + " Security System"
+	}
+	clientID := strings.TrimSpace(row.OutlookClientID)
+	if clientID == "" {
+		clientID = strings.TrimSpace(os.Getenv("OUTLOOK_CLIENT_ID"))
+	}
+	clientSecret := strings.TrimSpace(row.OutlookClientSecret)
+	if clientSecret == "" {
+		clientSecret = strings.TrimSpace(os.Getenv("OUTLOOK_CLIENT_SECRET"))
+		if clientSecret == "" {
+			clientSecret = strings.TrimSpace(os.Getenv("OUTLOOK_SECRET_ID"))
+		}
+	}
+	tenantID := strings.TrimSpace(row.OutlookTenantID)
+	if tenantID == "" {
+		tenantID = strings.TrimSpace(os.Getenv("OUTLOOK_TENANT_ID"))
+	}
+	email := strings.TrimSpace(row.OutlookEmail)
+	if email == "" {
+		email = strings.TrimSpace(os.Getenv("OUTLOOK_EMAIL"))
+	}
+	return mailer.OutlookConfig{
+		Enabled:      row.OutlookEnabled || row.EmailProvider == "outlook",
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+		TenantID:     tenantID,
+		Email:        email,
+		FromName:     fromName,
+	}
+}
+
+func sendConfiguredEmail(ctx context.Context, store configstore.ConfigStore, row *tables.TableSMTPConfig, to, subject, body string) error {
+	if row == nil {
+		return fmt.Errorf("email configuration not found")
+	}
+	if row.OutlookEnabled || row.EmailProvider == "outlook" {
+		return mailer.SendOutlookWithContext(ctx, rowToOutlook(row), mailer.Message{To: to, Subject: subject, Body: body})
+	}
+	if row.Enabled || row.EmailProvider == "smtp" {
+		return authMailSend(smtpToMailer(row), mailer.Message{To: to, Subject: subject, Body: body})
+	}
+	return fmt.Errorf("email is not enabled; configure SMTP or Outlook in Settings → Security")
+}
+
 // authMailSend is swapped in tests to capture auth emails without an SMTP server.
 var authMailSend = mailer.Send
 
@@ -227,7 +420,7 @@ func sendAuthEmail(store configstore.ConfigStore, ctx *fasthttp.RequestCtx, to, 
 	return err
 }
 
-// sendSMTPEmail sends through the SMTP configuration saved under Security settings
+// sendSMTPEmail sends through the email configuration (SMTP or Outlook) saved under Security settings
 // without needing an HTTP request, so background dispatchers can use it.
 func sendSMTPEmail(ctx context.Context, store configstore.ConfigStore, to, subject, body string) error {
 	if store == nil || strings.TrimSpace(to) == "" {
@@ -237,10 +430,10 @@ func sendSMTPEmail(ctx context.Context, store configstore.ConfigStore, to, subje
 	if err != nil {
 		return err
 	}
-	if row == nil || !row.Enabled || strings.TrimSpace(row.Host) == "" {
-		return fmt.Errorf("SMTP is not enabled; configure it in Settings → Security")
+	if row == nil || (!row.Enabled && !row.OutlookEnabled) {
+		return fmt.Errorf("email is not enabled; configure SMTP or Outlook in Settings → Security")
 	}
-	return authMailSend(smtpToMailer(row), mailer.Message{To: to, Subject: subject, Body: body})
+	return sendConfiguredEmail(ctx, store, row, to, subject, body)
 }
 
 // recordEmailAudit writes one audit_logs row per outgoing email. The body is never
@@ -271,12 +464,26 @@ func recordEmailAudit(store configstore.ConfigStore, ctx *fasthttp.RequestCtx, t
 	})
 }
 
+func emailServiceConfigured(row *tables.TableSMTPConfig) bool {
+	if row == nil {
+		return false
+	}
+	if row.OutlookEnabled || row.EmailProvider == "outlook" {
+		cid := strings.TrimSpace(row.OutlookClientID)
+		if cid == "" {
+			cid = strings.TrimSpace(os.Getenv("OUTLOOK_CLIENT_ID"))
+		}
+		return cid != ""
+	}
+	return row.Enabled && strings.TrimSpace(row.Host) != ""
+}
+
 func smtpEnabled(store configstore.ConfigStore, ctx *fasthttp.RequestCtx) bool {
 	if store == nil {
 		return false
 	}
 	row, err := store.GetSMTPConfig(ctx)
-	return err == nil && row != nil && row.Enabled && strings.TrimSpace(row.Host) != ""
+	return err == nil && emailServiceConfigured(row)
 }
 
 func welcomeAccountEmailBody(username, email, tempPassword string) string {
@@ -378,9 +585,9 @@ func trySendProvisionedEmail(store configstore.ConfigStore, ctx *fasthttp.Reques
 		return
 	}
 	smtpRow, err := store.GetSMTPConfig(ctx)
-	if err != nil || smtpRow == nil || !smtpRow.Enabled || strings.TrimSpace(smtpRow.Host) == "" {
+	if err != nil || !emailServiceConfigured(smtpRow) {
 		if logger != nil {
-			logger.Warn("scim welcome email skipped username=%s: SMTP is not enabled", username)
+			logger.Warn("scim welcome email skipped username=%s: email service is not enabled", username)
 		}
 		return
 	}
@@ -392,14 +599,14 @@ func trySendProvisionedEmail(store configstore.ConfigStore, ctx *fasthttp.Reques
 // temporaryPasswordMailReady reports why a generated password cannot be emailed yet.
 func temporaryPasswordMailReady(store configstore.ConfigStore, ctx *fasthttp.RequestCtx) string {
 	if store == nil {
-		return "SMTP is not configured. Turn it on under Security settings so the temporary password can be emailed."
+		return "Email service is not configured. Turn it on under Security settings so the temporary password can be emailed."
 	}
 	smtpRow, err := store.GetSMTPConfig(ctx)
 	if err != nil {
 		return err.Error()
 	}
-	if smtpRow == nil || !smtpRow.Enabled || strings.TrimSpace(smtpRow.Host) == "" {
-		return "SMTP is not enabled. Turn it on under Security settings so the temporary password can be emailed."
+	if !emailServiceConfigured(smtpRow) {
+		return "Email service is not enabled. Turn on SMTP or Outlook under Security settings so the temporary password can be emailed."
 	}
 	return ""
 }
@@ -415,8 +622,8 @@ func trySendTemporaryPasswordEmail(store configstore.ConfigStore, ctx *fasthttp.
 	if err != nil {
 		return false, err.Error()
 	}
-	if smtpRow == nil || !smtpRow.Enabled || strings.TrimSpace(smtpRow.Host) == "" {
-		return false, "SMTP is not enabled. Turn it on under Security settings so the temporary password can be emailed."
+	if !emailServiceConfigured(smtpRow) {
+		return false, "Email service is not enabled. Turn on SMTP or Outlook under Security settings so the temporary password can be emailed."
 	}
 	if err := sendAuthEmail(store, ctx, email, "Your Gateway Account - Login Credentials", welcomeAccountEmailBody(username, email, password)); err != nil {
 		return false, err.Error()
@@ -435,7 +642,7 @@ func trySendWelcomeEmail(store configstore.ConfigStore, ctx *fasthttp.RequestCtx
 	if err != nil {
 		return false, err.Error()
 	}
-	if smtpRow == nil || !smtpRow.Enabled || !smtpRow.NotifyOnUserCreate {
+	if !emailServiceConfigured(smtpRow) || !smtpRow.NotifyOnUserCreate {
 		return false, ""
 	}
 	if err := sendAuthEmail(store, ctx, email, "Your Gateway Account - Login Credentials", welcomeAccountEmailBody(username, email, password)); err != nil {
@@ -475,8 +682,8 @@ func trySendAccountBlockStatusEmail(store configstore.ConfigStore, ctx *fasthttp
 	if err != nil {
 		return false, err.Error()
 	}
-	if smtpRow == nil || !smtpRow.Enabled || strings.TrimSpace(smtpRow.Host) == "" {
-		return false, "SMTP is not enabled. Please configure SMTP in Security settings to dispatch notification emails."
+	if !emailServiceConfigured(smtpRow) {
+		return false, "Email service is not enabled. Please configure SMTP or Outlook in Security settings to dispatch notification emails."
 	}
 	var subject, body string
 	if blocked {
@@ -514,7 +721,7 @@ func trySendRegistrationDecisionEmail(store configstore.ConfigStore, ctx *fastht
 	if err != nil {
 		return false, err.Error()
 	}
-	if smtpRow == nil || !smtpRow.Enabled {
+	if !emailServiceConfigured(smtpRow) {
 		return false, ""
 	}
 	var subject, body string

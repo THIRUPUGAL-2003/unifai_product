@@ -467,6 +467,7 @@ var configstoreMigrationSteps = []migrationStep{
 	{IDs: []string{"add_requested_team_id_to_governance_users"}, run: migrationAddRequestedTeamIDToGovernanceUsers},
 	{IDs: []string{"add_business_unit_id_to_governance_teams"}, run: migrationAddBusinessUnitIDToGovernanceTeams},
 	{IDs: []string{"add_rbac_permission_ids_to_governance_users"}, run: migrationAddRbacPermissionIDsToGovernanceUsers},
+	{IDs: []string{"add_outlook_fields_to_config_smtp"}, run: migrationAddOutlookFieldsToConfigSMTP},
 }
 
 // migrationWidenPromptMessageJSONMySQL turns prompt message_json columns into LONGTEXT on MySQL,
@@ -11651,5 +11652,38 @@ func migrationAddRbacPermissionIDsToGovernanceUsers(ctx context.Context, db *gor
 	}
 	return nil
 }
+
+// migrationAddOutlookFieldsToConfigSMTP adds Outlook / Office 365 OAuth credentials to config_smtp.
+func migrationAddOutlookFieldsToConfigSMTP(ctx context.Context, db *gorm.DB, logger schemas.Logger) error {
+	migrationName := "add_outlook_fields_to_config_smtp"
+	logger.Info("[configstore] starting migration %s", migrationName)
+	defer logger.Info("[configstore] finished migration %s", migrationName)
+	m := migrator.New(db, migrator.DefaultOptions, []*migrator.Migration{{
+		ID: migrationName,
+		Migrate: func(tx *gorm.DB) error {
+			tx = tx.WithContext(ctx)
+			cols := []string{"email_provider", "outlook_enabled", "outlook_client_id", "outlook_client_secret", "outlook_tenant_id", "outlook_email"}
+			for _, col := range cols {
+				if err := addColumnIfNotExists(tx, logger, &tables.TableSMTPConfig{}, col); err != nil {
+					return fmt.Errorf("add %s to config_smtp: %w", col, err)
+				}
+			}
+			return nil
+		},
+		Rollback: func(tx *gorm.DB) error {
+			tx = tx.WithContext(ctx)
+			cols := []string{"email_provider", "outlook_enabled", "outlook_client_id", "outlook_client_secret", "outlook_tenant_id", "outlook_email"}
+			for _, col := range cols {
+				_ = dropColumnIfExists(tx, logger, &tables.TableSMTPConfig{}, col)
+			}
+			return nil
+		},
+	}})
+	if err := m.Migrate(); err != nil {
+		return fmt.Errorf("error running %s migration: %w", migrationName, err)
+	}
+	return nil
+}
+
 
 
