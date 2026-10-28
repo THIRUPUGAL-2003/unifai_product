@@ -1,10 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { NoPermissionView } from "@/components/noPermissionView";
-import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
+import { RbacOperation, RbacResource, useRbacAny } from "@enterprise/lib";
 import MCPToolGroupsPage from "./page";
 
 function RouteComponent() {
-	const hasMCPToolGroupsAccess = useRbac(RbacResource.MCPToolGroups, RbacOperation.View);
+	const hasMCPToolGroupsAccess = useRbacAny([RbacResource.MCPToolGroups, RbacResource.MCPGateway], RbacOperation.View);
 	if (!hasMCPToolGroupsAccess) {
 		return <NoPermissionView entity="MCP tool groups" />;
 	}

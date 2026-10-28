@@ -49,6 +49,23 @@ func TestSectionRequirementFor(t *testing.T) {
 		{"connectors need connectors section", "GET", "/api/connectors", "observability/llm-logs", false},
 		{"connectors section can list connectors", "GET", "/api/connectors", "observability/connectors", true},
 		{"observability parent covers connectors", "PUT", "/api/connectors/datadog", "observability", true},
+		{"compatibility can save shared core config", "PUT", "/api/config", "settings/compatibility", true},
+		{"caching cannot save unrelated core config", "PUT", "/api/config", "settings/caching", false},
+		{"client settings can save metadata", "POST", "/api/config/metadata", "settings/client-settings", true},
+		{"proxy section can save proxy config", "PUT", "/api/proxy-config", "settings/proxy", true},
+		{"pricing section can force sync", "POST", "/api/pricing/force-sync", "models/pricing-overrides", true},
+		{"caching section can clear cache", "DELETE", "/api/cache/clear/cache-1", "settings/caching", true},
+		{"cluster section can update cluster config", "PUT", "/api/cluster", "guardrails/cluster-config", true},
+		{"API keys section can create a virtual key", "POST", "/api/governance/virtual-keys", "settings/api-keys", true},
+		{"Browser AI rules section can create a rule", "POST", "/api/browser-ai/rules", "browser-ai/rules", true},
+		{"Browser AI rules cannot create a target", "POST", "/api/browser-ai/targets", "browser-ai/rules", false},
+		{"MCP catalog section can read clients", "GET", "/api/mcp/clients", "mcp-gateway/mcp-catalog", true},
+		{"MCP library section cannot read clients", "GET", "/api/mcp/clients", "mcp-gateway/mcp-library", false},
+		{"MCP library section can sync catalog", "POST", "/api/mcp/library/force-sync", "mcp-gateway/mcp-library", true},
+		{"MCP catalog section cannot sync library", "POST", "/api/mcp/library/force-sync", "mcp-gateway/mcp-catalog", false},
+		{"MCP auth sessions section can revoke session", "DELETE", "/api/mcp/sessions/s1", "mcp-gateway/auth-sessions", true},
+		{"MCP auth sessions section cannot revoke OAuth grant", "DELETE", "/api/oauth/config/o1", "mcp-gateway/auth-sessions", false},
+		{"OAuth grants section can list grants", "GET", "/api/oauth2/sessions", "mcp-gateway/oauth-grants", true},
 	}
 	for _, c := range cases {
 		if got := SectionsAllow(c.grants, SectionRequirementFor(c.method, c.path)); got != c.want {

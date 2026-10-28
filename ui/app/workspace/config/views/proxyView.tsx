@@ -12,7 +12,7 @@ import { getErrorMessage, useGetCoreConfigQuery, useUpdateProxyConfigMutation } 
 import { DefaultGlobalProxyConfig, GlobalProxyConfig } from "@/lib/types/config";
 import { globalProxyConfigSchema } from "@/lib/types/schemas";
 import { cn } from "@/lib/utils";
-import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
+import { RbacOperation, RbacResource, useRbac, useRbacAny } from "@enterprise/lib";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { AlertTriangle, Info } from "lucide-react";
 import { useEffect } from "react";
@@ -20,7 +20,7 @@ import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 
 export default function ProxyView() {
-	const hasSettingsUpdateAccess = useRbac(RbacResource.Proxy, RbacOperation.Update) || useRbac(RbacResource.Settings, RbacOperation.Update);
+	const hasSettingsUpdateAccess = useRbacAny([RbacResource.Proxy, RbacResource.Settings], RbacOperation.Update);
 	const { data: gatewayConfig } = useGetCoreConfigQuery({ fromDB: true });
 	const proxyConfig = gatewayConfig?.proxy_config;
 	const [updateProxyConfig, { isLoading }] = useUpdateProxyConfigMutation();

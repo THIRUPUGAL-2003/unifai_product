@@ -183,6 +183,14 @@ export function useRbac(resource: RbacResource, operation: RbacOperation): boole
 	return context.isAllowed(resource, operation);
 }
 
+export function useRbacAny(resources: readonly RbacResource[], operation: RbacOperation): boolean {
+	const context = useRbacContext();
+	if (context.isLoading || context.isError) {
+		return false;
+	}
+	return resources.some((resource) => context.isAllowed(resource, operation));
+}
+
 export function useRbacContext() {
 	const context = useContext(RbacContext);
 	if (!context) {

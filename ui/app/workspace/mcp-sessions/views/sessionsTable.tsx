@@ -39,6 +39,7 @@ import { ChevronLeft, ChevronRight, Info } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { getErrorMessage, useReauthMCPSessionMutation, useRevokeMCPSessionMutation } from "@/lib/store";
 import { MCPSessionRow } from "@/lib/types/mcpSessions";
+import { RbacOperation, RbacResource, useRbacAny } from "@enterprise/lib";
 import { ExternalLink, Fingerprint, KeyRound, Loader2, MoreHorizontal, Pencil, RefreshCcw, Trash2, UserRound } from "lucide-react";
 import { useState } from "react";
 import SessionsFilterBar from "./sessionsFilterBar";
@@ -82,6 +83,8 @@ export default function SessionsTable({
 	onOffsetChange,
 	onLimitChange,
 }: SessionsTableProps) {
+	const canReauth = useRbacAny([RbacResource.MCPAuthSessions, RbacResource.MCPGateway], RbacOperation.Update);
+	const canRevoke = useRbacAny([RbacResource.MCPAuthSessions, RbacResource.MCPGateway], RbacOperation.Delete);
 	const { toast } = useToast();
 	const [reauth, { isLoading: reauthing }] = useReauthMCPSessionMutation();
 	const [revoke, { isLoading: revoking }] = useRevokeMCPSessionMutation();
@@ -252,6 +255,8 @@ export default function SessionsTable({
 												reauthing={reauthing}
 												revoking={revoking}
 												isPendingRow={pendingActionRowId === row.id}
+												canReauth={canReauth}
+												canRevoke={canRevoke}
 												onReauth={() => handleReauth(row)}
 												onRevoke={() => setPendingDelete(row)}
 											/>
@@ -366,12 +371,16 @@ interface RowActionsProps {
 	reauthing: boolean;
 	revoking: boolean;
 	isPendingRow: boolean;
+	canReauth: boolean;
+	canRevoke: boolean;
 	onReauth: () => void;
 	onRevoke: () => void;
 }
 
-function RowActions({ row, reauthing, revoking, isPendingRow, onReauth, onRevoke }: RowActionsProps) {
+function RowActions({ row, reauthing, revoking, isPendingRow, canReauth, canRevoke, onReauth, onRevoke }: RowActionsProps) {
 	const busy = reauthing || revoking;
+	const hasReauthAction = canReauth && row.status !== "orphaned" && row.can_reauth;
+	if (row.kind !== "flow" && !hasReauthAction && !canRevoke) return null;
 	return (
 		<DropdownMenu>
 			<DropdownMenuTrigger asChild>
@@ -417,7 +426,7 @@ function RowActions({ row, reauthing, revoking, isPendingRow, onReauth, onRevoke
 					)
 				) : row.kind === "header" ? (
 					<>
-						{row.status !== "orphaned" && row.can_reauth && (
+						{hasReauthAction && (
 							// "Edit values" hits reauth server-side: the handler mints a
 							// fresh header submission flow + temp token and returns the
 							// auth-landing URL. Same single-click → redirect dance as the
@@ -437,7 +446,7 @@ function RowActions({ row, reauthing, revoking, isPendingRow, onReauth, onRevoke
 								{row.status === "needs_update" ? "Update values" : "Edit values"}
 							</DropdownMenuItem>
 						)}
-						<DropdownMenuItem
+						{canRevoke && <DropdownMenuItem
 							variant="destructive"
 							className="cursor-pointer"
 							disabled={busy}
@@ -449,11 +458,11 @@ function RowActions({ row, reauthing, revoking, isPendingRow, onReauth, onRevoke
 						>
 							<Trash2 className="h-4 w-4" />
 							Revoke
-						</DropdownMenuItem>
+						</DropdownMenuItem>}
 					</>
 				) : (
 					<>
-						{row.status !== "orphaned" && row.can_reauth && (
+						{hasReauthAction && (
 							// Re-auth on an orphaned row wouldn't help: the upstream
 							// credential is intact, the user just no longer has any
 							// granting VK. Surface guidance instead of an action.
@@ -472,7 +481,7 @@ function RowActions({ row, reauthing, revoking, isPendingRow, onReauth, onRevoke
 								Re-authenticate
 							</DropdownMenuItem>
 						)}
-						<DropdownMenuItem
+						{canRevoke && <DropdownMenuItem
 							variant="destructive"
 							className="cursor-pointer"
 							disabled={busy}
@@ -484,7 +493,7 @@ function RowActions({ row, reauthing, revoking, isPendingRow, onReauth, onRevoke
 						>
 							<Trash2 className="h-4 w-4" />
 							Revoke
-						</DropdownMenuItem>
+						</DropdownMenuItem>}
 					</>
 				)}
 			</DropdownMenuContent>

@@ -3,7 +3,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { getErrorMessage, useForceSyncMCPLibraryMutation, useGetCoreConfigQuery, useUpdateCoreConfigMutation } from "@/lib/store";
-import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
+import { RbacOperation, RbacResource, useRbac, useRbacAny } from "@enterprise/lib";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useEffect, useMemo } from "react";
 import { useForm } from "react-hook-form";
@@ -36,7 +36,7 @@ interface MCPLibrarySettingsSheetProps {
 }
 
 export function MCPLibrarySettingsSheet({ open, onClose }: MCPLibrarySettingsSheetProps) {
-	const hasSettingsUpdateAccess = useRbac(RbacResource.MCPGateway, RbacOperation.Update);
+	const hasSettingsUpdateAccess = useRbacAny([RbacResource.MCPLibrary, RbacResource.MCPGateway], RbacOperation.Update);
 	const { data: gatewayConfig, isLoading: isConfigLoading, isError: isConfigError } = useGetCoreConfigQuery({ fromDB: true });
 	const config = gatewayConfig?.framework_config;
 	const [updateCoreConfig, { isLoading }] = useUpdateCoreConfigMutation();

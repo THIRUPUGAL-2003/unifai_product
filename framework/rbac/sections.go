@@ -18,7 +18,15 @@ func SectionRequirementFor(method, path string) []string {
 	case strings.HasPrefix(path, "/api/scim"):
 		return []string{"governance/user-provisioning"}
 	case strings.HasPrefix(path, "/api/browser-ai"):
-		return []string{"browser-ai/*"}
+		return []string{browserAISectionForPath(path)}
+	case strings.HasPrefix(path, "/api/models/catalog"):
+		return []string{"models/model-catalog"}
+	case strings.HasPrefix(path, "/api/load-balancer"):
+		return []string{"adaptive-routing/settings"}
+	case strings.HasPrefix(path, "/api/mcp"), strings.HasPrefix(path, "/api/oauth/config"), strings.HasPrefix(path, "/api/oauth2/sessions"):
+		if section := mcpSectionForPath(path); section != "" {
+			return []string{section}
+		}
 	case strings.HasPrefix(path, "/api/mcp-logs"):
 		switch {
 		case read && isDashboardMCPAggregatePath(path):
@@ -98,14 +106,63 @@ func SectionRequirementFor(method, path string) []string {
 		return []string{"governance/customers"}
 	case strings.HasPrefix(path, "/api/governance/business-units"):
 		return []string{"governance/business-units"}
-	case strings.HasPrefix(path, "/api/governance/routing-rules"), strings.HasPrefix(path, "/api/governance/complexity-analyzer-config"):
-		return []string{"models/routing-rules", "models/complexity-router"}
+	case strings.HasPrefix(path, "/api/governance/routing-rules"):
+		return []string{"models/routing-rules"}
+	case strings.HasPrefix(path, "/api/governance/complexity-analyzer-config"):
+		return []string{"models/complexity-router"}
+	case strings.HasPrefix(path, "/api/governance/pricing-overrides"):
+		return []string{"models/pricing-overrides"}
+	case strings.HasPrefix(path, "/api/governance/billing-blocks"):
+		return []string{"models/budgets-limits"}
+	case strings.HasPrefix(path, "/api/governance/model-configs"):
+		return []string{"models/model-settings"}
 	case strings.HasPrefix(path, "/api/circuit-breaker"):
 		return []string{"models/circuit-breaker"}
 	case strings.HasPrefix(path, "/api/mcp/tool-groups"):
 		return []string{"mcp-gateway/tool-groups"}
 	}
 	return nil
+}
+
+func browserAISectionForPath(path string) string {
+	switch {
+	case strings.HasPrefix(path, "/api/browser-ai/search-logs"):
+		return "browser-ai/search-logs"
+	case strings.HasPrefix(path, "/api/browser-ai/logs"):
+		return "browser-ai/logs"
+	case strings.HasPrefix(path, "/api/browser-ai/rules"):
+		return "browser-ai/rules"
+	case strings.HasPrefix(path, "/api/browser-ai/targets"):
+		return "browser-ai/targets"
+	case strings.HasPrefix(path, "/api/browser-ai/agents"):
+		return "browser-ai/agents"
+	case strings.HasPrefix(path, "/api/browser-ai/setup"), strings.HasPrefix(path, "/api/browser-ai/license"),
+		path == "/api/browser-ai/controls", path == "/api/browser-ai/fleet-config":
+		return "browser-ai/setup"
+	case strings.HasPrefix(path, "/api/browser-ai/insights"):
+		return "browser-ai/telemetry"
+	default:
+		return "browser-ai/overview"
+	}
+}
+
+func mcpSectionForPath(path string) string {
+	switch {
+	case strings.HasPrefix(path, "/api/mcp/tool-groups"):
+		return "mcp-gateway/tool-groups"
+	case strings.HasPrefix(path, "/api/mcp/library"):
+		return "mcp-gateway/mcp-library"
+	case strings.HasPrefix(path, "/api/mcp/sessions"), strings.HasPrefix(path, "/api/mcp/per-user-headers"):
+		return "mcp-gateway/auth-sessions"
+	case strings.HasPrefix(path, "/api/mcp/clients"), strings.HasPrefix(path, "/api/mcp/client"):
+		return "mcp-gateway/mcp-catalog"
+	case strings.HasPrefix(path, "/api/oauth/config"), strings.HasPrefix(path, "/api/oauth2/sessions"):
+		return "mcp-gateway/oauth-grants"
+	case strings.HasPrefix(path, "/api/mcp"):
+		return "mcp-gateway"
+	default:
+		return ""
+	}
 }
 
 // SectionsAllow reports whether a comma-separated grant list satisfies any required key.

@@ -3,13 +3,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { getErrorMessage, useGetCoreConfigQuery, useUpdateCoreConfigMutation } from "@/lib/store";
 import { CoreConfig, DefaultCoreConfig } from "@/lib/types/config";
-import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
+import { RbacOperation, RbacResource, useRbac, useRbacAny } from "@enterprise/lib";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 export default function PerformanceTuningView() {
 	const hasSettingsUpdateAccess =
-		useRbac(RbacResource.PerformanceTuning, RbacOperation.Update) || useRbac(RbacResource.Settings, RbacOperation.Update);
+		useRbacAny([RbacResource.PerformanceTuning, RbacResource.Settings], RbacOperation.Update);
 	const { data: gatewayConfig, isError: configFailed, error: configError } = useGetCoreConfigQuery({ fromDB: true });
 	const config = gatewayConfig?.client_config;
 	const [updateCoreConfig, { isLoading }] = useUpdateCoreConfigMutation();

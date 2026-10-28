@@ -1104,32 +1104,61 @@
   }
 
   var _lastClaudeProbeAt = 0;
+  var _probedClaudeEndpoints = {};
+
+  function scanTextForEmail(txt) {
+    if (!txt || typeof txt !== "string" || !txt.includes("@")) return false;
+    var matches = txt.match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g) || [];
+    for (var i = 0; i < matches.length; i++) {
+      var cand = matches[i].toLowerCase();
+      if (isValidSessionEmail(cand)) {
+        triggerSessionAuth(cand, "");
+        return true;
+      }
+    }
+    return false;
+  }
+
   function probeClaudeApi(endpoint) {
-    if (!endpoint) return;
+    if (!endpoint || _probedClaudeEndpoints[endpoint]) return;
+    _probedClaudeEndpoints[endpoint] = true;
+
     // 1. Probe via native fetch
     try {
-      var fn = typeof origFetch === "function" ? origFetch : window.fetch;
-      fn(endpoint, {
-        method: "GET",
-        credentials: "include",
-        headers: { "Accept": "application/json" }
-      }).then(function (res) {
-        if (!res || !res.ok) return;
-        res.json().then(function (data) {
-          if (!data || typeof data !== "object") return;
-          scanObjectForSession(data, 0);
-          if (Array.isArray(data)) {
-            for (var i = 0; i < data.length; i++) {
-              var orgId = data[i].uuid || data[i].id;
-              if (orgId && typeof orgId === "string") {
-                probeClaudeApi("/api/organizations/" + encodeURIComponent(orgId) + "/members");
-                probeClaudeApi("/api/organizations/" + encodeURIComponent(orgId));
-                probeClaudeApi("/api/organizations/" + encodeURIComponent(orgId) + "/users");
+      var fn = typeof window.fetch === "function" ? window.fetch : origFetch;
+      if (typeof fn === "function") {
+        fn(endpoint, {
+          method: "GET",
+          credentials: "include",
+          headers: { "Accept": "application/json, text/html, */*" }
+        }).then(function (res) {
+          if (!res || !res.ok) return;
+          var ct = (res.headers && res.headers.get("content-type")) || "";
+          if (ct.includes("json")) {
+            res.json().then(function (data) {
+              if (data && typeof data === "object") {
+                scanObjectForSession(data, 0);
+                if (Array.isArray(data)) {
+                  for (var i = 0; i < data.length; i++) {
+                    var orgId = data[i].uuid || data[i].id;
+                    if (orgId && typeof orgId === "string") {
+                      probeClaudeApi("/api/bootstrap/" + encodeURIComponent(orgId) + "/app_start");
+                      probeClaudeApi("/api/organizations/" + encodeURIComponent(orgId) + "/members");
+                      probeClaudeApi("/api/organizations/" + encodeURIComponent(orgId) + "/memberships");
+                      probeClaudeApi("/api/organizations/" + encodeURIComponent(orgId));
+                      probeClaudeApi("/api/organizations/" + encodeURIComponent(orgId) + "/users");
+                    }
+                  }
+                }
               }
-            }
+            }).catch(function () {});
+          } else {
+            res.text().then(function (txt) {
+              scanTextForEmail(txt);
+            }).catch(function () {});
           }
         }).catch(function () {});
-      }).catch(function () {});
+      }
     } catch (_) {}
 
     // 2. Fallback probe via XMLHttpRequest
@@ -1137,7 +1166,7 @@
       var xhr = new XMLHttpRequest();
       xhr.open("GET", endpoint, true);
       xhr.withCredentials = true;
-      xhr.setRequestHeader("Accept", "application/json");
+      xhr.setRequestHeader("Accept", "application/json, text/html, */*");
       xhr.onload = function () {
         if (xhr.status === 200 && xhr.responseText) {
           try {
@@ -1148,12 +1177,16 @@
                 for (var j = 0; j < dataXhr.length; j++) {
                   var orgIdXhr = dataXhr[j].uuid || dataXhr[j].id;
                   if (orgIdXhr && typeof orgIdXhr === "string") {
+                    probeClaudeApi("/api/bootstrap/" + encodeURIComponent(orgIdXhr) + "/app_start");
                     probeClaudeApi("/api/organizations/" + encodeURIComponent(orgIdXhr) + "/members");
+                    probeClaudeApi("/api/organizations/" + encodeURIComponent(orgIdXhr) + "/memberships");
                   }
                 }
               }
+              return;
             }
           } catch (_) {}
+          scanTextForEmail(xhr.responseText);
         }
       };
       xhr.send();
@@ -1304,15 +1337,26 @@
     var now = Date.now();
     if (now - _lastClaudeProbeAt > 1500) {
       _lastClaudeProbeAt = now;
+
+      // Extract lastActiveOrg from cookie if available
+      var mOrg = (document.cookie || "").match(/lastActiveOrg=([a-f0-9-]+)/i);
+      var activeOrgId = mOrg ? mOrg[1].trim() : "";
+
       var probeUrls = [
-        "/api/account",
+        "/settings/account",
+        "/settings/profile",
         "/api/organizations",
-        "/api/users/me",
-        "/api/auth/session",
         "/api/auth/current_user",
-        "/api/me",
+        "/api/users/me",
+        "/api/account",
         "/api/bootstrap"
       ];
+      if (activeOrgId) {
+        probeUrls.push("/api/bootstrap/" + encodeURIComponent(activeOrgId) + "/app_start");
+        probeUrls.push("/api/organizations/" + encodeURIComponent(activeOrgId));
+        probeUrls.push("/api/organizations/" + encodeURIComponent(activeOrgId) + "/memberships");
+        probeUrls.push("/api/organizations/" + encodeURIComponent(activeOrgId) + "/users");
+      }
       for (var pi = 0; pi < probeUrls.length; pi++) {
         probeClaudeApi(probeUrls[pi]);
       }
@@ -1394,7 +1438,7 @@
 
   // Universal deep object search for email and workspace keys across all AI platforms (circular-reference safe)
   function scanObjectForSession(obj, depth, visited) {
-    if (!obj || (depth || 0) > 6) return;
+    if (!obj || (depth || 0) > 12) return;
     if (typeof obj !== "object") return;
     if (!visited) {
       visited = typeof WeakSet === "function" ? new WeakSet() : null;
@@ -1423,7 +1467,7 @@
       // 2. Direct email candidates
       var candidate = obj.email || obj.email_address || obj.user_email || obj.upn || obj.mail ||
         obj.userPrincipalName || obj.preferred_username || obj.accountEmail || obj.account_email ||
-        obj.primaryEmail || obj.primary_email;
+        obj.primaryEmail || obj.primary_email || obj.emailAddress;
       if (typeof candidate === "string" && candidate.includes("@")) {
         var mCand = candidate.match(emailRegex);
         if (mCand && isValidSessionEmail(mCand[0])) {
@@ -1459,8 +1503,8 @@
         }
       }
 
-      // 4. Nested user / profile / session containers (ChatGPT, Lovable, DeepSeek, Mistral, Perplexity)
-      var subContainers = [obj.user, obj.data, obj.profile, obj.session, obj.account, obj.auth, obj.members, obj.user_metadata];
+      // 4. Nested user / profile / session containers (ChatGPT, Claude, Lovable, DeepSeek, Mistral, Perplexity)
+      var subContainers = [obj.user, obj.data, obj.profile, obj.session, obj.account, obj.auth, obj.members, obj.memberships, obj.currentUser, obj.userProfile, obj.me, obj.membership, obj.user_metadata];
       for (var sc = 0; sc < subContainers.length; sc++) {
         var subObj = subContainers[sc];
         if (subObj && typeof subObj === "object") {
@@ -4365,6 +4409,13 @@
       var isNoisePrompt = !promptText || ptClean === "set" || ptClean === "ping" || ptClean === "pong" || ptClean === "heartbeat" || ptClean === "true" || ptClean === "false" || ptClean === "null" || ptClean === "me" || ptClean.indexOf("plsenvironmentquery") >= 0 || ptClean.indexOf("assign copilot license") >= 0 || ptClean === "@ upload_attachment" || ptClean === "@upload_attachment" || ptClean === "upload_attachment" || ptClean.startsWith("@ upload_attachment") || ptClean.startsWith("upload_attachment") || ptClean.indexOf("contrib_service") >= 0 || ptClean.startsWith("/contrib") || ptClean.startsWith("gemini-1.") || ptClean.startsWith("gemini-2.") || ptClean.startsWith("gemini-pro") || ptClean.startsWith("gemini-flash") || ptClean.indexOf("wordprocessingml") >= 0 || ptClean.indexOf("openxmlformats") >= 0 || ptClean.indexOf("ic3product") >= 0 || ptClean.indexOf("copilotconsumer") >= 0 || ptClean.indexOf("getuserproperties") >= 0 || ptClean.indexOf("getmigrationstatus") >= 0 || ptClean.indexOf("getispicassouser") >= 0 || ptClean.startsWith('{"action"') || ptClean.startsWith('{"target"');
       if (isNoisePrompt) {
         return origFetch.apply(this, arguments);
+      }
+
+      // 0. IMMEDIATE CHECK: If corporate session is blocked, block prompt submission!
+      if (sessionBlocked) {
+        var corpBlockMsg = sessionBlockedReason || "Personal accounts are blocked by corporate security policy. Please log in with your company account.";
+        showBubble(corpBlockMsg, "Corporate Policy Restriction", "block");
+        return createBlockedFetchResponse({ blocked: true, action: "Blocked", message: corpBlockMsg, rule: "Corporate AI Workspace Policy" }, url);
       }
 
       // 1. FIRST: Evaluate client rules directly on extracted promptText and netFiles

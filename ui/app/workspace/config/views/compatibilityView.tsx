@@ -4,13 +4,13 @@ import { Switch } from "@/components/ui/switch";
 import { getErrorMessage, useGetCoreConfigQuery, useUpdateCoreConfigMutation } from "@/lib/store";
 import { CompatConfig, DefaultCoreConfig } from "@/lib/types/config";
 import { DOCS } from "@/lib/constants/docs";
-import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
+import { RbacOperation, RbacResource, useRbac, useRbacAny } from "@enterprise/lib";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 export default function CompatibilityView() {
 	const hasSettingsUpdateAccess =
-		useRbac(RbacResource.Compatibility, RbacOperation.Update) || useRbac(RbacResource.Settings, RbacOperation.Update);
+		useRbacAny([RbacResource.Compatibility, RbacResource.Settings], RbacOperation.Update);
 	const { data: gatewayConfig, isError: configFailed, error: configError } = useGetCoreConfigQuery({ fromDB: true });
 	const config = gatewayConfig?.client_config?.compat;
 	const [updateCoreConfig, { isLoading }] = useUpdateCoreConfigMutation();

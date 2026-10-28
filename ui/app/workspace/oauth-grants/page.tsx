@@ -1,6 +1,7 @@
 import { useDebouncedValue } from "@/hooks/useDebounce";
 import { getErrorMessage, useGetOAuth2GrantsQuery, useRevokeOAuth2GrantMutation } from "@/lib/store";
 import type { OAuth2GrantRow } from "@/lib/store/apis/oauth2SessionsApi";
+import { RbacOperation, RbacResource, useRbacAny } from "@enterprise/lib";
 import { Loader2 } from "lucide-react";
 import { parseAsArrayOf, parseAsInteger, parseAsString, useQueryStates } from "nuqs";
 import { useEffect, useState } from "react";
@@ -12,6 +13,8 @@ import RevokeGrantDialog from "./views/revokeGrantDialog";
 const PAGE_SIZE = 50;
 
 export default function OAuthGrantsPage() {
+	const canRevoke = useRbacAny([RbacResource.MCPOAuthGrants, RbacResource.MCPGateway], RbacOperation.Delete);
+	const canViewSessions = useRbacAny([RbacResource.MCPAuthSessions, RbacResource.MCPGateway], RbacOperation.View);
 	const [urlState, setUrlState] = useQueryStates(
 		{
 			q: parseAsString.withDefault(""),
@@ -120,6 +123,8 @@ export default function OAuthGrantsPage() {
 					hasActiveFilters={hasActiveFilters}
 					revoking={revoking}
 					pendingActionRowId={pendingActionRowId}
+					canRevoke={canRevoke}
+					canViewSessions={canViewSessions}
 					onRevoke={setPendingDelete}
 				/>
 			)}

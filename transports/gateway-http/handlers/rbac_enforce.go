@@ -38,6 +38,18 @@ func isAuditDisabled() bool {
 	return auditDisabled.Load()
 }
 
+func isSubAdminBootstrapPath(method, path string) bool {
+	method = strings.ToUpper(strings.TrimSpace(method))
+	switch path {
+	case "/api/config", "/api/version", "/api/rbac/me/permissions":
+		return method == fasthttp.MethodGet
+	case "/api/session/ws-ticket", "/api/session/change-temporary-password":
+		return method == fasthttp.MethodPost
+	default:
+		return false
+	}
+}
+
 // RBACMiddleware enforces workspace RBAC for dashboard session requests.
 func RBACMiddleware(store configstore.ConfigStore) func(fasthttp.RequestHandler) fasthttp.RequestHandler {
 	ws, _ := configstore.AsWorkspaceStore(store)
@@ -338,7 +350,7 @@ func (h *WorkspaceHandler) getMyRBACPermissions(ctx *fasthttp.RequestCtx) {
 		if strings.TrimSpace(userRbacIDs) != "" {
 			perms = rbac.PermissionSet{}
 			applyRbacPermissionIDs(perms, parseRbacPermissionIDs(userRbacIDs))
-		} else if strings.TrimSpace(granted) != "" {
+		} else {
 			perms = rbac.PermissionSet{}
 			applySectionFullPermissions(perms, granted)
 		}

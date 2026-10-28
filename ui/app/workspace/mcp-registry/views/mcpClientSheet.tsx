@@ -38,7 +38,7 @@ import { getErrorMessage, useGetCoreConfigQuery, useGetVirtualKeysQuery, useUpda
 import { MCPClient, MCPVKConfig } from "@/lib/types/mcp";
 import { mcpClientUpdateSchema, type MCPClientUpdateSchema } from "@/lib/types/schemas";
 import { parseArrayFromText } from "@/lib/utils/array";
-import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
+import { RbacOperation, RbacResource, useRbac, useRbacAny } from "@enterprise/lib";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ChevronDown, ChevronRight, Info, Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -93,7 +93,7 @@ export default function MCPClientSheet({
 	hasPrev = false,
 	hasNext = false,
 }: MCPClientSheetProps) {
-	const hasUpdateMCPClientAccess = useRbac(RbacResource.MCPGateway, RbacOperation.Update);
+	const hasUpdateMCPClientAccess = useRbacAny([RbacResource.MCPCatalog, RbacResource.MCPGateway], RbacOperation.Update);
 	const [updateMCPClient, { isLoading: isUpdating }] = useUpdateMCPClientMutation();
 
 	const [pendingNavDirection, setPendingNavDirection] = useState<"prev" | "next" | null>(null);

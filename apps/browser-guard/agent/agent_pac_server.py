@@ -81,6 +81,16 @@ class _PACRequestHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _html(self, code: int, html_str: str) -> None:
+        body = html_str.encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(body)))
+        self._cors()
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_OPTIONS(self) -> None:
         path = (self.path or "/").split("?", 1)[0]
         _check_and_record_extension_activity(self, path)
@@ -163,12 +173,42 @@ class _PACRequestHandler(http.server.BaseHTTPRequestHandler):
             from agent_extension import mark_extension_disconnected
             mark_extension_disconnected()
             print("[Gateway Guard] Browser extension disconnected notification received.")
+            accept = str(self.headers.get("Accept") or "").lower()
+            if "text/html" in accept or "application/xhtml" in accept:
+                html = """<!DOCTYPE html><html><head><meta charset="utf-8"/><title>YP-Raksha Guard</title>
+<style>body{font-family:Segoe UI,-apple-system,sans-serif;background:#0b1220;color:#e2e8f0;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
+.card{background:#111827;border:1px solid #334155;border-radius:14px;padding:30px 36px;text-align:center;max-width:440px;box-shadow:0 20px 25px -5px rgba(0,0,0,0.5)}
+h2{margin:0 0 10px;font-size:18px;color:#f8fafc}.sub{margin:0 0 20px;font-size:13.5px;color:#94a3b8;line-height:1.5}
+.btn{background:#334155;color:#f8fafc;border:none;border-radius:6px;padding:8px 18px;font-size:13px;cursor:pointer;transition:background 0.2s}
+.btn:hover{background:#475569}
+</style></head><body><div class="card">
+<h2>Browser Guard Disconnected</h2>
+<p class="sub">Extension disconnection status recorded. Closing tab...</p>
+<button class="btn" onclick="window.close()">Close Tab</button>
+</div><script>try{window.close()}catch(e){}setTimeout(function(){try{window.close()}catch(e){}},400);</script></body></html>"""
+                self._html(200, html)
+                return
             self._json(200, {"status": "ok", "message": "extension disconnect recorded"})
             return
         if path in ("/extension/uninstalled", "/extension/uninstall"):
             from agent_extension import mark_extension_uninstalled
             mark_extension_uninstalled()
             print("[Gateway Guard] Browser extension uninstalled notification received.")
+            accept = str(self.headers.get("Accept") or "").lower()
+            if "text/html" in accept or "application/xhtml" in accept:
+                html = """<!DOCTYPE html><html><head><meta charset="utf-8"/><title>YP-Raksha Guard</title>
+<style>body{font-family:Segoe UI,-apple-system,sans-serif;background:#0b1220;color:#e2e8f0;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
+.card{background:#111827;border:1px solid #334155;border-radius:14px;padding:30px 36px;text-align:center;max-width:440px;box-shadow:0 20px 25px -5px rgba(0,0,0,0.5)}
+h2{margin:0 0 10px;font-size:18px;color:#f8fafc}.sub{margin:0 0 20px;font-size:13.5px;color:#94a3b8;line-height:1.5}
+.btn{background:#334155;color:#f8fafc;border:none;border-radius:6px;padding:8px 18px;font-size:13px;cursor:pointer;transition:background 0.2s}
+.btn:hover{background:#475569}
+</style></head><body><div class="card">
+<h2>Browser Guard Uninstalled</h2>
+<p class="sub">Extension uninstall status recorded. Closing tab...</p>
+<button class="btn" onclick="window.close()">Close Tab</button>
+</div><script>try{window.close()}catch(e){}setTimeout(function(){try{window.close()}catch(e){}},400);</script></body></html>"""
+                self._html(200, html)
+                return
             self._json(200, {"status": "ok", "message": "extension uninstall recorded"})
             return
         if path in ("/extension/sync_storage", "/extension/storage"):

@@ -25,9 +25,6 @@ func isSectionGrantedForPath(granted, path string) bool {
 				if parent, _, found := strings.Cut(key, "/"); found && g == parent {
 					return true
 				}
-				if parent, _, found := strings.Cut(g, "/"); found && key == parent {
-					return true
-				}
 			}
 		}
 		return false
@@ -44,7 +41,7 @@ func isSectionGrantedForPath(granted, path string) bool {
 		return hasGrant("observability", "observability/llm-logs", "observability/dashboard", "observability/connectors", "observability/mcp-logs", "observability/logs-settings")
 
 	case strings.HasPrefix(path, "/api/browser-ai"):
-		return hasGrant("browser-ai", "browser-ai/overview", "browser-ai/targets", "browser-ai/rules", "browser-ai/logs", "browser-ai/search-logs", "browser-ai/agents", "browser-ai/telemetry", "browser-ai/setup", "observability", "observability/llm-logs")
+		return hasGrant(browserAISectionForPath(path))
 
 	case strings.HasPrefix(path, "/api/governance/virtual-keys"):
 		return hasGrant("governance", "governance/virtual-keys", "settings/api-keys", "prompt-repository")
@@ -85,14 +82,20 @@ func isSectionGrantedForPath(granted, path string) bool {
 	case strings.HasPrefix(path, "/api/circuit-breaker"):
 		return hasGrant("models", "models/circuit-breaker", "adaptive-routing", "adaptive-routing/dashboard", "adaptive-routing/settings")
 
-	case strings.HasPrefix(path, "/api/governance/routing-rules"),
-		strings.HasPrefix(path, "/api/governance/complexity-analyzer-config"):
-		return hasGrant("models", "models/routing-rules", "models/complexity-router", "adaptive-routing", "adaptive-routing/dashboard", "adaptive-routing/settings")
+	case strings.HasPrefix(path, "/api/governance/routing-rules"):
+		return hasGrant("models/routing-rules")
 
-	case strings.HasPrefix(path, "/api/governance/pricing-overrides"),
-		strings.HasPrefix(path, "/api/governance/billing-blocks"),
-		strings.HasPrefix(path, "/api/governance/model-configs"):
-		return hasGrant("models", "models/pricing-overrides", "models/model-settings", "models/budgets-limits", "governance", "prompt-repository")
+	case strings.HasPrefix(path, "/api/governance/complexity-analyzer-config"):
+		return hasGrant("models/complexity-router")
+
+	case strings.HasPrefix(path, "/api/governance/pricing-overrides"):
+		return hasGrant("models/pricing-overrides")
+
+	case strings.HasPrefix(path, "/api/governance/billing-blocks"):
+		return hasGrant("models/budgets-limits")
+
+	case strings.HasPrefix(path, "/api/governance/model-configs"):
+		return hasGrant("models/model-settings")
 
 	case strings.HasPrefix(path, "/api/models"),
 		strings.HasPrefix(path, "/api/providers"),
@@ -122,10 +125,17 @@ func isSectionGrantedForPath(granted, path string) bool {
 		return hasGrant("guardrails", "guardrails/rules", "guardrails/providers", "guardrails/cluster-config", "cluster-config")
 
 	case strings.HasPrefix(path, "/api/load-balancer"):
-		return hasGrant("adaptive-routing", "adaptive-routing/dashboard", "adaptive-routing/settings", "models")
+		if strings.HasPrefix(path, "/api/load-balancer/routes") {
+			return hasGrant("adaptive-routing/dashboard")
+		}
+		return hasGrant("adaptive-routing/settings")
 
-	case strings.HasPrefix(path, "/api/mcp"):
-		return hasGrant("mcp-gateway", "mcp-gateway/mcp-catalog", "mcp-gateway/mcp-library", "mcp-gateway/tool-groups", "mcp-gateway/auth-sessions", "mcp-gateway/oauth-grants", "mcp-gateway/mcp-settings", "prompt-repository")
+	case strings.HasPrefix(path, "/api/models/catalog"):
+		return hasGrant("models/model-catalog")
+
+	case strings.HasPrefix(path, "/api/mcp"), strings.HasPrefix(path, "/api/oauth/config"), strings.HasPrefix(path, "/api/oauth2/sessions"):
+		required := rbac.SectionRequirementFor("GET", path)
+		return len(required) > 0 && rbac.SectionsAllow(granted, required)
 
 	case strings.HasPrefix(path, "/api/plugins"):
 		return hasGrant("plugins", "observability", "observability/connectors")
@@ -192,9 +202,6 @@ func resourcesForGrantedSections(grantedSections string) []string {
 				if parent, _, found := strings.Cut(key, "/"); found && g == parent {
 					return true
 				}
-				if parent, _, found := strings.Cut(g, "/"); found && key == parent {
-					return true
-				}
 			}
 		}
 		return false
@@ -230,28 +237,28 @@ func resourcesForGrantedSections(grantedSections string) []string {
 
 	// 2. Browser AI (8 features)
 	if hasGrant("browser-ai", "browser-ai/overview") {
-		add("BrowserAIOverview", "Logs")
+		add("BrowserAIOverview")
 	}
 	if hasGrant("browser-ai", "browser-ai/targets") {
-		add("BrowserAITargets", "Logs")
+		add("BrowserAITargets")
 	}
 	if hasGrant("browser-ai", "browser-ai/rules") {
-		add("BrowserAIRules", "Logs")
+		add("BrowserAIRules")
 	}
 	if hasGrant("browser-ai", "browser-ai/logs") {
-		add("BrowserAILogs", "Logs")
+		add("BrowserAILogs")
 	}
 	if hasGrant("browser-ai", "browser-ai/search-logs") {
-		add("BrowserAISearchLogs", "Logs")
+		add("BrowserAISearchLogs")
 	}
 	if hasGrant("browser-ai", "browser-ai/setup") {
-		add("BrowserAISetup", "Logs")
+		add("BrowserAISetup")
 	}
 	if hasGrant("browser-ai", "browser-ai/agents") {
-		add("BrowserAIAgents", "Logs")
+		add("BrowserAIAgents")
 	}
 	if hasGrant("browser-ai", "browser-ai/telemetry") {
-		add("BrowserAIInsights", "Logs")
+		add("BrowserAIInsights")
 	}
 
 	// 3. Models (8 features)
@@ -282,22 +289,25 @@ func resourcesForGrantedSections(grantedSections string) []string {
 
 	// 4. MCP Gateway (7 features)
 	if hasGrant("mcp-gateway", "mcp-gateway/mcp-catalog") {
-		add("MCPCatalog", "MCPGateway")
+		add("MCPCatalog")
 	}
 	if hasGrant("mcp-gateway", "mcp-gateway/mcp-library") {
-		add("MCPLibrary", "MCPGateway")
+		add("MCPLibrary")
 	}
 	if hasGrant("mcp-gateway", "mcp-gateway/tool-groups") {
-		add("MCPToolGroups", "MCPGateway")
+		add("MCPToolGroups")
 	}
 	if hasGrant("mcp-gateway", "mcp-gateway/auth-sessions") {
-		add("MCPAuthSessions", "MCPGateway")
+		add("MCPAuthSessions")
 	}
 	if hasGrant("mcp-gateway", "mcp-gateway/oauth-grants") {
-		add("MCPOAuthGrants", "MCPGateway")
+		add("MCPOAuthGrants")
 	}
 	if hasGrant("mcp-gateway", "mcp-gateway/mcp-settings") {
-		add("MCPSettings", "MCPGateway")
+		add("MCPSettings")
+	}
+	if hasGrant("mcp-gateway") {
+		add("MCPGateway")
 	}
 	if hasGrant("plugins") {
 		add("Plugins", "Observability")
@@ -390,6 +400,28 @@ func resourcesForGrantedSections(grantedSections string) []string {
 	}
 
 	return out
+}
+
+func browserAISectionForPath(path string) string {
+	switch {
+	case strings.HasPrefix(path, "/api/browser-ai/search-logs"):
+		return "browser-ai/search-logs"
+	case strings.HasPrefix(path, "/api/browser-ai/logs"):
+		return "browser-ai/logs"
+	case strings.HasPrefix(path, "/api/browser-ai/rules"):
+		return "browser-ai/rules"
+	case strings.HasPrefix(path, "/api/browser-ai/targets"):
+		return "browser-ai/targets"
+	case strings.HasPrefix(path, "/api/browser-ai/agents"):
+		return "browser-ai/agents"
+	case strings.HasPrefix(path, "/api/browser-ai/setup"), strings.HasPrefix(path, "/api/browser-ai/license"),
+		path == "/api/browser-ai/controls", path == "/api/browser-ai/fleet-config":
+		return "browser-ai/setup"
+	case strings.HasPrefix(path, "/api/browser-ai/insights"):
+		return "browser-ai/telemetry"
+	default:
+		return "browser-ai/overview"
+	}
 }
 
 func grantResourceOps(perms rbac.PermissionSet, resources []string, ops ...string) {

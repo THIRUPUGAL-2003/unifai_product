@@ -19,7 +19,7 @@ import { AuthConfig, CoreConfig, DefaultCoreConfig } from "@/lib/types/config";
 import { SecretVar } from "@/lib/types/schemas";
 import { parseArrayFromText } from "@/lib/utils/array";
 import { validateOrigins } from "@/lib/utils/validation";
-import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
+import { RbacOperation, RbacResource, useRbac, useRbacAny } from "@enterprise/lib";
 import { useGetAuthTypeQuery } from "@enterprise/lib/store/apis/scimApi";
 import { AlertTriangle, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -54,7 +54,7 @@ const isRedactedPassword = (pwd?: string) => {
 
 export default function SecurityView() {
 	const hasSettingsUpdateAccess =
-		useRbac(RbacResource.Security, RbacOperation.Update) || useRbac(RbacResource.Settings, RbacOperation.Update);
+		useRbacAny([RbacResource.Security, RbacResource.Settings], RbacOperation.Update);
 	const { data: gatewayConfig, isError: configFailed, error: configError } = useGetCoreConfigQuery({ fromDB: true });
 	const { data: authType, isLoading: authTypeLoading, error: authTypeError } = useGetAuthTypeQuery(undefined, { skip: !IS_ENTERPRISE });
 	const { data: smtpData, error: smtpError } = useGetSMTPConfigQuery();

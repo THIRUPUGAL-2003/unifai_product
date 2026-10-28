@@ -18,7 +18,7 @@ import { getErrorMessage, useCreateMCPClientMutation, useGetCoreConfigQuery } fr
 import { CreateMCPClientRequest, SecretVar, MCPAuthType, MCPConnectionType, MCPStdioConfig, MCPTLSConfig } from "@/lib/types/mcp";
 import { parseArrayFromText } from "@/lib/utils/array";
 import { formatMcpOauthError, mcpOAuthRedirectUri } from "@/lib/utils/mcpOauthErrors";
-import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
+import { RbacOperation, RbacResource, useRbac, useRbacAny } from "@enterprise/lib";
 import { Info } from "lucide-react";
 import React, { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
@@ -61,7 +61,7 @@ const emptyForm: CreateMCPClientRequest = {
 };
 
 const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
-	const hasCreateMCPClientAccess = useRbac(RbacResource.MCPGateway, RbacOperation.Create);
+	const hasCreateMCPClientAccess = useRbacAny([RbacResource.MCPCatalog, RbacResource.MCPGateway], RbacOperation.Create);
 	const { toast } = useToast();
 	const [createMCPClient] = useCreateMCPClientMutation();
 	const { data: gatewayConfig, isError: coreConfigFailed, error: coreConfigError } = useGetCoreConfigQuery({ fromDB: true }, { skip: !open });

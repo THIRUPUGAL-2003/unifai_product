@@ -30,8 +30,16 @@ func TestIsSectionGrantedForPath_UserWorkspaceAccess(t *testing.T) {
 		{"models/pricing-overrides", "/api/governance/pricing-overrides", true},
 		{"plugins", "/api/plugins", true},
 		{"mcp-gateway", "/api/mcp/clients", true},
+		{"mcp-gateway/mcp-catalog", "/api/mcp/clients", true},
+		{"mcp-gateway/mcp-library", "/api/mcp/clients", false},
+		{"mcp-gateway/mcp-library", "/api/mcp/library", true},
+		{"mcp-gateway/mcp-catalog", "/api/mcp/library", false},
+		{"mcp-gateway/auth-sessions", "/api/mcp/sessions", true},
+		{"mcp-gateway/oauth-grants", "/api/mcp/sessions", false},
 		{"skills-repository", "/api/skills", true},
 		{"settings", "/api/feature-flags", true},
+		{"browser-ai/rules", "/api/browser-ai/rules", true},
+		{"browser-ai/rules", "/api/browser-ai/targets", false},
 		{"", "/api/logs", false},
 	}
 	for _, c := range cases {
@@ -59,6 +67,20 @@ func TestApplySectionPermissions_GrantsViewForUserSections(t *testing.T) {
 	}
 	if rbac.HasPermission(perms, "Logs", "Create") {
 		t.Error("section grants must stay view/read only")
+	}
+}
+
+func TestBrowserAIFeatureGrantStaysScoped(t *testing.T) {
+	perms := rbac.PermissionSet{}
+	applySectionFullPermissions(perms, "browser-ai/rules")
+	if !rbac.HasPermission(perms, "BrowserAIRules", "Update") {
+		t.Fatal("rules grant must include full rules access for sub-admins")
+	}
+	if rbac.HasPermission(perms, "BrowserAITargets", "Update") {
+		t.Fatal("rules grant must not include target-management access")
+	}
+	if rbac.HasPermission(perms, "Logs", "Update") {
+		t.Fatal("browser-ai feature grants must not escalate through the legacy Logs resource")
 	}
 }
 

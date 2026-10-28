@@ -21,7 +21,7 @@ import { useToast } from "@/hooks/use-toast";
 import { MCP_STATUS_COLORS } from "@/lib/constants/config";
 import { getErrorMessage, useDeleteMCPClientMutation, useReconnectMCPClientMutation, useUpdateMCPClientMutation } from "@/lib/store";
 import { MCPClient } from "@/lib/types/mcp";
-import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
+import { RbacOperation, RbacResource, useRbac, useRbacAny } from "@enterprise/lib";
 import { Link } from "@tanstack/react-router";
 import { Box, ChevronLeft, ChevronRight, Loader2, MoreHorizontal, PencilIcon, Plus, RefreshCcw, Search, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -153,9 +153,9 @@ export default function MCPClientsTable({
 	onLimitChange,
 }: MCPClientsTableProps) {
 	const [formOpen, setFormOpen] = useState(false);
-	const hasCreateMCPClientAccess = useRbac(RbacResource.MCPGateway, RbacOperation.Create);
-	const hasUpdateMCPClientAccess = useRbac(RbacResource.MCPGateway, RbacOperation.Update);
-	const hasDeleteMCPClientAccess = useRbac(RbacResource.MCPGateway, RbacOperation.Delete);
+	const hasCreateMCPClientAccess = useRbacAny([RbacResource.MCPCatalog, RbacResource.MCPGateway], RbacOperation.Create);
+	const hasUpdateMCPClientAccess = useRbacAny([RbacResource.MCPCatalog, RbacResource.MCPGateway], RbacOperation.Update);
+	const hasDeleteMCPClientAccess = useRbacAny([RbacResource.MCPCatalog, RbacResource.MCPGateway], RbacOperation.Delete);
 	const [selectedMCPClient, setSelectedMCPClient] = useState<MCPClient | null>(null);
 	const [clientToDelete, setClientToDelete] = useState<MCPClient | null>(null);
 	const [showDetailSheet, setShowDetailSheet] = useState(false);

@@ -21,7 +21,7 @@ import { CacheConfig, EditorCacheConfig, ModelProvider, ModelProviderName, Vecto
 import { SEMANTIC_CACHE_PLUGIN } from "@/lib/types/plugins";
 import { SecretVar } from "@/lib/types/schemas";
 import { cn } from "@/lib/utils";
-import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
+import { RbacOperation, RbacResource, useRbac, useRbacAny } from "@enterprise/lib";
 import { Loader2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -213,7 +213,7 @@ export default function CachingView() {
 	});
 	const isVectorStoreEnabled = gatewayConfig?.is_cache_connected ?? false;
 	const hasSettingsUpdateAccess =
-		useRbac(RbacResource.Caching, RbacOperation.Update) || useRbac(RbacResource.Settings, RbacOperation.Update);
+		useRbacAny([RbacResource.Caching, RbacResource.Settings], RbacOperation.Update);
 
 	const {
 		data: vectorStoreData,

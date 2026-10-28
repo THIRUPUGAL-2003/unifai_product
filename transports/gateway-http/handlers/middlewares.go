@@ -1069,6 +1069,7 @@ func checkSession(ctx *fasthttp.RequestCtx, store configstore.ConfigStore, token
 			path == "/api/session/ws-ticket" ||
 			path == "/ws" ||
 			(path == "/api/config" && string(ctx.Method()) == "GET") ||
+			(path == "/api/version" && string(ctx.Method()) == "GET") ||
 			(strings.HasPrefix(path, "/api/keys") && string(ctx.Method()) == "GET") ||
 			(strings.HasPrefix(path, "/api/providers") && string(ctx.Method()) == "GET") ||
 			(strings.HasPrefix(path, "/api/governance/virtual-keys") && string(ctx.Method()) == "GET") ||
@@ -1135,7 +1136,7 @@ func customRolePathDelegable(method, path string) bool {
 	case fasthttp.MethodGet, fasthttp.MethodHead, fasthttp.MethodOptions:
 		return true
 	}
-	for _, prefix := range []string{"/api/roles", "/api/permissions", "/api/rbac", "/api/users", "/api/config", "/api/scim"} {
+	for _, prefix := range []string{"/api/roles", "/api/permissions", "/api/rbac", "/api/users", "/api/session/users", "/api/config", "/api/scim"} {
 		if strings.HasPrefix(path, prefix) {
 			return false
 		}

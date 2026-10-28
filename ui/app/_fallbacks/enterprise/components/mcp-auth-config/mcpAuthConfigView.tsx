@@ -6,12 +6,14 @@ import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { getErrorMessage, useGetMCPClientsQuery, useUpdateMCPClientMutation } from "@/lib/store";
 import type { MCPAuthType, MCPClient } from "@/lib/types/mcp";
+import { RbacOperation, RbacResource, useRbacAny } from "@enterprise/lib";
 import { KeyRound, Save } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { DataTablePagination } from "@/components/table/dataTablePagination";
 
 export default function MCPAuthConfigView() {
+	const canUpdate = useRbacAny([RbacResource.MCPCatalog, RbacResource.MCPGateway], RbacOperation.Update);
 	const { data, isLoading, isError, error, refetch } = useGetMCPClientsQuery({ limit: 200, offset: 0 });
 	const [updateClient] = useUpdateMCPClientMutation();
 	const clients = data?.clients || [];
@@ -140,23 +142,27 @@ export default function MCPAuthConfigView() {
 								{(selected.config.auth_type === "headers" || !selected.config.auth_type || selected.config.auth_type === "none") && (
 									<div className="space-y-2">
 										<Label>Header name</Label>
-										<Input value={headerName} onChange={(e) => setHeaderName(e.target.value)} />
+										<Input value={headerName} onChange={(e) => setHeaderName(e.target.value)} disabled={!canUpdate} />
 										<Label>Header value</Label>
-										<Input type="password" value={headerValue} onChange={(e) => setHeaderValue(e.target.value)} />
-										<Button onClick={() => void saveHeaders(selected)}>
-											<Save className="h-4 w-4" />
-											Save header
-										</Button>
+										<Input type="password" value={headerValue} onChange={(e) => setHeaderValue(e.target.value)} disabled={!canUpdate} />
+										{canUpdate && (
+											<Button onClick={() => void saveHeaders(selected)}>
+												<Save className="h-4 w-4" />
+												Save header
+											</Button>
+										)}
 									</div>
 								)}
 								{selected.config.auth_type === "per_user_headers" && (
 									<div className="space-y-2">
 										<Label>Per-user header keys</Label>
-										<Input value={perUserKeys} onChange={(e) => setPerUserKeys(e.target.value)} placeholder="Authorization, X-Api-Key" />
-										<Button onClick={() => void savePerUser(selected)}>
-											<Save className="h-4 w-4" />
-											Save schema
-										</Button>
+										<Input value={perUserKeys} onChange={(e) => setPerUserKeys(e.target.value)} placeholder="Authorization, X-Api-Key" disabled={!canUpdate} />
+										{canUpdate && (
+											<Button onClick={() => void savePerUser(selected)}>
+												<Save className="h-4 w-4" />
+												Save schema
+											</Button>
+										)}
 									</div>
 								)}
 								{(selected.config.auth_type === "oauth" || selected.config.auth_type === "per_user_oauth") && (

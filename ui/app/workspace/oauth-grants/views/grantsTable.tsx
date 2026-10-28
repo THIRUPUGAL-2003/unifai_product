@@ -37,6 +37,8 @@ interface GrantsTableProps {
 	hasActiveFilters: boolean;
 	revoking: boolean;
 	pendingActionRowId: string | null;
+	canRevoke: boolean;
+	canViewSessions: boolean;
 	onRevoke: (row: OAuth2GrantRow) => void;
 }
 
@@ -51,6 +53,8 @@ export default function GrantsTable({
 	hasActiveFilters,
 	revoking,
 	pendingActionRowId,
+	canRevoke,
+	canViewSessions,
 	onRevoke,
 }: GrantsTableProps) {
 	return (
@@ -116,12 +120,16 @@ export default function GrantsTable({
 									<TableCell
 										className={`relative group-hover:bg-muted dark:bg-card dark:group-hover:bg-muted sticky right-0 z-10 bg-white text-right ${PIN_SHADOW_RIGHT}`}
 									>
-										<GrantActions
-											row={row}
-											revoking={revoking}
-											isPendingRow={pendingActionRowId === row.id}
-											onRevoke={() => onRevoke(row)}
-										/>
+						{(canRevoke || canViewSessions) && (
+							<GrantActions
+								row={row}
+								revoking={revoking}
+								isPendingRow={pendingActionRowId === row.id}
+								canRevoke={canRevoke}
+								canViewSessions={canViewSessions}
+								onRevoke={() => onRevoke(row)}
+							/>
+						)}
 									</TableCell>
 								</TableRow>
 							))

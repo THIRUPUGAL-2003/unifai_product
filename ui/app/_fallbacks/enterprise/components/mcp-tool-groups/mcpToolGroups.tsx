@@ -14,6 +14,7 @@ import {
 	useUpdateMCPToolGroupMutation,
 } from "@enterprise/lib/store/apis/mcpToolGroupsApi";
 import { MCPToolGroup } from "@enterprise/lib/types/workspace";
+import { RbacOperation, RbacResource, useRbacAny } from "@enterprise/lib";
 import { Boxes, Pencil, Plus, Trash2, Key, Wrench } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -71,6 +72,9 @@ function parseToolsFromGroup(group: MCPToolGroup): { clientId: string; toolNames
 }
 
 export default function MCPToolGroups() {
+	const canCreate = useRbacAny([RbacResource.MCPToolGroups, RbacResource.MCPGateway], RbacOperation.Create);
+	const canUpdate = useRbacAny([RbacResource.MCPToolGroups, RbacResource.MCPGateway], RbacOperation.Update);
+	const canDelete = useRbacAny([RbacResource.MCPToolGroups, RbacResource.MCPGateway], RbacOperation.Delete);
 	const { data, isError: clientsFailed, error: clientsError } = useGetMCPClientsQuery({ limit: 200, offset: 0 });
 	const clients = data?.clients || [];
 	const { data: vkData, isError: vkFailed, error: vkError } = useGetVirtualKeysQuery({ limit: 200, offset: 0 });
@@ -201,10 +205,12 @@ export default function MCPToolGroups() {
 						group — pick keys carefully so other MCP tools are not blocked.
 					</p>
 				</div>
-				<Button onClick={openCreate}>
-					<Plus className="h-4 w-4" />
-					New group
-				</Button>
+				{canCreate && (
+					<Button onClick={openCreate}>
+						<Plus className="h-4 w-4" />
+						New group
+					</Button>
+				)}
 			</div>
 
 			{listQueryFailed ? (
@@ -270,15 +276,19 @@ export default function MCPToolGroups() {
 										/>
 									</TableCell>
 									<TableCell>
-										<Switch checked={group.enabled} onCheckedChange={() => void toggle(group)} />
+										<Switch checked={group.enabled} onCheckedChange={() => void toggle(group)} disabled={!canUpdate} />
 									</TableCell>
 									<TableCell className="text-right">
-										<Button size="icon" variant="ghost" onClick={() => openEdit(group)} title="Edit">
-											<Pencil className="h-4 w-4" />
-										</Button>
-										<Button size="icon" variant="ghost" onClick={() => void remove(group.id)}>
-											<Trash2 className="h-4 w-4" />
-										</Button>
+										{canUpdate && (
+											<Button size="icon" variant="ghost" onClick={() => openEdit(group)} title="Edit">
+												<Pencil className="h-4 w-4" />
+											</Button>
+										)}
+										{canDelete && (
+											<Button size="icon" variant="ghost" onClick={() => void remove(group.id)}>
+												<Trash2 className="h-4 w-4" />
+											</Button>
+										)}
 									</TableCell>
 								</TableRow>
 							))}
@@ -356,7 +366,9 @@ export default function MCPToolGroups() {
 						<Button variant="outline" onClick={() => setOpen(false)}>
 							Cancel
 						</Button>
-						<Button onClick={() => void save()}>{editing ? "Save changes" : "Create"}</Button>
+						<Button onClick={() => void save()} disabled={editing ? !canUpdate : !canCreate}>
+							{editing ? "Save changes" : "Create"}
+						</Button>
 					</DialogFooter>
 				</DialogContent>
 			</Dialog>

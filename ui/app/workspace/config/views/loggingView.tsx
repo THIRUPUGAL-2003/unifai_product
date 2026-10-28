@@ -7,14 +7,14 @@ import { PRODUCT_NAME } from "@/lib/constants/config";
 import { getErrorMessage, useGetCoreConfigQuery, useTriggerLogCleanupMutation, useUpdateCoreConfigMutation } from "@/lib/store";
 import { CoreConfig, DefaultCoreConfig } from "@/lib/types/config";
 import { parseArrayFromText } from "@/lib/utils/array";
-import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
+import { RbacOperation, RbacResource, useRbac, useRbacAny } from "@enterprise/lib";
 import { Eye } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 export default function LoggingView() {
 	const hasSettingsUpdateAccess =
-		useRbac(RbacResource.LogsSettings, RbacOperation.Update) || useRbac(RbacResource.Settings, RbacOperation.Update);
+		useRbacAny([RbacResource.LogsSettings, RbacResource.Settings], RbacOperation.Update);
 	const { data: gatewayConfig } = useGetCoreConfigQuery({ fromDB: true });
 	const config = gatewayConfig?.client_config;
 	const [updateCoreConfig, { isLoading }] = useUpdateCoreConfigMutation();

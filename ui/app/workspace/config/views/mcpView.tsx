@@ -8,7 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { getErrorMessage, useGetCoreConfigQuery, useUpdateCoreConfigMutation } from "@/lib/store";
 import { CoreConfig, DefaultCoreConfig } from "@/lib/types/config";
 import { SecretVar } from "@/lib/types/schemas";
-import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
+import { RbacOperation, RbacResource, useRbac, useRbacAny } from "@enterprise/lib";
 import { useGetSCIMProvidersQuery } from "@enterprise/lib/store/apis/scimApi";
 import { IS_ENTERPRISE, PRODUCT_NAME } from "@/lib/constants/config";
 import { AlertTriangle } from "lucide-react";
@@ -22,7 +22,7 @@ export default function MCPView() {
 	// MCP Settings lives under MCP Gateway — gate save on MCPGateway Update
 	// (layout already requires the same), not Settings.
 	const hasSettingsUpdateAccess =
-		useRbac(RbacResource.MCPSettings, RbacOperation.Update) || useRbac(RbacResource.MCPGateway, RbacOperation.Update);
+		useRbacAny([RbacResource.MCPSettings, RbacResource.MCPGateway], RbacOperation.Update);
 	const { data: gatewayConfig } = useGetCoreConfigQuery({ fromDB: true });
 	const config = gatewayConfig?.client_config;
 

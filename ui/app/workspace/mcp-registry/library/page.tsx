@@ -7,7 +7,7 @@ import { parseAsSafeString } from "@/lib/queryParamsParser";
 import { getErrorMessage, useGetMCPClientsQuery, useGetMCPLibraryQuery } from "@/lib/store";
 import type { MCPLibraryEntry } from "@/lib/types/mcp";
 import { cn } from "@/lib/utils";
-import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
+import { RbacOperation, RbacResource, useRbac, useRbacAny } from "@enterprise/lib";
 import { LayoutGrid, Library, List, Plus, Search, Settings } from "lucide-react";
 import { parseAsArrayOf, parseAsInteger, parseAsString, useQueryStates } from "nuqs";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -36,9 +36,9 @@ function getInitialViewMode(): MCPLibraryViewMode {
 }
 
 export default function MCPLibraryPage() {
-	const hasCreateMCPClientAccess = useRbac(RbacResource.MCPGateway, RbacOperation.Create);
-	const hasDeleteMCPLibraryAccess = useRbac(RbacResource.MCPGateway, RbacOperation.Delete);
-	const hasSettingsAccess = useRbac(RbacResource.MCPGateway, RbacOperation.Update);
+	const hasCreateMCPClientAccess = useRbacAny([RbacResource.MCPCatalog, RbacResource.MCPGateway], RbacOperation.Create);
+	const hasDeleteMCPLibraryAccess = useRbacAny([RbacResource.MCPLibrary, RbacResource.MCPGateway], RbacOperation.Delete);
+	const hasSettingsAccess = useRbacAny([RbacResource.MCPLibrary, RbacResource.MCPGateway], RbacOperation.Update);
 	const [selectedServer, setSelectedServer] = useState<MCPLibraryEntry | null>(null);
 	const [settingsOpen, setSettingsOpen] = useState(false);
 	const [addServerOpen, setAddServerOpen] = useState(false);

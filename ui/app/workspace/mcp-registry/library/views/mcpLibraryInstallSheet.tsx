@@ -22,7 +22,7 @@ import {
 	mcpOAuthRedirectUri,
 	oauthLikelyNeedsPreRegisteredClient,
 } from "@/lib/utils/mcpOauthErrors";
-import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
+import { RbacOperation, RbacResource, useRbac, useRbacAny } from "@enterprise/lib";
 import { Check, Copy, Globe, Info, KeyRound, Radio, ShieldCheck, Terminal } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
@@ -167,7 +167,7 @@ function authHelpText(authType?: MCPAuthType | string): string {
 }
 
 export function MCPLibraryInstallSheet({ server, open, onClose, onInstalled }: MCPLibraryInstallSheetProps) {
-	const hasCreateMCPClientAccess = useRbac(RbacResource.MCPGateway, RbacOperation.Create);
+	const hasCreateMCPClientAccess = useRbacAny([RbacResource.MCPCatalog, RbacResource.MCPGateway], RbacOperation.Create);
 	const { toast } = useToast();
 	const [createMCPClient] = useCreateMCPClientMutation();
 	const { data: gatewayConfig, isError: coreConfigFailed, error: coreConfigError } = useGetCoreConfigQuery({ fromDB: true }, { skip: !open });

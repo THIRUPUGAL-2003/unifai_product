@@ -8,7 +8,7 @@ import { getErrorMessage, useGetCoreConfigQuery, useGetDroppedRequestsQuery, use
 import { CoreConfig, DefaultCoreConfig, DefaultGlobalHeaderFilterConfig, GlobalHeaderFilterConfig } from "@/lib/types/config";
 import { cn } from "@/lib/utils";
 import LargePayloadSettingsFragment from "@enterprise/components/large-payload/largePayloadSettingsFragment";
-import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
+import { RbacOperation, RbacResource, useRbac, useRbacAny } from "@enterprise/lib";
 import { useGetLargePayloadConfigQuery, useUpdateLargePayloadConfigMutation } from "@enterprise/lib/store/apis/largePayloadApi";
 import { DefaultLargePayloadConfig, LargePayloadConfig } from "@enterprise/lib/types/largePayload";
 import { Info, Plus, X } from "lucide-react";
@@ -67,7 +67,7 @@ function largePayloadConfigEqual(a: LargePayloadConfig, b: LargePayloadConfig): 
 
 export default function ClientSettingsView() {
 	const hasSettingsUpdateAccess =
-		useRbac(RbacResource.ClientSettings, RbacOperation.Update) || useRbac(RbacResource.Settings, RbacOperation.Update);
+		useRbacAny([RbacResource.ClientSettings, RbacResource.Settings], RbacOperation.Update);
 	const [droppedRequests, setDroppedRequests] = useState<number>(0);
 	const { data: droppedRequestsData, error: droppedRequestsError } = useGetDroppedRequestsQuery();
 	const { data: gatewayConfig, isLoading: isCoreConfigLoading, error: coreConfigError } = useGetCoreConfigQuery({ fromDB: true });

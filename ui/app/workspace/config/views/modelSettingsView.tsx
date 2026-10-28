@@ -3,7 +3,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { getErrorMessage, useForcePricingSyncMutation, useGetCoreConfigQuery, useUpdateCoreConfigMutation } from "@/lib/store";
 import { DefaultCoreConfig } from "@/lib/types/config";
-import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
+import { RbacOperation, RbacResource, useRbac, useRbacAny } from "@enterprise/lib";
 import { Link } from "@tanstack/react-router";
 import { useEffect, useMemo } from "react";
 import { useForm } from "react-hook-form";
@@ -18,7 +18,7 @@ interface ModelSettingsFormData {
 
 export default function ModelSettingsView() {
 	const hasSettingsUpdateAccess =
-		useRbac(RbacResource.ModelSettings, RbacOperation.Update) || useRbac(RbacResource.Settings, RbacOperation.Update);
+		useRbacAny([RbacResource.ModelSettings, RbacResource.Settings], RbacOperation.Update);
 	const { data: gatewayConfig } = useGetCoreConfigQuery({ fromDB: true });
 	const frameworkConfig = gatewayConfig?.framework_config;
 	const clientConfig = gatewayConfig?.client_config;

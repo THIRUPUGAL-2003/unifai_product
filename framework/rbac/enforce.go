@@ -131,6 +131,37 @@ func PathRequirementFor(method, path string) *PathRequirement {
 	return writeRequirement(method, path)
 }
 
+func mcpResourceForPath(path string) string {
+	switch {
+	case strings.HasPrefix(path, "/api/mcp/tool-groups"):
+		return "MCPToolGroups"
+	case strings.HasPrefix(path, "/api/mcp/library"):
+		return "MCPLibrary"
+	case strings.HasPrefix(path, "/api/mcp/sessions"), strings.HasPrefix(path, "/api/mcp/per-user-headers"):
+		return "MCPAuthSessions"
+	case strings.HasPrefix(path, "/api/mcp/clients"), strings.HasPrefix(path, "/api/mcp/client"):
+		return "MCPCatalog"
+	case strings.HasPrefix(path, "/api/oauth/config"), strings.HasPrefix(path, "/api/oauth2/sessions"):
+		return "MCPOAuthGrants"
+	case strings.HasPrefix(path, "/api/mcp"):
+		return "MCPGateway"
+	default:
+		return ""
+	}
+}
+
+func mcpPathRequirement(path, operation string) *PathRequirement {
+	resource := mcpResourceForPath(path)
+	if resource == "" {
+		return nil
+	}
+	return &PathRequirement{
+		Resource:       resource,
+		Operation:      operation,
+		AnyOfResources: []string{resource, "MCPGateway"},
+	}
+}
+
 func readRequirement(path string) *PathRequirement {
 	// Allow any authenticated session to query their own assigned permissions
 	if path == "/api/rbac/me/permissions" {
@@ -150,10 +181,10 @@ func readRequirement(path string) *PathRequirement {
 		return &PathRequirement{Resource: "MCPLogs", Operation: "Read", AnyOfResources: []string{"MCPLogs", "Logs"}}
 	case strings.HasPrefix(path, "/api/logs"):
 		return &PathRequirement{Resource: "Logs", Operation: "Read"}
-	case strings.HasPrefix(path, "/api/browser-ai/logs"):
-		return &PathRequirement{Resource: "Logs", Operation: "Read"}
+	case strings.HasPrefix(path, "/api/browser-ai/logs"), strings.HasPrefix(path, "/api/browser-ai/search-logs"):
+		return browserAIRequirement(path, "Read")
 	case strings.HasPrefix(path, "/api/browser-ai"):
-		return &PathRequirement{Resource: "Logs", Operation: "View"}
+		return browserAIRequirement(path, "View")
 	case path == "/api/plugins/semantic_cache":
 		return &PathRequirement{
 			Resource:       "Caching",
@@ -167,7 +198,7 @@ func readRequirement(path string) *PathRequirement {
 	case strings.HasPrefix(path, "/api/feature-flags"):
 		return &PathRequirement{Resource: "FeatureFlags", Operation: "View", AnyOfResources: []string{"FeatureFlags", "Settings"}}
 	case strings.HasPrefix(path, "/api/load-balancer"):
-		return &PathRequirement{Resource: "AdaptiveRouter", Operation: "View"}
+		return &PathRequirement{Resource: "AdaptiveRouter", Operation: "View", AnyOfResources: []string{"AdaptiveRouter", "AdaptiveRoutingDashboard", "AdaptiveRoutingSettings"}}
 	case strings.HasPrefix(path, "/api/cluster"):
 		return &PathRequirement{Resource: "Cluster", Operation: "View"}
 	case strings.HasPrefix(path, "/api/scim"):
@@ -182,10 +213,10 @@ func readRequirement(path string) *PathRequirement {
 		return &PathRequirement{Resource: "RBAC", Operation: "View"}
 	case strings.HasPrefix(path, "/api/circuit-breaker"):
 		return &PathRequirement{Resource: "CircuitBreaker", Operation: "View"}
-	case strings.HasPrefix(path, "/api/mcp/tool-groups"):
-		return &PathRequirement{Resource: "MCPToolGroups", Operation: "View"}
 	case strings.HasPrefix(path, "/api/mcp"):
-		return &PathRequirement{Resource: "MCPGateway", Operation: "View"}
+		return mcpPathRequirement(path, "View")
+	case strings.HasPrefix(path, "/api/oauth/config"), strings.HasPrefix(path, "/api/oauth2/sessions"):
+		return mcpPathRequirement(path, "View")
 	case strings.HasPrefix(path, "/api/governance/virtual-keys"):
 		return &PathRequirement{
 			Resource:       "VirtualKeys",
@@ -207,6 +238,8 @@ func readRequirement(path string) *PathRequirement {
 		return &PathRequirement{Resource: "PromptDeploymentStrategy", Operation: "View"}
 	case strings.HasPrefix(path, "/api/skills"):
 		return &PathRequirement{Resource: "SkillsRepository", Operation: "View"}
+	case strings.HasPrefix(path, "/api/models/catalog"):
+		return &PathRequirement{Resource: "ModelCatalog", Operation: "View", AnyOfResources: []string{"ModelCatalog", "ModelProvider"}}
 	case strings.HasPrefix(path, "/api/providers"), strings.HasPrefix(path, "/api/keys"), strings.HasPrefix(path, "/api/models"):
 		return &PathRequirement{Resource: "ModelProvider", Operation: "View"}
 	case strings.HasPrefix(path, "/api/vector-store-config"):
@@ -266,14 +299,22 @@ func governanceRequirement(path, op string) *PathRequirement {
 		dedicated = "Customers"
 	case strings.HasPrefix(path, "/api/governance/users"):
 		dedicated = "Users"
-	case strings.HasPrefix(path, "/api/governance/routing-rules"),
-		strings.HasPrefix(path, "/api/governance/complexity-analyzer-config"):
+	case strings.HasPrefix(path, "/api/governance/routing-rules"):
 		dedicated = "RoutingRules"
+	case strings.HasPrefix(path, "/api/governance/complexity-analyzer-config"):
+		dedicated = "ComplexityRouter"
 	case strings.HasPrefix(path, "/api/governance/pricing-overrides"):
-		dedicated = "Settings"
+		dedicated = "PricingOverrides"
+	case strings.HasPrefix(path, "/api/governance/billing-blocks"):
+		dedicated = "BudgetsLimits"
+	case strings.HasPrefix(path, "/api/governance/model-configs"):
+		dedicated = "ModelSettings"
 	}
 	if dedicated == "" {
 		return &PathRequirement{Resource: "Governance", Operation: op}
+	}
+	if strings.HasPrefix(path, "/api/governance/complexity-analyzer-config") {
+		return &PathRequirement{Resource: dedicated, Operation: op, AnyOfResources: []string{dedicated, "RoutingRules", "AdaptiveRouter", "Governance"}}
 	}
 	return &PathRequirement{Resource: dedicated, Operation: op, AnyOfResources: []string{dedicated, "Governance"}}
 }
@@ -291,6 +332,38 @@ func isBrowserAILogDelete(method, path string) bool {
 	return false
 }
 
+func browserAIResourceForPath(path string) string {
+	switch {
+	case strings.HasPrefix(path, "/api/browser-ai/search-logs"):
+		return "BrowserAISearchLogs"
+	case strings.HasPrefix(path, "/api/browser-ai/logs"):
+		return "BrowserAILogs"
+	case strings.HasPrefix(path, "/api/browser-ai/rules"):
+		return "BrowserAIRules"
+	case strings.HasPrefix(path, "/api/browser-ai/targets"):
+		return "BrowserAITargets"
+	case strings.HasPrefix(path, "/api/browser-ai/agents"):
+		return "BrowserAIAgents"
+	case strings.HasPrefix(path, "/api/browser-ai/setup"), strings.HasPrefix(path, "/api/browser-ai/license"):
+		return "BrowserAISetup"
+	case strings.HasPrefix(path, "/api/browser-ai/insights"):
+		return "BrowserAIInsights"
+	case path == "/api/browser-ai/controls", path == "/api/browser-ai/fleet-config":
+		return "BrowserAISetup"
+	default:
+		return "BrowserAIOverview"
+	}
+}
+
+func browserAIRequirement(path, operation string) *PathRequirement {
+	resource := browserAIResourceForPath(path)
+	return &PathRequirement{
+		Resource:       resource,
+		Operation:      operation,
+		AnyOfResources: []string{resource, "Logs"},
+	}
+}
+
 func writeRequirement(method, path string) *PathRequirement {
 	op := "Update"
 	switch method {
@@ -305,9 +378,16 @@ func writeRequirement(method, path string) *PathRequirement {
 	case strings.HasPrefix(path, "/api/logs"):
 		return &PathRequirement{Resource: "Logs", Operation: "Delete"}
 	case isBrowserAILogDelete(method, path):
-		return &PathRequirement{Resource: "Logs", Operation: "Delete"}
+		return browserAIRequirement(path, "Delete")
 	case strings.HasPrefix(path, "/api/browser-ai"):
-		return &PathRequirement{Resource: "Logs", Operation: "Update"}
+		browserOp := op
+		if method == "POST" && (path == "/api/browser-ai/rules" || path == "/api/browser-ai/rules/import" || path == "/api/browser-ai/targets" || path == "/api/browser-ai/targets/import") {
+			browserOp = "Create"
+		}
+		if method == "POST" && (strings.HasSuffix(path, "/bulk-delete") || strings.HasSuffix(path, "/remote-uninstall") || path == "/api/browser-ai/agents/uninstall") {
+			browserOp = "Delete"
+		}
+		return browserAIRequirement(path, browserOp)
 	case path == "/api/plugins/semantic_cache":
 		return &PathRequirement{
 			Resource:       "Caching",
@@ -321,7 +401,7 @@ func writeRequirement(method, path string) *PathRequirement {
 	case strings.HasPrefix(path, "/api/feature-flags"):
 		return &PathRequirement{Resource: "FeatureFlags", Operation: "Update", AnyOfResources: []string{"FeatureFlags", "Settings"}}
 	case strings.HasPrefix(path, "/api/load-balancer"):
-		return &PathRequirement{Resource: "AdaptiveRouter", Operation: "Update"}
+		return &PathRequirement{Resource: "AdaptiveRouter", Operation: "Update", AnyOfResources: []string{"AdaptiveRouter", "AdaptiveRoutingDashboard", "AdaptiveRoutingSettings"}}
 	case strings.HasPrefix(path, "/api/cluster"):
 		return &PathRequirement{Resource: "Cluster", Operation: "Update"}
 	case strings.HasPrefix(path, "/api/scim"):
@@ -347,10 +427,13 @@ func writeRequirement(method, path string) *PathRequirement {
 		return &PathRequirement{Resource: "Users", Operation: op, AnyOfResources: []string{"Users", "RBAC", "Governance"}}
 	case strings.HasPrefix(path, "/api/circuit-breaker"):
 		return &PathRequirement{Resource: "CircuitBreaker", Operation: op}
-	case strings.HasPrefix(path, "/api/mcp/tool-groups"):
-		return &PathRequirement{Resource: "MCPToolGroups", Operation: op}
 	case strings.HasPrefix(path, "/api/mcp"):
-		return &PathRequirement{Resource: "MCPGateway", Operation: op}
+		if method == "POST" && (path == "/api/mcp/library/force-sync" || strings.HasSuffix(path, "/reconnect") || strings.HasSuffix(path, "/complete-oauth") || strings.HasSuffix(path, "/reauth")) {
+			op = "Update"
+		}
+		return mcpPathRequirement(path, op)
+	case strings.HasPrefix(path, "/api/oauth/config"), strings.HasPrefix(path, "/api/oauth2/sessions"):
+		return mcpPathRequirement(path, op)
 	case strings.HasPrefix(path, "/api/governance/virtual-keys"):
 		if strings.HasSuffix(path, "/rotate") || path == "/api/governance/virtual-keys/rotate" {
 			return &PathRequirement{Resource: "VirtualKeys", Operation: "Update", AnyOfResources: []string{"VirtualKeys", "APIKeys", "Governance"}}
@@ -360,6 +443,8 @@ func writeRequirement(method, path string) *PathRequirement {
 			Operation:      op,
 			AnyOfResources: []string{"VirtualKeys", "APIKeys", "Governance"},
 		}
+	case strings.HasPrefix(path, "/api/governance/complexity-analyzer-config") && strings.HasSuffix(path, "/reset"):
+		return governanceRequirement(path, "Update")
 	case strings.HasPrefix(path, "/api/governance"):
 		return governanceRequirement(path, op)
 	case path == "/api/guardrails/rules":
@@ -383,6 +468,8 @@ func writeRequirement(method, path string) *PathRequirement {
 		return &PathRequirement{Resource: "PromptDeploymentStrategy", Operation: op}
 	case strings.HasPrefix(path, "/api/skills"):
 		return &PathRequirement{Resource: "SkillsRepository", Operation: op}
+	case strings.HasPrefix(path, "/api/models/catalog"):
+		return &PathRequirement{Resource: "ModelCatalog", Operation: "Update", AnyOfResources: []string{"ModelCatalog", "ModelProvider"}}
 	case strings.HasPrefix(path, "/api/providers"), strings.HasPrefix(path, "/api/keys"):
 		return &PathRequirement{Resource: "ModelProvider", Operation: op}
 	case path == "/api/config/metadata":

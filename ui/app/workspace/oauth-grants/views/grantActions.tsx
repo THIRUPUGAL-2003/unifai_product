@@ -18,10 +18,12 @@ interface GrantActionsProps {
 	row: OAuth2GrantRow;
 	revoking: boolean;
 	isPendingRow: boolean;
+	canRevoke: boolean;
+	canViewSessions: boolean;
 	onRevoke: () => void;
 }
 
-export default function GrantActions({ row, revoking, isPendingRow, onRevoke }: GrantActionsProps) {
+export default function GrantActions({ row, revoking, isPendingRow, canRevoke, canViewSessions, onRevoke }: GrantActionsProps) {
 	const busy = revoking;
 	// Link to Auth Sessions pre-filtered to this grant's exact identity: the
 	// mode plus the identity filter, which exact-matches uf_sub against the
@@ -37,7 +39,7 @@ export default function GrantActions({ row, revoking, isPendingRow, onRevoke }: 
 				</Button>
 			</DropdownMenuTrigger>
 			<DropdownMenuContent align="end">
-				{(row.uf_mode === "user" || row.uf_mode === "vk" || row.uf_mode === "session") && (
+				{canViewSessions && (row.uf_mode === "user" || row.uf_mode === "vk" || row.uf_mode === "session") && (
 					<DropdownMenuItem asChild className="cursor-pointer">
 						<Link to={authSessionsUrl} data-testid="oauth-grants-view-sessions-link">
 							<ExternalLink className="h-4 w-4" />
@@ -45,16 +47,18 @@ export default function GrantActions({ row, revoking, isPendingRow, onRevoke }: 
 						</Link>
 					</DropdownMenuItem>
 				)}
-				<DropdownMenuItem
-					data-testid="oauth-grants-revoke-action"
-					variant="destructive"
-					className="cursor-pointer"
-					disabled={busy}
-					onSelect={(e) => { e.preventDefault(); onRevoke(); }}
-				>
-					<Trash2 className="h-4 w-4" />
-					Revoke
-				</DropdownMenuItem>
+				{canRevoke && (
+					<DropdownMenuItem
+						data-testid="oauth-grants-revoke-action"
+						variant="destructive"
+						className="cursor-pointer"
+						disabled={busy}
+						onSelect={(e) => { e.preventDefault(); onRevoke(); }}
+					>
+						<Trash2 className="h-4 w-4" />
+						Revoke
+					</DropdownMenuItem>
+				)}
 			</DropdownMenuContent>
 		</DropdownMenu>
 	);
