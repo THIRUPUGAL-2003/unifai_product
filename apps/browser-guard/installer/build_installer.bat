@@ -191,7 +191,7 @@ if errorlevel 1 (
 
 echo.
 echo ============================================================
-echo  SUCCESS — YP Raksha 1.1.33
+echo  SUCCESS — YP Raksha 1.5.0
 echo  Employee installer (Setup EXE):
 echo    release\YP_Raksha_Setup.exe
 echo  Employee download package (Windows ZIP):

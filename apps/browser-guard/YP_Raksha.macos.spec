@@ -103,8 +103,8 @@ app = BUNDLE(
     info_plist={
         "CFBundleDisplayName": "YP Raksha",
         "CFBundleName": "YP Raksha",
-        "CFBundleShortVersionString": "1.1.29",
-        "CFBundleVersion": "1.1.29",
+        "CFBundleShortVersionString": "1.5.0",
+        "CFBundleVersion": "1.5.0",
         "LSBackgroundOnly": False,
         "NSHighResolutionCapable": True,
     },

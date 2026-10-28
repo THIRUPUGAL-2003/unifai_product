@@ -1,5 +1,5 @@
 #define MyAppName "YP Raksha"
-#define MyAppVersion "1.1.33"
+#define MyAppVersion "1.5.0"
 #define MyAppPublisher "YesPanchi"
 
 [Setup]
@@ -23,7 +23,7 @@ SetupIconFile=yp_raksha.ico
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
-VersionInfoVersion=1.1.33.0
+VersionInfoVersion=1.5.0.0
 VersionInfoCompany={#MyAppPublisher}
 VersionInfoDescription=YP Raksha Setup
 VersionInfoProductName={#MyAppName}

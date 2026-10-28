@@ -109,6 +109,11 @@ def get_extension_version() -> str:
             pass
 
     base_parts = [p for p in base.split(".") if p.isdigit()]
+    if build_num == 0:
+        if len(base_parts) >= 3:
+            return f"{base_parts[0]}.{base_parts[1]}.{base_parts[2]}"
+        elif len(base_parts) == 2:
+            return f"{base_parts[0]}.{base_parts[1]}.0"
     if len(base_parts) >= 3:
         return f"{base_parts[0]}.{base_parts[1]}.{base_parts[2]}.{build_num}"
     elif len(base_parts) == 2:
