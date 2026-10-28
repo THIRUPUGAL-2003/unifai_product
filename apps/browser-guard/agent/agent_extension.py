@@ -1392,6 +1392,7 @@ def check_prompt(
     violating_files = []
     prompt_violated = False
     block_message = ""
+    matched_rule_dict = None
     raw_prompt_text = (prompt or "").strip()
 
     # Instant in-memory DLP regex match on prompt and individual files
@@ -1603,6 +1604,8 @@ def check_prompt(
         meta["is_blocked"] = True
         meta["blocked_reason"] = rule or "Drag & Drop Policy"
         meta["status"] = "Blocked (Drag & Drop Restricted)"
+        meta["predicted_category"] = "drag_drop_governance"
+        rule = rule or "Drag & Drop Policy"
         is_blocked = True
     elif prompt.startswith("--copy paste") or "[clipboard" in prompt.lower():
         meta["is_blocked"] = True
@@ -1614,18 +1617,22 @@ def check_prompt(
         action_name = "Clipboard Copy Restricted" if is_copy else "Clipboard Paste Restricted"
         meta["blocked_reason"] = action_name
         meta["status"] = f"Blocked ({action_name})"
-        meta["predicted_category"] = "CLIPBOARD_GOVERNANCE"
+        meta["predicted_category"] = "clipboard_governance"
         rule = action_name
         is_blocked = True
     elif prompt.startswith("--screenshot") or "[screenshot" in prompt.lower() or "[screen capture" in prompt.lower():
         meta["is_blocked"] = True
         meta["blocked_reason"] = rule or "Screen Capture Policy"
         meta["status"] = "Blocked (Screen Capture Restricted)"
+        meta["predicted_category"] = "screenshot_restriction"
+        rule = rule or "Screen Capture Policy"
         is_blocked = True
     elif prompt.startswith("--download") or "[download" in prompt.lower():
         meta["is_blocked"] = True
         meta["blocked_reason"] = rule or "Download Policy"
         meta["status"] = "Blocked (Download Restricted)"
+        meta["predicted_category"] = "download_governance"
+        rule = rule or "Download Policy"
         is_blocked = True
     elif prompt.startswith("--corporate account") or "[unauthorized domain]" in prompt.lower() or "[corporate workspace" in prompt.lower():
         meta["is_blocked"] = True

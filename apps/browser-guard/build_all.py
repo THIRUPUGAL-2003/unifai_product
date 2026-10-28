@@ -200,11 +200,23 @@ def package_macos_zip() -> Path:
         code_enc = PROXY_DIR / "gateway_guard_code.enc"
         if code_enc.is_file():
             shutil.copy2(code_enc, res_dir / "gateway_guard_code.enc")
+        stub = INSTALLER_DIR / "proxy_stub.py"
+        if stub.is_file():
+            shutil.copy2(stub, res_dir / "browser_ai_proxy.py")
         parts_enc = PROXY_DIR / "gateway_proxy_parts" / "gateway_proxy_parts.enc"
+        if not parts_enc.is_file():
+            parts_enc = PROXY_DIR / "gateway_proxy_parts" / "gateway_proxy_parts" / "gateway_proxy_parts.enc"
         if parts_enc.is_file():
             parts_dest = res_dir / "gateway_proxy_parts"
             parts_dest.mkdir(parents=True, exist_ok=True)
             shutil.copy2(parts_enc, parts_dest / "gateway_proxy_parts.enc")
+        manifest_src = PROXY_DIR / "gateway_proxy_parts" / "gateway_proxy_parts" / "MANIFEST.txt"
+        if not manifest_src.is_file():
+            manifest_src = PROXY_DIR / "gateway_proxy_parts" / "MANIFEST.txt"
+        if manifest_src.is_file():
+            parts_dest = res_dir / "gateway_proxy_parts"
+            parts_dest.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(manifest_src, parts_dest / "MANIFEST.txt")
 
     if stage_dir.is_dir():
         shutil.rmtree(stage_dir, ignore_errors=True)
@@ -218,8 +230,10 @@ def package_macos_zip() -> Path:
         "VERSION.txt",
         "EMPLOYEE_README_MAC.txt",
         "INSTALL_MACOS.txt",
+        "UNINSTALL_MACOS.txt",
         "Install_YP_Raksha.command",
         "Uninstall_YP_Raksha.command",
+        "Update_YP_Raksha_macOS.command",
     ]
     for name in extra_files:
         for base in [RELEASE_DIR, INSTALLER_DIR]:

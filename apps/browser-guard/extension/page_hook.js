@@ -819,18 +819,14 @@
     var nowSs = Date.now();
     if (nowSs - _lastScreenshotAlertLoggedAt > 2500) {
       _lastScreenshotAlertLoggedAt = nowSs;
-      var promptLogText = "--screenshot [SCREEN CAPTURE RESTRICTED]";
-      if (detail && typeof detail === "string") {
-        promptLogText += " -- " + detail;
-      } else {
-        promptLogText += " -- Capture Shortcut Detected";
-      }
+      var siteHost = location.hostname || location.host || "website";
+      var promptLogText = "--screenshot [SCREEN CAPTURE RESTRICTED] -- " + siteHost;
       window.postMessage({
         source: "gateway-guard-page",
         nonce: guardNonce,
         id: "screenshot_block_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2),
         prompt: promptLogText,
-        host: location.hostname,
+        host: siteHost,
         url: location.href,
         is_blocked: true,
         rule: "Screen Capture Policy",
@@ -3155,16 +3151,17 @@
         try { ev.dataTransfer.clearData(); } catch (_) {}
       }
       showBubble(govDragDropBlockMessage || "File drag and drop is restricted by corporate security policy.", "Drag & Drop Restricted", "block");
-      var promptLogText = "--drag drop [DRAG & DROP BLOCKED]";
+      var siteHost = location.hostname || location.host || "website";
+      var promptLogText = "--drag drop [DRAG & DROP BLOCKED] -- " + siteHost;
       if (droppedSummary) {
-        promptLogText += " " + droppedSummary;
+        promptLogText += " (" + droppedSummary + ")";
       }
       window.postMessage({
         source: "gateway-guard-page",
         nonce: guardNonce,
         id: "drag_block_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2),
         prompt: promptLogText,
-        host: location.hostname,
+        host: siteHost,
         url: location.href,
         is_blocked: true,
         rule: "Drag & Drop Policy",
@@ -3188,12 +3185,14 @@
           ? ("Files '" + upNames.join("', '") + "' upload to this AI platform is blocked by corporate policy.")
           : (upNames.length === 1 ? ("File '" + upNames[0] + "' upload to this AI platform is blocked by corporate policy.") : "File uploads and attachments to this AI platform are blocked by corporate policy."));
         showBubble(upBlockMsg, "File Upload Policy", "block");
+        var upSiteHost = location.hostname || location.host || "website";
+        var upLogPrompt = "--drag drop [DRAG & DROP BLOCKED] -- " + upSiteHost + " (Upload: " + (upNames.join(", ") || "Files") + ")";
         window.postMessage({
           source: "gateway-guard-page",
           nonce: guardNonce,
           id: "upload_drop_block_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2),
-          prompt: "--drag drop [DRAG & DROP BLOCKED] Upload: " + (upNames.join(", ") || "Files"),
-          host: location.hostname,
+          prompt: upLogPrompt,
+          host: upSiteHost,
           url: location.href,
           is_blocked: true,
           rule: "File Upload Policy",
@@ -3349,10 +3348,7 @@
       if (!screenshotShieldActive) {
         showBubble(govClipboardBlockMessage || "Clipboard pasting into this AI tool is restricted by corporate security policy.", "Clipboard Paste Restricted", "block");
       }
-      var promptLogText = "--copy paste [CLIPBOARD PASTE]";
-      if (pastedSnippet && pastedSnippet.trim()) {
-        promptLogText += " -- " + pastedSnippet.trim().slice(0, 1000);
-      }
+      var promptLogText = "--copy paste [CLIPBOARD PASTE] -- " + (pastedSnippet && pastedSnippet.trim() ? pastedSnippet.trim().slice(0, 1000) : (location.hostname || "Clipboard Data"));
       postDebouncedClipboardLog({
         id: "paste_block_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2),
         prompt: promptLogText,
@@ -3464,10 +3460,7 @@
         }
       } catch (_) {}
 
-      var promptLogText = "--copy paste [CLIPBOARD PASTE]";
-      if (pastedSnippet && pastedSnippet.trim()) {
-        promptLogText += " -- " + pastedSnippet.trim().slice(0, 1000);
-      }
+      var promptLogText = "--copy paste [CLIPBOARD PASTE] -- " + (pastedSnippet && pastedSnippet.trim() ? pastedSnippet.trim().slice(0, 1000) : (location.hostname || "Clipboard Data"));
       postDebouncedClipboardLog({
         id: "paste_beforeinput_" + Date.now().toString(36),
         prompt: promptLogText,
@@ -3479,6 +3472,17 @@
 
   function handleCopyEvent(ev) {
     if (!clipboardPolicyActive()) return;
+    var copiedSnippet = "";
+    try {
+      var sel = window.getSelection();
+      if (sel) copiedSnippet = sel.toString().trim();
+      if (!copiedSnippet && document.activeElement) {
+        var el = document.activeElement;
+        if (typeof el.selectionStart === "number" && typeof el.selectionEnd === "number" && el.selectionEnd > el.selectionStart) {
+          copiedSnippet = (el.value || "").slice(el.selectionStart, el.selectionEnd).trim();
+        }
+      }
+    } catch (_) {}
     try {
       ev.preventDefault();
       ev.stopPropagation();
@@ -3510,9 +3514,10 @@
     if (!screenshotShieldActive) {
       showBubble(govClipboardBlockMessage || "Clipboard copying from this AI tool is restricted by corporate security policy.", "Clipboard Copy Restricted", "block");
     }
+    var copyLogPrompt = "--copy paste [CLIPBOARD COPY] -- " + (copiedSnippet ? copiedSnippet.slice(0, 1000) : (location.hostname || "Clipboard Data"));
     postDebouncedClipboardLog({
       id: "copy_block_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2),
-      prompt: "--copy paste [CLIPBOARD COPY]",
+      prompt: copyLogPrompt,
       blocked_reason: "Clipboard Copy Restricted",
       status: "Blocked (Clipboard Copy Restricted)"
     });
@@ -3560,7 +3565,19 @@
           : "Clipboard pasting into this AI tool is restricted by corporate security policy.";
         showBubble(govClipboardBlockMessage || defaultMsg, actionLabel, "block");
       }
-      var logPrompt = isCopy ? "--copy paste [CLIPBOARD COPY KEY]" : "--copy paste [CLIPBOARD PASTE KEY]";
+      var clipData = "";
+      if (isCopy) {
+        try {
+          var selK = window.getSelection();
+          if (selK) clipData = selK.toString().trim();
+          if (!clipData && document.activeElement && typeof document.activeElement.selectionStart === "number") {
+            clipData = (document.activeElement.value || "").slice(document.activeElement.selectionStart, document.activeElement.selectionEnd).trim();
+          }
+        } catch (_) {}
+      }
+      var logPrompt = isCopy
+        ? ("--copy paste [CLIPBOARD COPY] -- " + (clipData ? clipData.slice(0, 1000) : (location.hostname || "Clipboard Data")))
+        : ("--copy paste [CLIPBOARD PASTE] -- " + (location.hostname || "Clipboard Data"));
       postDebouncedClipboardLog({
         id: "clip_key_block_" + Date.now().toString(36),
         prompt: logPrompt,
@@ -3583,9 +3600,10 @@
         if (!screenshotShieldActive) {
           showBubble(govClipboardBlockMessage || "Clipboard copying from this AI tool is restricted by corporate security policy.", "Clipboard Copy Restricted", "block");
         }
+        var copyCtxPrompt = "--copy paste [CLIPBOARD COPY] -- " + selectedText.slice(0, 1000);
         postDebouncedClipboardLog({
           id: "copy_context_block_" + Date.now().toString(36),
-          prompt: "--copy paste [CLIPBOARD COPY CONTEXT MENU]",
+          prompt: copyCtxPrompt,
           blocked_reason: "Clipboard Copy Restricted",
           status: "Blocked (Clipboard Copy Restricted)"
         });
@@ -3696,9 +3714,17 @@
       if (!screenshotShieldActive) {
         showBubble(govClipboardBlockMessage || "Clipboard copying from this AI tool is restricted by corporate security policy.", "Clipboard Copy Restricted", "block");
       }
+      var codeSnippet = "";
+      try {
+        var codeBlock = btn.closest("pre, .code-block, div") || btn.parentElement;
+        if (codeBlock) {
+          codeSnippet = (codeBlock.innerText || codeBlock.textContent || "").trim();
+        }
+      } catch (_) {}
+      var copyBtnPrompt = "--copy paste [CLIPBOARD COPY] -- " + (codeSnippet ? codeSnippet.slice(0, 1000) : (location.hostname || "Clipboard Data"));
       postDebouncedClipboardLog({
         id: "copy_btn_block_" + Date.now().toString(36),
-        prompt: "--copy paste [CLIPBOARD COPY BUTTON]",
+        prompt: copyBtnPrompt,
         blocked_reason: "Clipboard Copy Restricted",
         status: "Blocked (Clipboard Copy Restricted)"
       });
@@ -3723,9 +3749,11 @@
               if (!screenshotShieldActive) {
                 showBubble(govClipboardBlockMessage || "Clipboard copying from this AI tool is restricted by corporate security policy.", "Clipboard Copy Restricted", "block");
               }
+              var apiText = (arguments[0] && typeof arguments[0] === "string") ? arguments[0].trim() : "";
+              var copyApiPrompt = "--copy paste [CLIPBOARD COPY] -- " + (apiText ? apiText.slice(0, 1000) : (location.hostname || "Clipboard Data"));
               postDebouncedClipboardLog({
                 id: "copy_api_block_" + Date.now().toString(36),
-                prompt: "--copy paste [CLIPBOARD COPY API]",
+                prompt: copyApiPrompt,
                 blocked_reason: "Clipboard Copy Restricted",
                 status: "Blocked (Clipboard Copy Restricted)"
               });
@@ -3868,6 +3896,22 @@
       ev.preventDefault();
       ev.stopImmediatePropagation();
       showBubble(govDownloadBlockMessage || govBlockMessage || "Downloading files, artifacts, and exports from this AI tool is restricted by corporate security policy.", "Download Policy", "block");
+      var siteHost = location.hostname || location.host || "website";
+      var dlDesc = href || label || title || text || "download";
+      try { dlDesc = dlDesc.replace(/^.*[\\\/]/, "").trim(); } catch (_) {}
+      var promptText = "--download [DOWNLOAD BLOCKED] -- " + siteHost + (dlDesc ? (" (" + dlDesc.slice(0, 50) + ")") : "");
+      window.postMessage({
+        source: "gateway-guard-page",
+        nonce: guardNonce,
+        id: "dl_block_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2),
+        prompt: promptText,
+        host: siteHost,
+        url: location.href,
+        is_blocked: true,
+        rule: "Download Policy",
+        blocked_reason: "Download Policy",
+        status: "Blocked (Download Policy)"
+      }, "*");
     }
   }, true);
 
@@ -3879,6 +3923,22 @@
         var hasDl = this.hasAttribute("download");
         if (hasDl || href.startsWith("blob:") || href.startsWith("data:") || href.match(/\.(pdf|csv|xlsx|docx|zip|txt|json)/i)) {
           showBubble(govDownloadBlockMessage || govBlockMessage || "File download was blocked by corporate data governance policy.", "Download Policy", "block");
+          var siteHost = location.hostname || location.host || "website";
+          var dlDesc = this.getAttribute("download") || href || "file";
+          try { dlDesc = dlDesc.replace(/^.*[\\\/]/, "").trim(); } catch (_) {}
+          var promptText = "--download [DOWNLOAD BLOCKED] -- " + siteHost + (dlDesc ? (" (" + dlDesc.slice(0, 50) + ")") : "");
+          window.postMessage({
+            source: "gateway-guard-page",
+            nonce: guardNonce,
+            id: "dl_block_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2),
+            prompt: promptText,
+            host: siteHost,
+            url: location.href,
+            is_blocked: true,
+            rule: "Download Policy",
+            blocked_reason: "Download Policy",
+            status: "Blocked (Download Policy)"
+          }, "*");
           return;
         }
       }

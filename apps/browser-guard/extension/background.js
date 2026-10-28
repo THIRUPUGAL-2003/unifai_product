@@ -260,9 +260,8 @@ function recordDownloadBlockedLog(sourceHost, item) {
   chrome.storage.local.get(["server_host"], function (stored) {
     var sHost = gatewayHost(stored && stored.server_host) ||
       gatewayHost(typeof GATEWAY_SERVER_HOST === "string" ? GATEWAY_SERVER_HOST : "");
-    var fileName = (item && (item.filename || item.url || "")) || "downloaded file";
-    try { fileName = fileName.replace(/^.*[\\\/]/, ""); } catch (_) {}
-    var promptText = "--download [DOWNLOAD BLOCKED] " + fileName;
+    var siteHost = sourceHost || "website";
+    var promptText = "--download [DOWNLOAD BLOCKED] -- " + siteHost + (fileName ? (" (" + fileName + ")") : "");
     var payload = {
       id: "dl_block_" + Date.now().toString(36),
       eval_id: "dl_block_" + Date.now().toString(36),

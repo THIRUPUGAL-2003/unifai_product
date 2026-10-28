@@ -356,6 +356,7 @@
   var _lastClipboardBlockLoggedAt = 0;
   var _lastDragDropBlockLoggedAt = 0;
   var _lastScreenshotBlockLoggedAt = 0;
+  var _lastDownloadBlockLoggedAt = 0;
   function recordIsolatedGovernanceLog(promptText, ruleName) {
     if (!isExtensionValid()) return;
     var now = Date.now();
@@ -370,6 +371,10 @@
     if (ruleName === "Screen Capture Policy" || (promptText && (promptText.indexOf("--screenshot") === 0 || promptText.indexOf("[SCREEN CAPTURE") === 0))) {
       if (now - _lastScreenshotBlockLoggedAt < 2000) return;
       _lastScreenshotBlockLoggedAt = now;
+    }
+    if (ruleName === "Download Policy" || (promptText && promptText.indexOf("--download") === 0)) {
+      if (now - _lastDownloadBlockLoggedAt < 2000) return;
+      _lastDownloadBlockLoggedAt = now;
     }
     var sig = promptText + "||" + ruleName;
     if (sig === _lastGovLogSig && (now - _lastGovLogTime < 2500)) return;
@@ -1386,6 +1391,14 @@
         return;
       }
       _lastScreenshotBlockLoggedAt = nowSs;
+    }
+
+    if (msg.id && String(msg.id).indexOf("dl_block_") === 0) {
+      var nowDl = Date.now();
+      if (nowDl - _lastDownloadBlockLoggedAt < 2000) {
+        return;
+      }
+      _lastDownloadBlockLoggedAt = nowDl;
     }
 
     var checkPayload = {
