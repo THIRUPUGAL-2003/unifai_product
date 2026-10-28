@@ -169,7 +169,13 @@
       }
     }
     if (freshEntries.length === 1) {
-      return freshEntries[0];
+      var single = freshEntries[0];
+      var isGeneric = /^file[-_][a-zA-Z0-9]+$/i.test(name) || /^(upload|attachment|blob|input_file)/i.test(name);
+      var nameExt = clean.includes(".") ? clean.split(".").pop() : "";
+      var singleExt = String(single.name || "").toLowerCase().includes(".") ? String(single.name || "").toLowerCase().split(".").pop() : "";
+      if (isGeneric || (nameExt && nameExt === singleExt)) {
+        return single;
+      }
     }
     return null;
   }
@@ -2860,6 +2866,8 @@
             return;
           }
           stagedImages.push(e.target.result);
+          var imgMime = type || ("image/" + (name.split(".").pop() || "png").toLowerCase());
+          pushStagedFile({ name: name, size: size, type: imgMime, base64: b64Img, text: "" });
         }
       };
       rImg.readAsDataURL(file);
@@ -4888,11 +4896,12 @@
         }
       }
 
-      return ask(promptText, netFiles, []).then(function (decision) {
+      return ask(promptText, netFiles, stagedImages || []).then(function (decision) {
         var sent = false;
         var result = null;
         handleDecision(decision, function (chosen) {
           sent = true;
+          clearAllStagedFiles();
           var nextArgs = args;
           var action = String((chosen && chosen.action) || "").toLowerCase();
           var nextInit = init ? Object.assign({}, init) : {};

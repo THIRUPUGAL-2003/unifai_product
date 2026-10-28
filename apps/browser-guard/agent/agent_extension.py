@@ -1201,6 +1201,22 @@ def check_prompt(
                     raw_b = ftext.encode("utf-8", errors="ignore")
                 except Exception:
                     pass
+            if not raw_b and fext in (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".svg") and images_list:
+                for img_cand in images_list:
+                    if isinstance(img_cand, str) and img_cand:
+                        cand_b64 = img_cand.split(",")[-1] if "," in img_cand else img_cand
+                        try:
+                            cand_bytes = base64.b64decode(cand_b64)
+                            if len(cand_bytes) >= 8:
+                                raw_b = cand_bytes
+                                fb64 = cand_b64
+                                f["base64"] = fb64
+                                if not ctype or ctype == "application/octet-stream":
+                                    ctype = f"image/{norm_fext or 'png'}"
+                                    f["type"] = ctype
+                                break
+                        except Exception:
+                            pass
 
             extracted = str(f.get("extracted_text") or "").strip()
             if not extracted and (raw_b or ftext):
@@ -1622,7 +1638,28 @@ def check_prompt(
                         pass
                 elif f.get("text"):
                     f_bytes = str(f["text"]).encode("utf-8")
+                fn_ext = os.path.splitext(fn)[1].lower()
+                if not f_bytes and fn_ext in (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".svg") and images_list:
+                    for img_cand in images_list:
+                        if isinstance(img_cand, str) and img_cand:
+                            cand_b64 = img_cand.split(",")[-1] if "," in img_cand else img_cand
+                            try:
+                                cand_bytes = base64.b64decode(cand_b64)
+                                if len(cand_bytes) >= 8:
+                                    f_bytes = cand_bytes
+                                    break
+                            except Exception:
+                                pass
                 f_ct = str(f.get("type") or "application/octet-stream").strip()
+                if not f_ct or f_ct == "application/octet-stream":
+                    if fn_ext in (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".svg"):
+                        f_ct = f"image/{fn_ext.lstrip('.').lower() or 'png'}"
+                    elif fn_ext == ".docx":
+                        f_ct = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    elif fn_ext == ".xlsx":
+                        f_ct = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    elif fn_ext == ".pdf":
+                        f_ct = "application/pdf"
 
             f_meta = dict(meta)
             f_meta["file_name"] = fn

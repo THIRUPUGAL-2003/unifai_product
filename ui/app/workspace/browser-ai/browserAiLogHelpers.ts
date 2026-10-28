@@ -63,7 +63,11 @@ export function isFileUploadLog(log: BrowserAILogEntry | null | undefined): bool
 }
 
 export function logHasStoredAttachment(log: BrowserAILogEntry | null | undefined): boolean {
-	return !!(log?.attachment_stored_name);
+	if (!log) return false;
+	if (log.attachment_stored_name) return true;
+	const meta = parseBrowserAiLogMetadata(log);
+	if (Array.isArray(meta.upload_images) && meta.upload_images.length > 0) return true;
+	return false;
 }
 
 export function logUserCaption(log: BrowserAILogEntry): string {

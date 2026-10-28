@@ -101,6 +101,7 @@ import {
 	logExtractedText,
 	isFileUploadLog,
 	logHasStoredAttachment,
+	parseBrowserAiLogMetadata,
 	logAttachmentLabel,
 	logUserCaption,
 	securityVerdictFromLog,
@@ -1090,16 +1091,35 @@ export default function BrowserAiPage() {
 		}
 		(async () => {
 			try {
-				const res = await fetch(`${getApiBaseUrl()}/browser-ai/attachments/${encodeURIComponent(pdfViewerLog.id)}`, {
-					credentials: "include",
-				});
-				if (!res.ok) {
-					if (res.status === 410) {
-						throw new Error("File expired (kept 10 minutes for View). Log and filename remain.");
+				let blob: Blob | null = null;
+				if (pdfViewerLog.attachment_stored_name) {
+					const res = await fetch(`${getApiBaseUrl()}/browser-ai/attachments/${encodeURIComponent(pdfViewerLog.id)}`, {
+						credentials: "include",
+					});
+					if (res.ok) {
+						blob = await res.blob();
+					} else if (res.status === 410) {
+						throw new Error("File expired (retention period ended). Log and filename remain.");
 					}
-					throw new Error(res.status === 404 ? "File not found on server" : `Failed to load file (${res.status})`);
 				}
-				const blob = await res.blob();
+				if (!blob) {
+					const meta = parseBrowserAiLogMetadata(pdfViewerLog);
+					const imgs = Array.isArray(meta.upload_images) ? (meta.upload_images as string[]) : [];
+					if (imgs.length > 0 && typeof imgs[0] === "string" && imgs[0].startsWith("data:image/")) {
+						const comma = imgs[0].indexOf(",");
+						if (comma >= 0) {
+							const mime = imgs[0].slice(5, comma).split(";")[0] || "image/png";
+							const b64 = imgs[0].slice(comma + 1);
+							const binStr = atob(b64);
+							const u8 = new Uint8Array(binStr.length);
+							for (let bi = 0; bi < binStr.length; bi++) u8[bi] = binStr.charCodeAt(bi);
+							blob = new Blob([u8], { type: mime });
+						}
+					}
+				}
+				if (!blob) {
+					throw new Error("File not found on server");
+				}
 				if (cancelled) return;
 				setAttachmentBlob(blob);
 				const preview = await buildAttachmentPreview(
@@ -1177,6 +1197,16 @@ export default function BrowserAiPage() {
 		e?.stopPropagation();
 		setPdfViewerTab("preview");
 		setAttachmentShowAll(false);
+		setAttachmentPreviewKind(null);
+		setAttachmentPreviewHtml("");
+		setAttachmentPreviewText("");
+		setAttachmentBlob(null);
+		if (pdfBlobUrl) {
+			URL.revokeObjectURL(pdfBlobUrl);
+			setPdfBlobUrl(null);
+		}
+		setPdfError("");
+		setPdfLoading(true);
 		setPdfViewerLog(log);
 	};
 

@@ -320,7 +320,14 @@ export async function buildAttachmentPreview(
 		const html = result.value?.trim()
 			? `<div class="prose prose-invert max-w-none text-sm leading-relaxed p-2">${sanitizePreviewHtml(result.value)}</div>`
 			: `<p class="text-muted-foreground text-sm">Empty document.</p>`;
-		return { kind: "html", html };
+		let text = "";
+		try {
+			const textResult = await api.extractRawText({ arrayBuffer: buf });
+			text = textResult.value?.trim() || "";
+		} catch {
+			/* fallback */
+		}
+		return { kind: "html", html, text: text || undefined };
 	}
 
 	if ([".xlsx", ".xls"].includes(ext) || (contentType || "").includes("spreadsheetml")) {
