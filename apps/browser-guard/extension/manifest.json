@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "YP-Raksha",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA27LPxn9Wp3boNrDt3C4yAqn7R5txblEn0dwNzzzoMvF16IFcceSs/vZL5L1eQX/v1IReank4cGYmVzxDRSNgeXrthRToHrRZFazEGZ9avmGv0tXVJXScUJ+UG9nSJust2D/I0kyNS8emtC6WZ5DhJnWJcVg+G7VxY1+gcymwbJSAEX09mTkm34sT+p5xr894V9cnTL1qgZWP4p4pLFfP4gjRNAy2rCaEJ5RX9ecZDLXhaMtzYQd6gH3531u0uwGSo4NyWSycnet7Fmc93aUTsCUvL0LTZXOjUMVDEGK9ORUAT/qx9bZujlgPvSIExS3zviA0rwYY4+jLZGfWI6cziwIDAQAB",
-  "version": "1.5.1",
+  "version": "1.5.1.4",
   "description": "Enterprise AI Security Guard - Real-time Data Leak Prevention (DLP) for AI browsers.",
   "icons": {
     "16": "icon16.png",

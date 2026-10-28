@@ -3930,7 +3930,9 @@
     if (sessionBlocked) {
       e.preventDefault();
       e.stopImmediatePropagation();
-      showBubble(sessionBlockedReason || "Corporate policy restricts personal accounts. Please sign in with your corporate account.", "Corporate Policy Block", "block");
+      if (!_corpBannerActive && !_corpLogoutInitiated && !document.getElementById("yp-corp-policy-banner")) {
+        showBubble(sessionBlockedReason || "Corporate policy restricts personal accounts. Please sign in with your corporate account.", "Corporate Policy Block", "block");
+      }
       return;
     }
     var text = stripInvisible(composerFrom(btn) || composerFrom(getDeepActiveElement()) || composerFrom(document.activeElement));
@@ -4089,7 +4091,9 @@
     if (sessionBlocked) {
       e.preventDefault();
       e.stopImmediatePropagation();
-      showBubble(sessionBlockedReason || "Corporate policy restricts personal accounts. Please sign in with your corporate account.", "Corporate Policy Block", "block");
+      if (!_corpBannerActive && !_corpLogoutInitiated && !document.getElementById("yp-corp-policy-banner")) {
+        showBubble(sessionBlockedReason || "Corporate policy restricts personal accounts. Please sign in with your corporate account.", "Corporate Policy Block", "block");
+      }
       return;
     }
     var text = stripInvisible(composerFrom(form) || composerFrom(document.activeElement));
@@ -4539,7 +4543,9 @@
       // 0. IMMEDIATE CHECK: If corporate session is blocked, block prompt submission!
       if (sessionBlocked) {
         var corpBlockMsg = sessionBlockedReason || "Personal accounts are blocked by corporate security policy. Please log in with your company account.";
-        showBubble(corpBlockMsg, "Corporate Policy Restriction", "block");
+        if (!_corpBannerActive && !_corpLogoutInitiated && !document.getElementById("yp-corp-policy-banner")) {
+          showBubble(corpBlockMsg, "Corporate Policy Restriction", "block");
+        }
         return createBlockedFetchResponse({ blocked: true, action: "Blocked", message: corpBlockMsg, rule: "Corporate AI Workspace Policy" }, url);
       }
 
