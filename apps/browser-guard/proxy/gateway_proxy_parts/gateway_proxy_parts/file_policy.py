@@ -14,7 +14,7 @@ import xml.etree.ElementTree as ET
 
 _FILE_LOG_COALESCE: dict = {}
 _FILE_LOG_COALESCE_LOCK = threading.Lock()
-_FILE_LOG_COALESCE_SEC = 5.0
+_FILE_LOG_COALESCE_SEC = 0.6
 
 
 _RECENT_FILE_LOGS: dict[str, float] = {}
@@ -23,7 +23,7 @@ _POSTED_FILE_LOGS: dict[str, float] = {}
 _POSTED_FILE_LOGS_LOCK = threading.Lock()
 
 
-def _file_logged_recently(name: str, ttl: float = 20.0) -> bool:
+def _file_logged_recently(name: str, ttl: float = 1.5) -> bool:
     key = (name or "").strip().lower()
     if not key:
         return False
@@ -35,8 +35,8 @@ def _file_logged_recently(name: str, ttl: float = 20.0) -> bool:
     return False
 
 
-def _claim_file_row_post(name: str, has_caption: bool, ttl: float = 20.0) -> bool:
-    """One Prompt Log row per filename. A later real caption may replace a caption-less claim."""
+def _claim_file_row_post(name: str, has_caption: bool, ttl: float = 1.5) -> bool:
+    """One Prompt Log row per filename burst. Real captions replace caption-less claims."""
     key = (name or "").strip().lower()
     if not key:
         return True
@@ -1124,9 +1124,27 @@ def enforce_file_send_policy(
         if block_all:
             block_msg = base_upload_msg
         else:
-            rule_warn = _warning_for_rule_name(blocking_rule)
-            left = (rule_warn or base_upload_msg).strip() or "Upload block"
-            block_msg = f"{left} -- {blocking_rule}" if blocking_rule else left
+            violating_fnames = [
+                (r.get("file_label") or r.get("store_name") or "").strip()
+                for r in file_rows
+                if r.get("rule_hit") and (r.get("rule_action") or "").upper() == "BLOCK"
+            ]
+            violating_fnames = [f for f in violating_fnames if f and _is_real_user_upload_name(f)]
+            if violating_fnames and caption_blocked:
+                f_str = ", ".join(f"'{fn}'" for fn in violating_fnames)
+                block_msg = f"Prompt and file(s) {f_str} contain restricted content ({blocking_rule}). Request blocked by security policy."
+            elif violating_fnames:
+                if len(violating_fnames) == 1:
+                    block_msg = f"File '{violating_fnames[0]}' contains restricted content ({blocking_rule}). Upload blocked by security policy."
+                else:
+                    f_str = ", ".join(f"'{fn}'" for fn in violating_fnames)
+                    block_msg = f"Files {f_str} contain restricted content ({blocking_rule}). Upload blocked by security policy."
+            elif caption_blocked:
+                block_msg = f"Prompt contains restricted content ({blocking_rule}). Request blocked by security policy."
+            else:
+                rule_warn = _warning_for_rule_name(blocking_rule)
+                left = (rule_warn or base_upload_msg).strip() or "Upload block"
+                block_msg = f"{left} -- {blocking_rule}" if blocking_rule else left
     elif any_file_redacted or caption_redacted:
         redact_notice = _redact_notice_for_rule(redact_rule)
 
@@ -1195,13 +1213,18 @@ def enforce_file_send_policy(
             this_scan_guard["scan_guard_action"] = "Blocked"
             this_scan_guard["scan_rule_triggered"] = file_reason
         elif any_file_blocked:
-            file_is_blocked = True
-            file_status = f"Blocked ({blocking_rule or 'policy'})"
-            file_reason = blocking_rule or "Guard Rule (sibling file)"
-            dedupe_type = f"block|{file_reason}"
+            # Sibling file caused Send to be blocked, but THIS file content is clean!
+            # Prompt Logs show the exact truth: this file is Allowed.
+            file_is_blocked = False
+            file_status = "Allowed"
+            file_reason = ""
+            dedupe_type = "allowed"
             this_scan_guard["scan_guard_decided"] = True
-            this_scan_guard["scan_guard_action"] = "Blocked"
-            this_scan_guard["scan_rule_triggered"] = file_reason
+            this_scan_guard["scan_guard_action"] = "Allowed"
+            this_scan_guard["scan_rule_triggered"] = ""
+            this_scan_guard["multi_file_send_blocked"] = True
+            if blocking_rule:
+                this_scan_guard["multi_file_send_block_rule"] = blocking_rule
         elif row_hit and row_act == "REDACT":
             file_is_blocked = False
             file_status = f"Redacted ({row_name or 'policy'})"
@@ -1296,20 +1319,53 @@ def enforce_file_send_policy(
         )
 
     if should_block:
+        violating_names = []
+        if block_all or caption_blocked:
+            violating_names = [
+                (r.get("file_label") or r.get("store_name") or "").strip()
+                for r in file_rows
+            ]
+        elif any_file_blocked:
+            violating_names = [
+                (r.get("file_label") or r.get("store_name") or "").strip()
+                for r in file_rows
+                if r.get("rule_hit") and (r.get("rule_action") or "").upper() == "BLOCK"
+            ]
+
         remember_file_send_block(
             domain,
-            names=[
-                (r.get("file_label") or r.get("file_name") or "").strip()
-                for r in file_rows
-            ],
-            ids=_extract_file_ids_from_chat(raw_text or ""),
+            names=[vn for vn in violating_names if vn],
+            ids=_extract_file_ids_from_chat(raw_text or "") if (caption_blocked or block_all) else [],
             message=block_msg,
         )
-    try:
-        from uploads_detect import clear_domain_upload_caches
-        clear_domain_upload_caches(domain)
-    except Exception:
-        pass
+
+        # Re-cache safe files so that if user removes the violating file and retries,
+        # the safe file's cached bytes remain immediately available for evaluation!
+        safe_rows = [
+            r for r in file_rows
+            if not (r.get("rule_hit") and (r.get("rule_action") or "").upper() == "BLOCK")
+        ]
+        for sr in safe_rows:
+            c_entry = sr.get("cached")
+            if c_entry and isinstance(c_entry, dict):
+                try:
+                    cache_upload_file(
+                        domain,
+                        file_name=sr.get("store_name") or sr.get("file_label") or c_entry.get("file_name") or "",
+                        raw_bytes=c_entry.get("raw_bytes") or b"",
+                        content_type=c_entry.get("content_type") or "",
+                        upload_reason="retained_safe_file",
+                        file_id=c_entry.get("file_id") or "",
+                        extracted_text=sr.get("scanned") or c_entry.get("extracted_text") or "",
+                    )
+                except Exception:
+                    pass
+    else:
+        try:
+            from uploads_detect import clear_domain_upload_caches
+            clear_domain_upload_caches(domain)
+        except Exception:
+            pass
     return should_block, block_msg, redact_notice, n_files, bool(caption) or n_files > 0
 
 

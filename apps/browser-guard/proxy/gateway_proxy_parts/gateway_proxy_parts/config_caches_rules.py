@@ -442,10 +442,9 @@ _UNIVERSAL_PROMPT_KEYS = (
 
 # Deduplicate identical events per domain within this window (seconds).
 # 1.2s: collapses near-simultaneous browser double-submits (~50–200ms apart)
-# while allowing genuine same-text re-sends at ~1.5s+ to predict fresh.
-DEDUPE_TTL = 1.2
-# Longer window for upload/download/site blocks (prevents looping background retries)
-BLOCK_DEDUPE_TTL = 900
+DEDUPE_TTL = 0.8
+# 3 seconds debounce for duplicate packet retransmissions only (never suppresses repeat user tests)
+BLOCK_DEDUPE_TTL = 3.0
 # Typing bursts: observe each keystroke, commit once.
 # Same rule for ALL admin Target Websites — not per-domain hardcode.
 # Keep holds SHORT — long sleeps on the mitm request thread caused intermittent
@@ -1145,18 +1144,10 @@ def consume_extension_eval_id(eval_id: str) -> None:
             _consumed_eval_ids.add(str(eval_id).strip())
 
 
-def is_already_handled_by_extension(domain: str, prompt: str = "", file_name: str = "", eval_id: str = "") -> bool:
-    """Check if this domain/prompt/file was evaluated by the browser extension.
-
-    Only exact matches within 3.0 seconds are consumed to avoid false skips on subsequent prompts.
-    """
-    global _consumed_eval_ids, _consumed_eval_sigs
+def get_extension_eval_record(domain: str, prompt: str = "", file_name: str = "", eval_id: str = "") -> dict | None:
+    """Find recent evaluation record from the browser extension within the last 60 seconds."""
     try:
         clean_eid = (eval_id or "").strip()
-        with _consumed_evals_lock:
-            if clean_eid and clean_eid in _consumed_eval_ids:
-                return True
-
         if sys.platform == "win32":
             base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
         elif sys.platform == "darwin":
@@ -1178,12 +1169,11 @@ def is_already_handled_by_extension(domain: str, prompt: str = "", file_name: st
                 except Exception:
                     pass
         if not evals:
-            return False
+            return None
         now = time.time()
         clean_d = (domain or "").lower().strip(".")
         if clean_d.startswith("www."):
             clean_d = clean_d[4:]
-        # Map Copilot family domains
         COPILOT_FAMILY = {
             "copilot.com", "www.copilot.com", "copilot.microsoft.com",
             "copilot.cloud.microsoft", "substrate.office.com", "sydneyp.bing.com",
@@ -1197,24 +1187,23 @@ def is_already_handled_by_extension(domain: str, prompt: str = "", file_name: st
                     continue
                 item_eid = str(item.get("eval_id") or item.get("id") or "").strip()
                 if item_eid and item_eid == clean_eid:
-                    with _consumed_evals_lock:
-                        _consumed_eval_ids.add(clean_eid)
-                    return True
+                    return item
 
         # Strip invisible zero-width formatting characters
         p_norm = re.sub(r'[\u200B-\u200F\uFEFF\u202A-\u202E\u2060-\u206F]', '', prompt or '').replace('\u00A0', ' ')
         p_clean = " ".join(p_norm.strip().split()).lower()[:100]
         fn_clean = (file_name or "").lower().strip()
 
-        # Never match on empty prompt and empty file_name — avoids false skips on target domains!
         if not p_clean and not fn_clean:
-            return False
+            return None
 
-        for item in evals:
+        for item in reversed(evals):
             if not isinstance(item, dict):
                 continue
             item_time = float(item.get("time") or 0)
-            if now - item_time > 60.0:
+            is_item_blocked = item.get("is_blocked") or str(item.get("action") or "").lower() == "blocked"
+            max_age = 60.0 if is_item_blocked else 4.0
+            if now - item_time > max_age:
                 continue
 
             item_host = (item.get("host") or "").lower().strip(".")
@@ -1234,7 +1223,6 @@ def is_already_handled_by_extension(domain: str, prompt: str = "", file_name: st
             item_p = " ".join(item_p_raw.strip().split()).lower()[:100]
             item_files = [str(x).lower().strip() for x in (item.get("files") or [])]
 
-            # 2. Prompt match: match exact, normalized, or caption substring within 60s
             if p_clean and item_p:
                 p_core = re.sub(r'\[(?:file|extracted file):.*?\]', '', p_clean).strip()
                 item_p_core = re.sub(r'\[(?:file|extracted file):.*?\]', '', item_p).strip()
@@ -1247,12 +1235,8 @@ def is_already_handled_by_extension(domain: str, prompt: str = "", file_name: st
                     or (len(item_p) >= 4 and item_p in p_clean)
                 )
                 if matched:
-                    sig = f"{item_host}|p:{item_p}|{item_time:.2f}"
-                    with _consumed_evals_lock:
-                        _consumed_eval_sigs.add(sig)
-                    return True
+                    return item
 
-            # 3. File upload match: match exact or partial filename or presence in item_p within 60s
             if fn_clean:
                 file_matched = (
                     fn_clean in item_files
@@ -1260,20 +1244,49 @@ def is_already_handled_by_extension(domain: str, prompt: str = "", file_name: st
                     or fn_clean in item_p
                 )
                 if file_matched:
-                    sig = f"{item_host}|f:{fn_clean}|{item_time:.2f}"
-                    with _consumed_evals_lock:
-                        _consumed_eval_sigs.add(sig)
-                    return True
+                    return item
     except Exception:
         pass
-    return False
+    return None
+
+
+def is_already_handled_by_extension(domain: str, prompt: str = "", file_name: str = "", eval_id: str = "") -> bool:
+    """Check if this domain/prompt/file was already evaluated and ALLOWED by the browser extension.
+
+    CRITICAL SECURITY GUARANTEE:
+    If the evaluation was BLOCKED by the extension or if prompt violates any DLP rule,
+    this returns False so the proxy NEVER allows a blocked prompt!
+    """
+    rec = get_extension_eval_record(domain, prompt, file_name, eval_id)
+    if rec is None:
+        return False
+    if rec.get("is_blocked") or str(rec.get("action") or "").lower() == "blocked":
+        return False
+    return True
 
 
 def evaluate_prompt_coalesced(
     platform: str, domain: str, prompt: str, client_ip: str, url: str, method: str,
 ) -> tuple[bool, str, str, str, str]:
     """One evaluate per domain+prompt; parallel ChatGPT retries reuse the same decision."""
-    if is_already_handled_by_extension(domain, prompt):
+    # 1. ALWAYS evaluate local regex rules FIRST (0.05ms) — NEVER allow a prompt that violates a block rule!
+    local = decide_prompt_locally(prompt)
+    if not local[0] or (local[2] or "").lower() == "blocked":
+        remember_guard_decision(domain, prompt, local)
+        return local
+
+    # 2. Check if the browser extension evaluated this prompt
+    eval_rec = get_extension_eval_record(domain, prompt)
+    if eval_rec is not None:
+        if eval_rec.get("is_blocked") or str(eval_rec.get("action") or "").lower() == "blocked":
+            b_rule = str(eval_rec.get("rule") or "Client Security Rule")
+            b_msg = str(eval_rec.get("message") or _security_reply_text(b_rule, ""))
+            dec = (False, b_rule, "Blocked", prompt, b_msg)
+            remember_guard_decision(domain, prompt, dec)
+            return dec
+        if local[2] in ("Redacted", "Warned"):
+            remember_guard_decision(domain, prompt, local)
+            return local
         return True, "", "Allowed", prompt, ""
 
     cached = get_remembered_guard_decision(domain, prompt)
@@ -1312,7 +1325,20 @@ def evaluate_prompt(platform: str, domain: str, prompt: str, client_ip: str, url
     At 1000+ rules/domains: regex BLOCK returns immediately (no LLM wait).
     AI bot runs only when local regex did not already block.
     """
-    if is_already_handled_by_extension(domain, prompt):
+    # 1. ALWAYS evaluate local regex rules FIRST — instant check
+    local = decide_prompt_locally(prompt)
+    if not local[0] or (local[2] or "").lower() == "blocked":
+        return local
+
+    # 2. Check if the browser extension evaluated this prompt
+    eval_rec = get_extension_eval_record(domain, prompt)
+    if eval_rec is not None:
+        if eval_rec.get("is_blocked") or str(eval_rec.get("action") or "").lower() == "blocked":
+            b_rule = str(eval_rec.get("rule") or "Client Security Rule")
+            b_msg = str(eval_rec.get("message") or _security_reply_text(b_rule, ""))
+            return False, b_rule, "Blocked", prompt, b_msg
+        if local[2] in ("Redacted", "Warned"):
+            return local
         return True, "", "Allowed", prompt, ""
 
     p_strip = (prompt or "").strip()

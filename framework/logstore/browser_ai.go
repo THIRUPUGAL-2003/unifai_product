@@ -1715,16 +1715,21 @@ func areRelatedAIHosts(h1, h2 string) bool {
 	pairs := [][2]string{
 		{"chatgpt.com", "openai.com"},
 		{"chat.openai.com", "chatgpt.com"},
+		{"ab.chatgpt.com", "chatgpt.com"},
 		{"claude.ai", "anthropic.com"},
 		{"grok.com", "x.ai"},
 		{"gemini.google.com", "aistudio.google.com"},
 		{"gemini.google.com", "google.com"},
 		{"gemini.google.com", "bard.google.com"},
 		{"copilot.microsoft.com", "copilot.com"},
+		{"copilot.microsoft.com", "copilot.cloud.microsoft"},
 		{"copilot.microsoft.com", "bing.com"},
 		{"copilot.microsoft.com", "microsoft.com"},
 		{"copilot.microsoft.com", "office.com"},
 		{"copilot.microsoft.com", "githubcopilot.com"},
+		{"deepseek.com", "chat.deepseek.com"},
+		{"mistral.ai", "chat.mistral.ai"},
+		{"perplexity.ai", "www.perplexity.ai"},
 	}
 	for _, p := range pairs {
 		if (strings.HasSuffix(h1, p[0]) || strings.HasSuffix(h1, "."+p[0])) &&
@@ -1918,6 +1923,10 @@ func (m *BrowserAIManager) AuthorizeAISession(ctx context.Context, req Authorize
 	if !domainAllowed {
 		for cd := range allowedDomainMap {
 			if strings.HasSuffix(emailDomain, "."+cd) {
+				domainAllowed = true
+				break
+			}
+			if !strings.Contains(cd, ".") && (strings.HasPrefix(emailDomain, cd+".") || emailDomain == cd+".com" || strings.Contains(emailDomain, "."+cd+".")) {
 				domainAllowed = true
 				break
 			}

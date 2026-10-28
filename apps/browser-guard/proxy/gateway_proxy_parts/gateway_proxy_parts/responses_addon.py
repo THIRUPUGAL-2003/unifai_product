@@ -337,21 +337,6 @@ class BrowserAIInterceptor:
         # 1. Master Block Upload control
         if controls_active("block_upload"):
             warn = (get_control_settings().get("upload_warning") or "").strip() or "File uploads are blocked by corporate upload policy."
-            p_log = f"[FILE UPLOAD] {fname} -- Blocked by corporate upload policy"
-            try:
-                post_upload_intercept(
-                    platform=platform or domain,
-                    prompt=p_log,
-                    client_ip=client_ip,
-                    domain=domain,
-                    url=flow.request.url,
-                    method=flow.request.method,
-                    file_name=fname,
-                    is_blocked=True,
-                    blocked_reason="Block Upload",
-                )
-            except Exception:
-                pass
             return True, "Block Upload", warn, ""
 
         # 2. Extract text from uploaded bytes
@@ -371,25 +356,6 @@ class BrowserAIInterceptor:
                 fn_hit, fn_name, fn_action = match_guard_rules_on_text(fname)
                 if fn_hit and (fn_action or "").upper() == "BLOCK":
                     warn = f"File '{safe_fname}' is blocked by corporate DLP policy: {fn_name}"
-                    p_log = f"[FILE UPLOAD] {safe_fname} -- Blocked by corporate rule: {fn_name}"
-                    try:
-                        if not is_already_handled_by_extension(domain, "", safe_fname):
-                            post_upload_intercept(
-                                platform=platform or domain,
-                                prompt=p_log,
-                                client_ip=client_ip,
-                                domain=domain,
-                                url=flow.request.url,
-                                method=flow.request.method,
-                                file_name=safe_fname,
-                                is_blocked=True,
-                                blocked_reason=fn_name,
-                                raw_bytes=raw_bytes,
-                                content_type=content_type,
-                                extracted_text=extracted_text,
-                            )
-                    except Exception:
-                        pass
                     return True, fn_name, warn, extracted_text
             except Exception as e:
                 print(f"[Gateway Proxy] filename DLP check error: {e}")
@@ -400,25 +366,6 @@ class BrowserAIInterceptor:
                 rule_hit, rule_name, rule_action = match_guard_rules_on_text(extracted_text)
                 if rule_hit and (rule_action or "").upper() == "BLOCK":
                     warn = f"File content of '{safe_fname}' is blocked by corporate DLP policy: {rule_name}"
-                    p_log = f"[FILE UPLOAD] {safe_fname} -- Blocked by corporate rule: {rule_name}"
-                    try:
-                        if not is_already_handled_by_extension(domain, "", safe_fname):
-                            post_upload_intercept(
-                                platform=platform or domain,
-                                prompt=p_log,
-                                client_ip=client_ip,
-                                domain=domain,
-                                url=flow.request.url,
-                                method=flow.request.method,
-                                file_name=safe_fname,
-                                is_blocked=True,
-                                blocked_reason=rule_name,
-                                raw_bytes=raw_bytes,
-                                content_type=content_type,
-                                extracted_text=extracted_text,
-                            )
-                    except Exception:
-                        pass
                     return True, rule_name, warn, extracted_text
             except Exception as e:
                 print(f"[Gateway Proxy] content DLP check error: {e}")
@@ -873,63 +820,6 @@ class BrowserAIInterceptor:
                 _thr.Thread(target=_post_site_block, daemon=True).start()
             make_site_blocked_response(flow, canonical_dom, b_platform)
             return
-
-        # Extension enforcement: Block access to monitored AI websites if YP-Raksha extension is turned off or uninstalled
-        is_target_ai, target_canon_dom, target_platform = is_monitored_ai_site(host)
-        if is_target_ai:
-            sec_dest = (flow.request.headers.get("sec-fetch-dest") or "").lower()
-            accept_hdr = (flow.request.headers.get("accept") or "").lower()
-            is_doc_nav = sec_dest in ("document", "nested-document", "frame", "iframe") or (
-                not sec_dest and "text/html" in accept_hdr and method in ("GET", "HEAD")
-            )
-            if not is_guard_extension_active():
-                if is_doc_nav:
-                    print(f"[Gateway Proxy] EXTENSION DISABLED | Blocking access to {host} ({target_canon_dom})")
-                    client_ip = get_client_ip(flow)
-                    dedupe_key = f"{client_ip}|ext-disabled|{target_canon_dom}"
-                    if not is_duplicate_event(target_canon_dom, dedupe_key, ttl=300):
-                        import json as _json
-                        import threading as _thr
-                        _wire = _agent_wire_fields() if "_agent_wire_fields" in globals() else {}
-                        _meta = _agent_metadata_fields() if "_agent_metadata_fields" in globals() else {}
-                        _ext_block_payload = _json.dumps({
-                            "platform": target_platform,
-                            "prompt": f"[EXTENSION DISABLED] Access restricted to {target_canon_dom} — YP-Raksha extension is disabled or missing",
-                            "client_ip": client_ip,
-                            **_wire,
-                            "metadata": {
-                                "domain": target_canon_dom,
-                                "url": flow.request.url,
-                                "method": flow.request.method,
-                                "is_blocked": True,
-                                "blocked_reason": "YP-Raksha Extension Disabled or Missing",
-                                **_meta,
-                            },
-                        }).encode("utf-8")
-
-                        def _post_ext_block(payload=_ext_block_payload):
-                            try:
-                                req = urllib.request.Request(
-                                    f"{GATEWAY_BACKEND_URL}/api/browser-ai/intercept",
-                                    data=payload,
-                                    headers=_backend_headers({"Content-Type": "application/json"}),
-                                    method="POST",
-                                )
-                                urllib.request.urlopen(req, timeout=3)
-                            except Exception:
-                                pass
-
-                        _thr.Thread(target=_post_ext_block, daemon=True).start()
-                    make_extension_required_response(flow, target_canon_dom, target_platform)
-                    return
-                elif method in ("POST", "PUT", "PATCH") and not is_noise_host(host):
-                    flow.response = http.Response.make(
-                        403,
-                        b'{"error":"extension_required","message":"YP-Raksha browser extension is disabled or missing"}',
-                        {"Content-Type": "application/json", "X-Gateway-Guard": "extension-required"}
-                    )
-                    return
-
         # The page can forge extension postMessages and request headers. Always
         # enforce prompt policy in the proxy; extension markers are not proof.
 

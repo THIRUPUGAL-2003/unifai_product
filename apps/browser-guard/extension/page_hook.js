@@ -73,6 +73,10 @@
       return f.name !== name && String(f.name).toLowerCase().trim() !== key;
     });
     removeFilePillFromDom(name);
+    // Clear decision caches so subsequent submits evaluate remaining files fresh
+    lastDecisionCache = { text: "", time: 0, decision: null };
+    _lastAskSig = "";
+    _lastBlockedPromptText = "";
     if (stagedFiles.length === 0) {
       clearAllStagedFiles();
     }
@@ -87,6 +91,7 @@
       for (var i = 0; i < inputs.length; i++) {
         try { inputs[i].value = ""; } catch (_) {}
       }
+      var fLower = String(fileName || "").toLowerCase().trim();
       var buttons = document.querySelectorAll("button, [role='button']");
       for (var b = 0; b < buttons.length; b++) {
         var btn = buttons[b];
@@ -96,8 +101,8 @@
           aria.includes("remove") || aria.includes("delete") || aria.includes("clear") || aria.includes("dismiss") || aria.includes("close") ||
           title.includes("remove") || title.includes("delete") || title.includes("clear") || title.includes("dismiss") || title.includes("close");
         if (isDismiss) {
-          var container = btn.closest("div, span, li, section");
-          if (container && (fileName === "" || container.textContent.toLowerCase().includes(String(fileName).toLowerCase()))) {
+          var container = btn.closest("[data-testid*='attachment' i], [data-testid*='file' i], [class*='attachment' i], [class*='file' i], [class*='upload' i], li, div.relative, div.group, fieldset, form") || btn.parentElement;
+          if (container && (fLower === "" || (container.textContent || "").toLowerCase().includes(fLower))) {
             passClick = true;
             try { btn.click(); } catch (_) {}
             finally { passClick = false; }
@@ -116,8 +121,8 @@
     var seen = {};
     for (var s = 0; s < stagedFiles.length; s++) {
       var item = stagedFiles[s];
-      // Only keep files active for current prompt within 60s
-      if (item && item.name && (now - (item.timestamp || 0) < 60000)) {
+      // Only keep files active for current prompt within 180s (3 minutes)
+      if (item && item.name && (now - (item.timestamp || 0) < 180000)) {
         var key = String(item.name).toLowerCase().trim();
         if (!seen[key]) {
           seen[key] = true;
@@ -427,6 +432,36 @@
     return false;
   }
 
+  function areRelatedAIHosts(h1, h2) {
+    if (!h1 || !h2) return false;
+    h1 = normalizeDomainHost(h1);
+    h2 = normalizeDomainHost(h2);
+    if (h1 === h2) return true;
+    var pairs = [
+      ["chatgpt.com", "openai.com"],
+      ["chat.openai.com", "chatgpt.com"],
+      ["ab.chatgpt.com", "chatgpt.com"],
+      ["claude.ai", "anthropic.com"],
+      ["gemini.google.com", "aistudio.google.com"],
+      ["gemini.google.com", "bard.google.com"],
+      ["gemini.google.com", "google.com"],
+      ["copilot.microsoft.com", "copilot.com"],
+      ["copilot.microsoft.com", "copilot.cloud.microsoft"],
+      ["copilot.microsoft.com", "bing.com"],
+      ["copilot.microsoft.com", "githubcopilot.com"],
+      ["deepseek.com", "chat.deepseek.com"],
+      ["mistral.ai", "chat.mistral.ai"],
+      ["perplexity.ai", "www.perplexity.ai"]
+    ];
+    for (var i = 0; i < pairs.length; i++) {
+      var p0 = pairs[i][0];
+      var p1 = pairs[i][1];
+      if ((h1 === p0 || h1.endsWith("." + p0)) && (h2 === p1 || h2.endsWith("." + p1))) return true;
+      if ((h1 === p1 || h1.endsWith("." + p1)) && (h2 === p0 || h2.endsWith("." + p0))) return true;
+    }
+    return false;
+  }
+
   function isControlActiveForSite(configuredSites) {
     if (isProductOrServerHost(location.hostname)) return false;
     var raw = (configuredSites && typeof configuredSites === "string") ? configuredSites.trim() : "";
@@ -435,15 +470,31 @@
       return true;
     }
     var currentHost = normalizeDomainHost(location.hostname);
+    var currentProv = detectProviderName();
     var parts = raw.toLowerCase().split(/[,\s;]+/);
     for (var i = 0; i < parts.length; i++) {
       var item = parts[i].trim().replace(/^\*\./, "").replace(/^\./, "");
       if (!item) continue;
+      // 1. Direct provider keyword match (e.g. "chatgpt", "gemini", "claude", "deepseek", "perplexity", "mistral", "copilot")
+      if (item === currentProv) return true;
       if (item.indexOf("://") < 0) {
         item = item.indexOf(":") >= 0 && (item.match(/:/g) || []).length > 1 ? "https://[" + item + "]" : "https://" + item;
       }
-      item = normalizeDomainHost(item);
-      if (item && (currentHost === item || currentHost.endsWith("." + item))) {
+      var itemHost = normalizeDomainHost(item);
+      if (!itemHost) {
+        if (item === currentProv) return true;
+        continue;
+      }
+      // 2. Exact or subdomain match
+      if (currentHost === itemHost || currentHost.endsWith("." + itemHost)) {
+        return true;
+      }
+      // 3. Keyword / partial host match (e.g. item="copilot", currentHost="copilot.microsoft.com")
+      if (!itemHost.includes(".") && currentHost.includes(itemHost)) {
+        return true;
+      }
+      // 4. Related AI platform sibling hosts
+      if (areRelatedAIHosts(currentHost, itemHost)) {
         return true;
       }
     }
@@ -809,13 +860,13 @@
     var h = (location.hostname || "").toLowerCase();
     if (h.includes("chatgpt.com") || h.includes("openai.com")) {
       location.href = "https://chatgpt.com/auth/logout";
-    } else if (h.includes("claude.ai")) {
+    } else if (h.includes("claude.ai") || h.includes("anthropic.com")) {
       location.href = "https://claude.ai/login";
-    } else if (h.includes("gemini.google.com") || h.includes("aistudio.google.com") || h.includes("google.com")) {
+    } else if (h.includes("gemini.google.com") || h.includes("aistudio.google.com") || h.includes("bard.google.com") || h.includes("google.com")) {
       location.href = "https://accounts.google.com/Logout?continue=" + encodeURIComponent("https://accounts.google.com/AccountChooser?continue=" + encodeURIComponent(location.href));
     } else if (h.includes("deepseek.com")) {
       location.href = "https://chat.deepseek.com/sign_in";
-    } else if (h.includes("copilot.microsoft.com")) {
+    } else if (h.includes("copilot.microsoft.com") || h.includes("copilot.cloud.microsoft") || h.includes("copilot.com") || h.includes("bing.com") || h.includes("githubcopilot.com")) {
       location.href = "https://login.microsoftonline.com/common/oauth2/v2.0/logout";
     } else if (h.includes("grok.com") || h.includes("x.ai")) {
       location.href = "https://grok.com/sign-in";
@@ -936,12 +987,12 @@
     var h = (location.hostname || "").toLowerCase();
     if (h.includes("chatgpt.com") || h.includes("openai.com")) return "chatgpt";
     if (h.includes("claude.ai") || h.includes("anthropic.com")) return "claude";
-    if (h.includes("copilot.microsoft.com") || h.includes("bing.com")) return "copilot";
+    if (h.includes("copilot.microsoft.com") || h.includes("copilot.cloud.microsoft") || h.includes("copilot.com") || h.includes("bing.com") || h.includes("githubcopilot.com")) return "copilot";
     if (h.includes("gemini.google.com") || h.includes("bard.google.com") || h.includes("aistudio.google.com")) return "gemini";
-    if (h.includes("grok.com") || h.includes("x.ai")) return "grok";
     if (h.includes("deepseek.com")) return "deepseek";
     if (h.includes("mistral.ai")) return "mistral";
     if (h.includes("perplexity.ai")) return "perplexity";
+    if (h.includes("grok.com") || h.includes("x.ai")) return "grok";
     if (h.includes("poe.com")) return "poe";
     if (h.includes("lovable.dev")) return "lovable";
     var parts = h.replace(/^www\./, "").split(".");
@@ -974,7 +1025,12 @@
       if (allowedList.length > 0) {
         var domainMatched = false;
         for (var aj = 0; aj < allowedList.length; aj++) {
-          if (domain === allowedList[aj] || domain.endsWith("." + allowedList[aj])) {
+          var ad = allowedList[aj];
+          if (domain === ad || domain.endsWith("." + ad)) {
+            domainMatched = true;
+            break;
+          }
+          if (!ad.includes(".") && (domain.startsWith(ad + ".") || domain === ad + ".com" || domain.includes("." + ad + "."))) {
             domainMatched = true;
             break;
           }
@@ -1170,7 +1226,9 @@
         "[aria-label*='@'], [title*='@'], [alt*='@'], [data-identifier*='@'], [data-email*='@'], [data-user*='@'], " +
         "[data-testid*='profile'], [data-testid*='user'], [data-testid*='account'], " +
         "a[href*='accounts.google.com'], img[alt*='Google Account'], [aria-label*='Google Account'], " +
-        "div[class*='user-avatar' i], div[class*='avatar' i], button[data-testid*='user' i], button[aria-label*='profile' i]"
+        "div[class*='user-avatar' i], div[class*='avatar' i], button[data-testid*='user' i], button[aria-label*='profile' i], " +
+        "div[class*='ds-user' i], div[class*='ds-avatar' i], div[class*='user-profile' i], button[data-testid*='user-menu' i], " +
+        "#meControl, #mectrl_currentAccount_secondary, [aria-label*='Account manager'], [id*='mectrl'], button[id*='O365_MainLink_Me']"
       );
       for (var i = 0; i < elements.length; i++) {
         var el = elements[i];
@@ -1288,6 +1346,23 @@
     var promptText = (text || "").trim();
     var fileItems = Array.isArray(files) ? files : [];
 
+    // Check if any file was already detected and marked as blocked during upload staging
+    for (var f0 = 0; f0 < fileItems.length; f0++) {
+      var item0 = fileItems[f0];
+      if (item0 && item0.is_blocked) {
+        var fn0 = item0.name || ("File " + (f0 + 1));
+        var rN0 = item0.blocked_reason || "Restricted Content";
+        var bMsg0 = item0.blocked_message || ("File '" + fn0 + "' contains restricted content (" + rN0 + "). Upload blocked by security policy.");
+        return {
+          blocked: true,
+          action: "Blocked",
+          message: bMsg0.indexOf("Please remove") >= 0 ? bMsg0 : (bMsg0 + " Please remove this file before sending."),
+          rule: rN0,
+          violating_files: [fn0]
+        };
+      }
+    }
+
     // Ensure each file has text extracted if base64 is present
     for (var fi = 0; fi < fileItems.length; fi++) {
       var fObj = fileItems[fi];
@@ -1345,10 +1420,19 @@
           }
 
           if (act === "BLOCK" || act === "BLOCKED") {
+            for (var mIdx = 0; mIdx < matchedFiles.length; mIdx++) {
+              var mName = matchedFiles[mIdx];
+              var stagedObj = stagedFilesCache[mName] || stagedFilesCache[String(mName).toLowerCase().trim()];
+              if (stagedObj) {
+                stagedObj.is_blocked = true;
+                stagedObj.blocked_reason = rName;
+                stagedObj.blocked_message = blockMsg;
+              }
+            }
             return {
               blocked: true,
               action: "Blocked",
-              message: blockMsg,
+              message: blockMsg + " Please remove this file before sending.",
               rule: rName,
               violating_files: matchedFiles,
               matchedRule: r
@@ -1424,11 +1508,11 @@
     var trimmed = (prompt || "").trim();
     var fileNamesSig = (files || []).map(function (f) { return (f && (f.name || f)) || ""; }).sort().join(",");
     var sig = trimmed + "||" + fileNamesSig + "||" + ((images || []).length);
-    if (sig && (Date.now() - _lastAskTime < 4000) && _lastAskSig === sig && _lastAskDecision) {
+    if (sig && (Date.now() - _lastAskTime < 400) && _lastAskSig === sig && _lastAskDecision) {
       return Promise.resolve(_lastAskDecision);
     }
     if (trimmed && (!files || files.length === 0) && (!images || images.length === 0)) {
-      if (lastDecisionCache.text === trimmed && (Date.now() - lastDecisionCache.time < 5000) && lastDecisionCache.decision) {
+      if (lastDecisionCache.text === trimmed && (Date.now() - lastDecisionCache.time < 400) && lastDecisionCache.decision) {
         return Promise.resolve(lastDecisionCache.decision);
       }
     }
@@ -1436,11 +1520,6 @@
       // 1. First run fast client-side check
       var clientDecision = evaluateClientRules(prompt, files);
       if (clientDecision && clientDecision.blocked) {
-        if (Array.isArray(clientDecision.violating_files) && clientDecision.violating_files.length > 0) {
-          for (var vi = 0; vi < clientDecision.violating_files.length; vi++) {
-            removeStagedFile(clientDecision.violating_files[vi]);
-          }
-        }
         _lastAskSig = sig;
         _lastAskTime = Date.now();
         _lastAskDecision = clientDecision;
@@ -1506,7 +1585,13 @@
         _lastAskDecision = res;
         _lastHandledPromptId = id;
         _lastHandledPromptTime = Date.now();
-        _lastHandledPromptText = trimmed;
+        if (res && (res.blocked || String(res.action || "").toLowerCase() === "blocked")) {
+          _lastHandledPromptText = "";
+          _lastBlockedPromptText = trimmed;
+          _lastBlockedPromptTime = Date.now();
+        } else {
+          _lastHandledPromptText = trimmed;
+        }
         if (trimmed && (!files || files.length === 0) && (!images || images.length === 0)) {
           lastDecisionCache = { text: trimmed, time: Date.now(), decision: res };
         }
@@ -2154,7 +2239,15 @@
           // Immediate DLP scan of file contents
           var fileDecision = evaluateClientRules(null, [{ name: name, text: fContent }]);
           if (fileDecision && fileDecision.blocked) {
-            removeStagedFile(name);
+            pushStagedFile({
+              name: name,
+              size: size,
+              type: type,
+              text: fContent,
+              is_blocked: true,
+              blocked_reason: fileDecision.rule,
+              blocked_message: fileDecision.message
+            });
             showBubble(fileDecision.message, fileDecision.rule, "block");
             return;
           }
@@ -2184,7 +2277,16 @@
           if (extractedStr) {
             var fileDecision = evaluateClientRules(null, [{ name: name, text: extractedStr }]);
             if (fileDecision && fileDecision.blocked) {
-              removeStagedFile(name);
+              pushStagedFile({
+                name: name,
+                size: size,
+                type: type,
+                base64: b64,
+                text: extractedStr,
+                is_blocked: true,
+                blocked_reason: fileDecision.rule,
+                blocked_message: fileDecision.message
+              });
               showBubble(fileDecision.message, fileDecision.rule, "block");
               return;
             }
@@ -2208,7 +2310,16 @@
           if (extractedStr) {
             var fileDecision = evaluateClientRules(null, [{ name: name, text: extractedStr }]);
             if (fileDecision && fileDecision.blocked) {
-              removeStagedFile(name);
+              pushStagedFile({
+                name: name,
+                size: size,
+                type: type,
+                base64: b64,
+                text: extractedStr,
+                is_blocked: true,
+                blocked_reason: fileDecision.rule,
+                blocked_message: fileDecision.message
+              });
               showBubble(fileDecision.message, fileDecision.rule, "block");
               return;
             }
@@ -2657,33 +2768,44 @@
   }
 
   function handleCopyEvent(ev) {
-    if (!armed) return;
-    if (clipboardPolicyActive()) {
+    if (!clipboardPolicyActive()) return;
+    try {
       ev.preventDefault();
       ev.stopPropagation();
       ev.stopImmediatePropagation();
-      if (ev.clipboardData) {
-        try {
-          ev.clipboardData.clearData();
-          ev.clipboardData.setData("text/plain", "");
-          ev.clipboardData.setData("text/html", "");
-        } catch (_) {}
-      }
+    } catch (_) {}
+    if (ev.clipboardData) {
       try {
-        var sel = window.getSelection();
-        if (sel) sel.removeAllRanges();
+        ev.clipboardData.clearData();
+        ev.clipboardData.setData("text/plain", govClipboardBlockMessage || "[Clipboard copying from this AI tool is restricted by corporate security policy.]");
+        ev.clipboardData.setData("text/html", "");
       } catch (_) {}
-      var screenshotShieldActive = !!(document.getElementById("yp-screenshot-shield") || document.getElementById("yp-blur-curtain"));
-      if (!screenshotShieldActive) {
-        showBubble(govClipboardBlockMessage || "Clipboard copying from this AI tool is restricted by corporate security policy.", "Clipboard Copy Restricted", "block");
-      }
-      postDebouncedClipboardLog({
-        id: "copy_block_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2),
-        prompt: "--copy paste [CLIPBOARD COPY]",
-        blocked_reason: "Clipboard Copy Restricted",
-        status: "Blocked (Clipboard Copy Restricted)"
-      });
     }
+    try {
+      var sel = window.getSelection();
+      if (sel) {
+        if (sel.removeAllRanges) sel.removeAllRanges();
+        if (sel.empty) sel.empty();
+      }
+      if (document.activeElement && typeof document.activeElement.selectionStart === "number") {
+        document.activeElement.selectionEnd = document.activeElement.selectionStart;
+      }
+    } catch (_) {}
+    try {
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+        navigator.clipboard.writeText("").catch(function () {});
+      }
+    } catch (_) {}
+    var screenshotShieldActive = !!(document.getElementById("yp-screenshot-shield") || document.getElementById("yp-blur-curtain"));
+    if (!screenshotShieldActive) {
+      showBubble(govClipboardBlockMessage || "Clipboard copying from this AI tool is restricted by corporate security policy.", "Clipboard Copy Restricted", "block");
+    }
+    postDebouncedClipboardLog({
+      id: "copy_block_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2),
+      prompt: "--copy paste [CLIPBOARD COPY]",
+      blocked_reason: "Clipboard Copy Restricted",
+      status: "Blocked (Clipboard Copy Restricted)"
+    });
   }
 
   function handleClipboardKeyHook(e) {
@@ -2703,6 +2825,23 @@
       if (isPaste) {
         enforceActiveElementRollback();
       }
+      if (isCopy) {
+        try {
+          var sel = window.getSelection();
+          if (sel) {
+            if (sel.removeAllRanges) sel.removeAllRanges();
+            if (sel.empty) sel.empty();
+          }
+          if (document.activeElement && typeof document.activeElement.selectionStart === "number") {
+            document.activeElement.selectionEnd = document.activeElement.selectionStart;
+          }
+        } catch (_) {}
+        try {
+          if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+            navigator.clipboard.writeText("").catch(function () {});
+          }
+        } catch (_) {}
+      }
       var screenshotShieldActive = !!(document.getElementById("yp-screenshot-shield") || document.getElementById("yp-blur-curtain"));
       if (!screenshotShieldActive) {
         var actionLabel = isCopy ? "Clipboard Copy Restricted" : "Clipboard Paste Restricted";
@@ -2721,6 +2860,46 @@
     }
   }
 
+  // Prevent right-click copy on selected text
+  function handleContextMenuCopyHook(ev) {
+    if (!clipboardPolicyActive()) return;
+    try {
+      var sel = window.getSelection();
+      var selectedText = sel ? sel.toString().trim() : "";
+      if (selectedText.length > 0) {
+        if (sel.removeAllRanges) sel.removeAllRanges();
+        if (sel.empty) sel.empty();
+        var screenshotShieldActive = !!(document.getElementById("yp-screenshot-shield") || document.getElementById("yp-blur-curtain"));
+        if (!screenshotShieldActive) {
+          showBubble(govClipboardBlockMessage || "Clipboard copying from this AI tool is restricted by corporate security policy.", "Clipboard Copy Restricted", "block");
+        }
+        postDebouncedClipboardLog({
+          id: "copy_context_block_" + Date.now().toString(36),
+          prompt: "--copy paste [CLIPBOARD COPY CONTEXT MENU]",
+          blocked_reason: "Clipboard Copy Restricted",
+          status: "Blocked (Clipboard Copy Restricted)"
+        });
+      }
+    } catch (_) {}
+  }
+
+  // Prevent mouse text selection of AI responses when clipboard policy is active
+  function handleSelectStartHook(ev) {
+    if (!clipboardPolicyActive()) return;
+    var t = ev.target;
+    var tag = (t && t.tagName || "").toLowerCase();
+    var isEditable = tag === "input" || tag === "textarea" || (t && t.isContentEditable) || (t && t.closest && t.closest("input, textarea, [contenteditable='true']"));
+    if (!isEditable) {
+      try {
+        ev.preventDefault();
+      } catch (_) {}
+      try {
+        var sel = window.getSelection();
+        if (sel && sel.removeAllRanges) sel.removeAllRanges();
+      } catch (_) {}
+    }
+  }
+
   ["beforepaste", "paste"].forEach(function (t) {
     window.addEventListener(t, handlePasteEvent, true);
     document.addEventListener(t, handlePasteEvent, true);
@@ -2735,19 +2914,39 @@
   });
   window.addEventListener("keydown", handleClipboardKeyHook, true);
   document.addEventListener("keydown", handleClipboardKeyHook, true);
+  window.addEventListener("contextmenu", handleContextMenuCopyHook, true);
+  document.addEventListener("contextmenu", handleContextMenuCopyHook, true);
+  document.addEventListener("selectstart", handleSelectStartHook, true);
 
-  // Intercept clicks on AI "Copy" and "Copy code" buttons
-  document.addEventListener("click", function (ev) {
+  // Intercept clicks / mousedown / pointerdown on AI "Copy" and "Copy code" buttons
+  function handleCopyButtonAction(ev) {
     if (!clipboardPolicyActive()) return;
     var target = (ev.composedPath && ev.composedPath()[0]) || ev.target;
-    var el = (target && target.closest) ? target.closest("button, [role='button'], a") : null;
+    if (!target) return;
+    var el = (target && target.closest)
+      ? target.closest("button, [role='button'], a, [aria-label*='copy' i], [title*='copy' i], [data-testid*='copy' i], [class*='copy' i], [id*='copy' i], [data-tooltip*='copy' i]")
+      : null;
+    if (!el && target) {
+      var curr = target;
+      for (var depth = 0; curr && depth < 5; depth++) {
+        var a = ((curr.getAttribute && curr.getAttribute("aria-label")) || "").toLowerCase();
+        var ti = ((curr.getAttribute && curr.getAttribute("title")) || "").toLowerCase();
+        var cl = String(curr.className || "").toLowerCase();
+        if (a.indexOf("copy") >= 0 || ti.indexOf("copy") >= 0 || cl.indexOf("copy") >= 0) {
+          el = curr;
+          break;
+        }
+        curr = curr.parentElement;
+      }
+    }
     if (!el) return;
-    var aria = (el.getAttribute("aria-label") || "").toLowerCase();
-    var title = (el.getAttribute("title") || "").toLowerCase();
-    var testid = (el.getAttribute("data-testid") || "").toLowerCase();
+    var aria = ((el.getAttribute && el.getAttribute("aria-label")) || "").toLowerCase();
+    var title = ((el.getAttribute && el.getAttribute("title")) || "").toLowerCase();
+    var testid = ((el.getAttribute && el.getAttribute("data-testid")) || "").toLowerCase();
     var text = (el.innerText || el.textContent || "").toLowerCase().trim();
-    var tooltip = (el.getAttribute("data-tooltip") || el.getAttribute("data-tooltip-id") || el.getAttribute("mattooltip") || "").toLowerCase();
-    var biId = (el.getAttribute("data-bi-id") || "").toLowerCase();
+    var tooltip = ((el.getAttribute && el.getAttribute("data-tooltip")) || (el.getAttribute && el.getAttribute("data-tooltip-id")) || (el.getAttribute && el.getAttribute("mattooltip")) || "").toLowerCase();
+    var biId = ((el.getAttribute && el.getAttribute("data-bi-id")) || "").toLowerCase();
+    var className = String(el.className || "").toLowerCase();
     var hasCopySvg = !!(el.querySelector && el.querySelector("svg[class*='copy' i], svg[aria-label*='copy' i], [class*='copy-icon' i], [class*='icon-copy' i]"));
     var isCopyBtn =
       aria.includes("copy") ||
@@ -2755,25 +2954,33 @@
       testid.includes("copy") ||
       tooltip.includes("copy") ||
       biId.includes("copy") ||
+      className.includes("copy") ||
       hasCopySvg ||
       text === "copy" ||
       text === "copy code" ||
       text === "copy text" ||
       text === "copy response" ||
       text === "copy prompt" ||
-      text === "copy to clipboard";
+      text === "copy to clipboard" ||
+      text.startsWith("copy ");
+
     if (isCopyBtn) {
-      ev.preventDefault();
-      ev.stopPropagation();
-      ev.stopImmediatePropagation();
+      try {
+        ev.preventDefault();
+        ev.stopPropagation();
+        ev.stopImmediatePropagation();
+      } catch (_) {}
+      try {
+        var sel = window.getSelection();
+        if (sel) {
+          if (sel.removeAllRanges) sel.removeAllRanges();
+          if (sel.empty) sel.empty();
+        }
+      } catch (_) {}
       try {
         if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
           navigator.clipboard.writeText("").catch(function () {});
         }
-      } catch (_) {}
-      try {
-        var sel = window.getSelection();
-        if (sel) sel.removeAllRanges();
       } catch (_) {}
       var screenshotShieldActive = !!(document.getElementById("yp-screenshot-shield") || document.getElementById("yp-blur-curtain"));
       if (!screenshotShieldActive) {
@@ -2786,17 +2993,55 @@
         status: "Blocked (Clipboard Copy Restricted)"
       });
     }
-  }, true);
+  }
 
-  try {
-    var clipboardApi = navigator.clipboard;
-    if (clipboardApi) {
-      // Intercept reading from clipboard (prevent pasting exfiltration into page).
-      ["read", "readText"].forEach(function (method) {
-        var original = clipboardApi[method];
-        if (typeof original !== "function") return;
-        try {
-          clipboardApi[method] = function () {
+  ["pointerdown", "mousedown", "click"].forEach(function (evt) {
+    document.addEventListener(evt, handleCopyButtonAction, true);
+    window.addEventListener(evt, handleCopyButtonAction, true);
+  });
+
+  // Deep prototype & instance hooks for Navigator.clipboard (writeText, write, readText, read)
+  function hookClipboardTarget(target) {
+    if (!target) return;
+    ["write", "writeText"].forEach(function (method) {
+      try {
+        var orig = target[method];
+        if (typeof orig === "function" && !orig.__yp_hooked) {
+          var hooked = function () {
+            if (clipboardPolicyActive()) {
+              var screenshotShieldActive = !!(document.getElementById("yp-screenshot-shield") || document.getElementById("yp-blur-curtain"));
+              if (!screenshotShieldActive) {
+                showBubble(govClipboardBlockMessage || "Clipboard copying from this AI tool is restricted by corporate security policy.", "Clipboard Copy Restricted", "block");
+              }
+              postDebouncedClipboardLog({
+                id: "copy_api_block_" + Date.now().toString(36),
+                prompt: "--copy paste [CLIPBOARD COPY API]",
+                blocked_reason: "Clipboard Copy Restricted",
+                status: "Blocked (Clipboard Copy Restricted)"
+              });
+              return Promise.resolve();
+            }
+            return orig.apply(this, arguments);
+          };
+          hooked.__yp_hooked = true;
+          try { target[method] = hooked; } catch (_) {}
+          try {
+            Object.defineProperty(target, method, {
+              value: hooked,
+              writable: true,
+              configurable: true,
+              enumerable: true
+            });
+          } catch (_) {}
+        }
+      } catch (_) {}
+    });
+
+    ["read", "readText"].forEach(function (method) {
+      try {
+        var orig = target[method];
+        if (typeof orig === "function" && !orig.__yp_hooked) {
+          var hooked = function () {
             if (clipboardPolicyActive()) {
               var screenshotShieldActive = !!(document.getElementById("yp-screenshot-shield") || document.getElementById("yp-blur-curtain"));
               if (!screenshotShieldActive) {
@@ -2812,61 +3057,84 @@
               if (method === "read") return Promise.resolve([]);
               return Promise.resolve();
             }
-            return original.apply(clipboardApi, arguments);
+            return orig.apply(this, arguments);
           };
-        } catch (e) {}
-      });
-      // Intercept writing to clipboard (prevent copying AI responses/data out of page).
-      ["write", "writeText"].forEach(function (method) {
-        var original = clipboardApi[method];
-        if (typeof original !== "function") return;
+          hooked.__yp_hooked = true;
+          try { target[method] = hooked; } catch (_) {}
+          try {
+            Object.defineProperty(target, method, {
+              value: hooked,
+              writable: true,
+              configurable: true,
+              enumerable: true
+            });
+          } catch (_) {}
+        }
+      } catch (_) {}
+    });
+  }
+
+  try {
+    if (typeof Clipboard !== "undefined" && Clipboard.prototype) {
+      hookClipboardTarget(Clipboard.prototype);
+    }
+  } catch (_) {}
+  try {
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      hookClipboardTarget(navigator.clipboard);
+    }
+  } catch (_) {}
+
+  // Deep hook document.execCommand for legacy copy/cut/paste
+  function hookExecCommandTarget(target) {
+    if (!target) return;
+    try {
+      var origExec = target.execCommand;
+      if (typeof origExec === "function" && !origExec.__yp_hooked) {
+        var hookedExec = function (command) {
+          var normalized = String(command || "").toLowerCase();
+          if (clipboardPolicyActive() && (normalized === "paste" || normalized === "copy" || normalized === "cut")) {
+            var actionLabel = normalized === "paste" ? "Clipboard Paste Restricted" : "Clipboard Copy Restricted";
+            showBubble(govClipboardBlockMessage || "Clipboard copy-paste on this AI tool is restricted by corporate security policy.", actionLabel, "block");
+            return false;
+          }
+          return origExec.apply(this, arguments);
+        };
+        hookedExec.__yp_hooked = true;
+        try { target.execCommand = hookedExec; } catch (_) {}
         try {
-          clipboardApi[method] = function () {
-            if (clipboardPolicyActive()) {
-              var screenshotShieldActive = !!(document.getElementById("yp-screenshot-shield") || document.getElementById("yp-blur-curtain"));
-              if (!screenshotShieldActive) {
-                showBubble(govClipboardBlockMessage || "Clipboard copying from this AI tool is restricted by corporate security policy.", "Clipboard Copy Restricted", "block");
-              }
-              postDebouncedClipboardLog({
-                id: "copy_api_block_" + Date.now().toString(36),
-                prompt: "--copy paste [CLIPBOARD COPY API]",
-                blocked_reason: "Clipboard Copy Restricted",
-                status: "Blocked (Clipboard Copy Restricted)"
-              });
-              return Promise.resolve();
-            }
-            return original.apply(clipboardApi, arguments);
-          };
-        } catch (e) {}
-      });
-    }
-  } catch (e) {}
+          Object.defineProperty(target, "execCommand", {
+            value: hookedExec,
+            writable: true,
+            configurable: true,
+            enumerable: true
+          });
+        } catch (_) {}
+      }
+    } catch (_) {}
+
+    try {
+      var origQuery = target.queryCommandEnabled;
+      if (typeof origQuery === "function" && !origQuery.__yp_hooked) {
+        var hookedQuery = function (cmd) {
+          var normalized = String(cmd || "").toLowerCase();
+          if (clipboardPolicyActive() && (normalized === "paste" || normalized === "copy" || normalized === "cut")) {
+            return false;
+          }
+          return origQuery.apply(this, arguments);
+        };
+        hookedQuery.__yp_hooked = true;
+        try { target.queryCommandEnabled = hookedQuery; } catch (_) {}
+      }
+    } catch (_) {}
+  }
+
   try {
-    var originalExecCommand = document.execCommand;
-    if (typeof originalExecCommand === "function") {
-      document.execCommand = function (command) {
-        var normalized = String(command || "").toLowerCase();
-        if (clipboardPolicyActive() && (normalized === "paste" || normalized === "copy" || normalized === "cut")) {
-          var actionLabel = normalized === "paste" ? "Clipboard Paste Restricted" : "Clipboard Copy Restricted";
-          showBubble(govClipboardBlockMessage || "Clipboard copy-paste on this AI tool is restricted by corporate security policy.", actionLabel, "block");
-          return false;
-        }
-        return originalExecCommand.apply(document, arguments);
-      };
+    if (typeof Document !== "undefined" && Document.prototype) {
+      hookExecCommandTarget(Document.prototype);
     }
-  } catch (e) {}
-  try {
-    var origQueryCommandEnabled = document.queryCommandEnabled;
-    if (typeof origQueryCommandEnabled === "function") {
-      document.queryCommandEnabled = function (cmd) {
-        var normalized = String(cmd || "").toLowerCase();
-        if (clipboardPolicyActive() && (normalized === "paste" || normalized === "copy" || normalized === "cut")) {
-          return false;
-        }
-        return origQueryCommandEnabled.apply(document, arguments);
-      };
-    }
-  } catch (e) {}
+  } catch (_) {}
+  hookExecCommandTarget(document);
 
   // Hook 4: File Downloads & Exports Restriction
   document.addEventListener("click", function (ev) {
@@ -2959,16 +3227,13 @@
       e.preventDefault();
       e.stopPropagation();
       e.stopImmediatePropagation();
+      _lastHandledPromptText = "";
+      _lastAskDecision = clientDecision;
       var nowBlock = Date.now();
-      if (text !== _lastBlockedPromptText || (nowBlock - _lastBlockedPromptTime > 1200)) {
+      if (text !== _lastBlockedPromptText || (nowBlock - _lastBlockedPromptTime > 800)) {
         _lastBlockedPromptText = text;
         _lastBlockedPromptTime = nowBlock;
         showBubble(clientDecision.message, clientDecision.rule, "block");
-        var toRemove = (clientDecision.violating_files && clientDecision.violating_files.length > 0) ? clientDecision.violating_files : effectiveFiles.map(function (f) { return f.name; });
-        for (var f1 = 0; f1 < toRemove.length; f1++) {
-          removeStagedFile(toRemove[f1]);
-        }
-        clearAllStagedFiles();
         window.postMessage({
           source: "gateway-guard-page",
           nonce: guardNonce,
@@ -2982,6 +3247,8 @@
           action: "Blocked",
           rule: clientDecision.rule || ""
         }, "*");
+      } else {
+        _lastBlockedPromptText = text;
       }
       return;
     }
@@ -3123,15 +3390,36 @@
     if (isRemoveOrDismiss) {
       // User is removing an attachment — allow DOM event to proceed naturally
       try {
-        var container = btn.closest("div, span, li, section");
-        var cText = container ? (container.innerText || container.textContent || "") : "";
+        var card = (btn.closest && btn.closest("[data-testid*='attachment' i], [data-testid*='file' i], [class*='attachment' i], [class*='file' i], [class*='upload' i], li, div.relative, div.group")) || btn.parentElement;
+        var cText = ((card ? (card.innerText || card.textContent || "") : "") + " " + (btn.getAttribute("aria-label") || "") + " " + (btn.title || "")).toLowerCase();
+        var removedAny = false;
         for (var si = 0; si < stagedFiles.length; si++) {
           var sName = stagedFiles[si] ? stagedFiles[si].name : "";
-          if (sName && cText.toLowerCase().includes(sName.toLowerCase())) {
+          if (!sName) continue;
+          var sLower = sName.toLowerCase();
+          var sStem = sLower.replace(/\.[a-z0-9]{1,8}$/i, "");
+          var sPrefix = sStem.slice(0, 8);
+          if (
+            cText.includes(sLower) ||
+            (sStem.length >= 3 && cText.includes(sStem)) ||
+            (sPrefix.length >= 3 && cText.includes(sPrefix))
+          ) {
             removeStagedFile(sName);
+            removedAny = true;
           }
         }
+        if (!removedAny && stagedFiles.length === 1) {
+          removeStagedFile(stagedFiles[0].name);
+        }
+        lastDecisionCache = { text: "", time: 0, decision: null };
+        _lastAskSig = "";
+        _lastBlockedPromptText = "";
       } catch (_) {}
+      setTimeout(function () {
+        lastDecisionCache = { text: "", time: 0, decision: null };
+        _lastAskSig = "";
+        _lastBlockedPromptText = "";
+      }, 150);
       return;
     }
 
@@ -3178,6 +3466,12 @@
       return;
     }
     var text = stripInvisible(composerFrom(btn) || composerFrom(getDeepActiveElement()) || composerFrom(document.activeElement));
+    if (!text) {
+      text = stripInvisible(composerFrom(null));
+    }
+    if (!text && _lastBlockedPromptText && (Date.now() - _lastBlockedPromptTime < 5000)) {
+      text = _lastBlockedPromptText;
+    }
     var effectiveFiles = mergeStagedAndDomFiles();
     if (!text && effectiveFiles.length === 0 && stagedImages.length === 0) return;
 
@@ -3206,16 +3500,13 @@
       e.preventDefault();
       e.stopPropagation();
       e.stopImmediatePropagation();
+      _lastHandledPromptText = "";
+      _lastAskDecision = clientDecision;
       var nowClickBlock = Date.now();
-      if (text !== _lastBlockedPromptText || (nowClickBlock - _lastBlockedPromptTime > 1200)) {
+      if (text !== _lastBlockedPromptText || (nowClickBlock - _lastBlockedPromptTime > 800)) {
         _lastBlockedPromptText = text;
         _lastBlockedPromptTime = nowClickBlock;
         showBubble(clientDecision.message, clientDecision.rule, "block");
-        var toRemove = (clientDecision.violating_files && clientDecision.violating_files.length > 0) ? clientDecision.violating_files : effectiveFiles.map(function (f) { return f.name; });
-        for (var f2 = 0; f2 < toRemove.length; f2++) {
-          removeStagedFile(toRemove[f2]);
-        }
-        clearAllStagedFiles();
         window.postMessage({
           source: "gateway-guard-page",
           nonce: guardNonce,
@@ -3229,6 +3520,8 @@
           action: "Blocked",
           rule: clientDecision.rule || ""
         }, "*");
+      } else {
+        _lastBlockedPromptText = text;
       }
       return;
     }
@@ -3339,6 +3632,9 @@
     if (clientDecision && clientDecision.blocked) {
       e.preventDefault();
       e.stopImmediatePropagation();
+      _lastHandledPromptText = "";
+      _lastBlockedPromptText = text;
+      _lastAskDecision = clientDecision;
       showBubble(clientDecision.message, clientDecision.rule, "block");
       var toRemove = (clientDecision.violating_files && clientDecision.violating_files.length > 0) ? clientDecision.violating_files : effectiveFiles.map(function (f) { return f.name; });
       for (var f3 = 0; f3 < toRemove.length; f3++) {
@@ -3747,24 +4043,53 @@
         return origFetch.apply(this, arguments);
       }
 
-      // If prompt was already evaluated by Send button / Enter key within last 5 seconds, pass through directly
+      // 1. FIRST: Evaluate client rules directly on extracted promptText and netFiles
+      var fetchDecision = evaluateClientRules(promptText, netFiles);
+      if (fetchDecision && fetchDecision.blocked) {
+        _lastBlockedPromptText = promptText;
+        _lastBlockedPromptTime = Date.now();
+        _lastHandledPromptText = "";
+        _lastAskDecision = fetchDecision;
+        showBubble(fetchDecision.message, fetchDecision.rule, "block");
+        return createBlockedFetchResponse(fetchDecision, url);
+      }
+
+      // 2. Check if prompt was recently blocked by button click, Enter key, or earlier fetch
+      if (_lastBlockedPromptText && (Date.now() - _lastBlockedPromptTime < 10000)) {
+        var cleanBlock = (_lastBlockedPromptText || "").trim().toLowerCase();
+        if (cleanBlock && (ptClean === cleanBlock || ptClean.indexOf(cleanBlock) >= 0 || cleanBlock.indexOf(ptClean) >= 0)) {
+          var bDec = (_lastAskDecision && _lastAskDecision.blocked) ? _lastAskDecision : {
+            blocked: true,
+            action: "Blocked",
+            rule: "Security Policy Block",
+            message: "Blocked by security policy."
+          };
+          showBubble(bDec.message, bDec.rule, "block");
+          return createBlockedFetchResponse(bDec, url);
+        }
+      }
+
+      // 3. If prompt was already evaluated and ALLOWED by Send button / Enter key within last 5 seconds, pass through directly
+      // CRITICAL: Must NEVER pass through if the last decision was blocked!
       if (_lastHandledPromptText && (Date.now() - _lastHandledPromptTime < 5000)) {
-        var cleanLast = (_lastHandledPromptText || "").trim().toLowerCase();
-        if (cleanLast && (ptClean === cleanLast || ptClean.indexOf(cleanLast) >= 0 || cleanLast.indexOf(ptClean) >= 0)) {
-          if (_lastAskDecision && String(_lastAskDecision.action || "").toLowerCase() === "redacted" && _lastAskDecision.redacted_prompt) {
-            var rInit = init ? Object.assign({}, init) : {};
-            var rRewritten = rewriteBody(rInit.body, _lastAskDecision.redacted_prompt, promptText);
-            if (rRewritten) {
-              rInit.body = rRewritten;
-              var rModified = Array.prototype.slice.call(arguments);
-              if (rModified.length >= 2) {
-                rModified[1] = rInit;
-                return origFetch.apply(window, rModified);
+        if (!_lastAskDecision || !_lastAskDecision.blocked) {
+          var cleanLast = (_lastHandledPromptText || "").trim().toLowerCase();
+          if (cleanLast && (ptClean === cleanLast || ptClean.indexOf(cleanLast) >= 0 || cleanLast.indexOf(ptClean) >= 0)) {
+            if (_lastAskDecision && String(_lastAskDecision.action || "").toLowerCase() === "redacted" && _lastAskDecision.redacted_prompt) {
+              var rInit = init ? Object.assign({}, init) : {};
+              var rRewritten = rewriteBody(rInit.body, _lastAskDecision.redacted_prompt, promptText);
+              if (rRewritten) {
+                rInit.body = rRewritten;
+                var rModified = Array.prototype.slice.call(arguments);
+                if (rModified.length >= 2) {
+                  rModified[1] = rInit;
+                  return origFetch.apply(window, rModified);
+                }
+                return origFetch.call(window, url, rInit);
               }
-              return origFetch.call(window, url, rInit);
             }
+            return origFetch.apply(this, arguments);
           }
-          return origFetch.apply(this, arguments);
         }
       }
 
@@ -3884,7 +4209,12 @@
     if (promptText) {
       var clientDecision = evaluateClientRules(promptText, []);
       if (clientDecision && clientDecision.blocked) {
+        _lastBlockedPromptText = promptText;
+        _lastBlockedPromptTime = Date.now();
+        _lastHandledPromptText = "";
+        _lastAskDecision = clientDecision;
         showBubble(clientDecision.message, clientDecision.rule, "block");
+        try { this.abort(); } catch (e) {}
         return;
       }
       var cAct = String((clientDecision && clientDecision.action) || "").toLowerCase();
@@ -3941,6 +4271,10 @@
         if (promptText && promptText.length > 0 && !promptText.startsWith("{") && !promptText.startsWith("[")) {
           var wsDecision = evaluateClientRules(promptText, []);
           if (wsDecision && wsDecision.blocked) {
+            _lastBlockedPromptText = promptText;
+            _lastBlockedPromptTime = Date.now();
+            _lastHandledPromptText = "";
+            _lastAskDecision = wsDecision;
             showBubble(wsDecision.message, wsDecision.rule, "block");
             window.postMessage({
               source: "gateway-guard-page",

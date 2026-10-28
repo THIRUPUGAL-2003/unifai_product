@@ -860,7 +860,17 @@ _RECENT_EXTENSION_EVALS_LOCK = threading.Lock()
 _RECENT_EXTENSION_EVALS: list[dict] = []
 
 
-def _record_extension_eval(host: str, prompt: str, files: list | None = None, platform: str = "", eval_id: str = "") -> None:
+def _record_extension_eval(
+    host: str,
+    prompt: str,
+    files: list | None = None,
+    platform: str = "",
+    eval_id: str = "",
+    is_blocked: bool = False,
+    action: str = "Allowed",
+    rule: str = "",
+    message: str = "",
+) -> None:
     """Record that the browser extension handled this prompt/upload for proxy deduplication."""
     try:
         from guard_platform import data_dir
@@ -906,6 +916,10 @@ def _record_extension_eval(host: str, prompt: str, files: list | None = None, pl
                     "time": now,
                     "eval_id": str(eval_id or "").strip(),
                     "id": str(eval_id or "").strip(),
+                    "is_blocked": bool(is_blocked),
+                    "action": str(action or ("Blocked" if is_blocked else "Allowed")),
+                    "rule": str(rule or ""),
+                    "message": str(message or ""),
                 }
                 _RECENT_EXTENSION_EVALS.append(entry)
             cache_paths = [cache_path]
@@ -957,9 +971,10 @@ def _post_intercept_file(
     agent_hostname: str = "",
 ) -> bool:
     """Post single file upload to /api/browser-ai/intercept-file so backend stores attachment and activates View."""
-    dedupe_key = f"{platform}|{file_name}|{len(file_payload)}|{prompt[:100]}"
-    if _is_duplicate_file_post(dedupe_key, ttl=30.0):
-        print(f"[agent_extension] Skipping duplicate file post for {file_name}")
+    eval_id = metadata.get("eval_id") if isinstance(metadata, dict) else ""
+    dedupe_key = f"file_eval|{eval_id}|{file_name}" if eval_id else f"file_post|{platform}|{file_name}|{len(file_payload)}|{hash(prompt)}"
+    if _is_duplicate_file_post(dedupe_key, ttl=1.5):
+        print(f"[agent_extension] Skipping burst duplicate file post for {file_name}")
         return True
     try:
         from agent_http import _DIRECT_OPENER, _guard_headers
@@ -1098,6 +1113,7 @@ def check_prompt(
 
     prompt = re.sub(r'[\u200B-\u200F\uFEFF\u202A-\u202E\u2060-\u206F]', '', prompt or '').replace('\u00A0', ' ').strip()
     text = prompt
+    eval_text = prompt
     raw_files_list = files if isinstance(files, list) else []
     images_list = upload_images if isinstance(upload_images, list) else []
 
@@ -1129,11 +1145,17 @@ def check_prompt(
     file_sig = ",".join(sorted(seen_fnames))
     prompt_req_key = f"{clean_h}|{file_sig}|{prompt[:150]}"
     now_ts = time.time()
-    if not is_governance_action:
+    if eval_id:
+        with _RECENT_FILE_POSTS_LOCK:
+            cached_dec = _RECENT_FILE_POSTS.get("eval_dec|" + eval_id)
+            cached_ts = _RECENT_FILE_POSTS.get("eval_ts|" + eval_id, 0)
+            if cached_dec and (now_ts - cached_ts < 1.0):
+                return dict(cached_dec)
+    elif not is_governance_action:
         with _RECENT_FILE_POSTS_LOCK:
             cached_dec = _RECENT_FILE_POSTS.get("decision|" + prompt_req_key)
             cached_ts = _RECENT_FILE_POSTS.get("ts|" + prompt_req_key, 0)
-            if cached_dec and (now_ts - cached_ts < 10.0):
+            if cached_dec and (now_ts - cached_ts < 0.8):
                 return dict(cached_dec)
 
     file_names = []
@@ -1231,12 +1253,9 @@ def check_prompt(
                     file_text_map[fname] = f_content
 
             if ftext and len(ftext.strip()) > 0:
-                text += f"\n[File: {fname}]\n" + ftext[:50000]
+                eval_text += f"\n{ftext[:50000]}"
             if extracted and len(extracted.strip()) > 3:
-                if f"[Extracted File: {fname}]" not in text:
-                    text += f"\n[Extracted File: {fname}]\n" + extracted[:100000]
-            elif fname and f"[File: {fname}]" not in text:
-                text += f"\n[File: {fname}]\n"
+                eval_text += f"\n{extracted[:100000]}"
 
             # Anti-spoofing real file type check against restricted or allowed extensions
             real_type = detect_real_file_type(raw_b, ftext or extracted, fname, ctype)
@@ -1253,6 +1272,7 @@ def check_prompt(
                         "action": "Blocked",
                         "message": f"File type for '{fname}' is not permitted. Only approved file types ({', '.join('.' + e for e in allowed_list)}) may be uploaded.",
                         "rule": "Restricted File Type",
+                        "violating_files": [fname],
                         "redacted_prompt": "",
                     }
             elif mode != "allow_listed" and restricted_str:
@@ -1269,6 +1289,7 @@ def check_prompt(
                             f"Uploading '.{matched_ext}' files is restricted by corporate DLP policy."
                         ),
                         "rule": f"Restricted File Type (.{matched_ext})",
+                        "violating_files": [fname],
                         "redacted_prompt": "",
                     }
 
@@ -1280,11 +1301,8 @@ def check_prompt(
             fn = f.strip()
             if fn not in file_names:
                 file_names.append(fn)
-            if f"[File: {fn}]" not in text:
-                text += f"\n[File: {fn}]\n"
-
-    if file_names and not text.strip():
-        text = f"[FILE UPLOAD] {', '.join(file_names)}"
+            if fn not in file_names:
+                file_names.append(fn)
 
     violating_files = []
     prompt_violated = False
@@ -1292,7 +1310,7 @@ def check_prompt(
     raw_prompt_text = (prompt or "").strip()
 
     # Instant in-memory DLP regex match on prompt and individual files
-    if (text or file_text_map) and not is_blocked:
+    if (eval_text or file_text_map) and not is_blocked:
         try:
             p_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "proxy"))
             if p_dir not in sys.path:
@@ -1328,7 +1346,7 @@ def check_prompt(
                             if fcontent and rx.search(fcontent):
                                 if fn not in f_matches:
                                     f_matches.append(fn)
-                        if not p_match and not f_matches and rx.search(text):
+                        if not p_match and not f_matches and rx.search(eval_text):
                             p_match = True
 
                         if p_match or f_matches:
@@ -1512,7 +1530,17 @@ def check_prompt(
         rule = "Corporate AI Workspace Policy"
         is_blocked = True
 
-    _record_extension_eval(clean_host or host, user_caption or text, file_names, platform=platform, eval_id=eval_id)
+    _record_extension_eval(
+        clean_host or host,
+        user_caption or text,
+        file_names,
+        platform=platform,
+        eval_id=eval_id,
+        is_blocked=is_blocked,
+        action=meta.get("status") or ("Blocked" if is_blocked else "Allowed"),
+        rule=rule or meta.get("blocked_reason") or "",
+        message=block_message or meta.get("blocked_reason") or "",
+    )
 
     candidates = [GATEWAY_BACKEND_URL.rstrip("/")] if GATEWAY_BACKEND_URL else []
     seen_bases = set()
@@ -1522,67 +1550,74 @@ def check_prompt(
             seen_bases.add(b)
             unique_candidates.append(b)
 
-    # Multi-file support: If files are attached, post EXACTLY ONE consolidated record to Prompt Logs
+    # Multi-file support: Post individual clean record for each attached file (no phantom joined row!)
     if files_list:
-        unified_file_label = ", ".join(file_names) if file_names else "attachment"
-        unified_prompt = f"{unified_file_label} -- {user_caption}" if user_caption else f"[FILE UPLOAD] {unified_file_label}"
+        n_total_files = len(files_list)
+        for f_idx, f in enumerate(files_list):
+            fn = (f.get("name") if isinstance(f, dict) else str(f)).strip() or "attachment"
+            f_label = f"{fn}({f_idx + 1}/{n_total_files})" if n_total_files > 1 else fn
+            f_prompt = f"{f_label} -- {user_caption}" if user_caption else f_label
 
-        primary_file_bytes = b""
-        primary_content_type = "application/octet-stream"
-        for f in files_list:
+            f_bytes = b""
+            f_ct = "application/octet-stream"
+            f_ext_text = ""
             if isinstance(f, dict):
+                f_ext_text = str(f.get("extracted_text") or "").strip()
                 fb64 = str(f.get("base64") or "").strip()
                 if fb64:
                     try:
                         import base64
-                        primary_file_bytes = base64.b64decode(fb64)
-                        primary_content_type = str(f.get("type") or "application/octet-stream").strip()
-                        break
+                        f_bytes = base64.b64decode(fb64)
                     except Exception:
                         pass
                 elif f.get("text"):
-                    primary_file_bytes = str(f["text"]).encode("utf-8")
-                    primary_content_type = str(f.get("type") or "text/plain").strip()
-                    break
+                    f_bytes = str(f["text"]).encode("utf-8")
+                f_ct = str(f.get("type") or "application/octet-stream").strip()
 
-        file_key = ",".join(file_names) if file_names else ""
-        prompt_dedupe_key = f"{platform}|{file_key}|{(user_caption or text)[:100]}"
+            f_meta = dict(meta)
+            f_meta["file_name"] = fn
+            f_meta["multi_file_count"] = n_total_files
+            f_meta["multi_file_index"] = f_idx + 1
+            if f_ext_text:
+                f_meta["extracted_text"] = f_ext_text[:100000]
 
-        if not _is_duplicate_file_post("prompt|" + prompt_dedupe_key, ttl=8.0):
-            if primary_file_bytes:
-                threading.Thread(
-                    target=_post_intercept_file,
-                    kwargs=dict(
-                        platform=platform,
-                        prompt=unified_prompt,
-                        file_name=unified_file_label,
-                        content_type=primary_content_type,
-                        file_payload=primary_file_bytes,
-                        metadata=meta,
-                        client_ip="127.0.0.1",
-                        agent_id=agent_id,
-                        agent_hostname=agent_hostname,
-                    ),
-                    daemon=True,
-                ).start()
-            else:
-                payload = {
-                    "platform": platform,
-                    "prompt": unified_prompt,
-                    "client_ip": "127.0.0.1",
-                    "agent_id": agent_id,
-                    "agent_hostname": agent_hostname,
-                    "upload_images": images_list[:5],
-                    "metadata": meta,
-                }
-                for base in unique_candidates:
+            f_dedupe_key = f"ext_file|{eval_id}|{fn}" if eval_id else f"ext_file|{platform}|{fn}|{hash(user_caption)}"
+
+            if not _is_duplicate_file_post(f_dedupe_key, ttl=1.0):
+                if f_bytes:
                     threading.Thread(
-                        target=_http_json,
-                        args=("POST", f"{base}/api/browser-ai/intercept", payload),
-                        kwargs=dict(timeout=5),
+                        target=_post_intercept_file,
+                        kwargs=dict(
+                            platform=platform,
+                            prompt=f_prompt,
+                            file_name=fn,
+                            content_type=f_ct,
+                            file_payload=f_bytes,
+                            metadata=f_meta,
+                            client_ip="127.0.0.1",
+                            agent_id=agent_id,
+                            agent_hostname=agent_hostname,
+                        ),
                         daemon=True,
                     ).start()
-                    break
+                else:
+                    payload = {
+                        "platform": platform,
+                        "prompt": f_prompt,
+                        "client_ip": "127.0.0.1",
+                        "agent_id": agent_id,
+                        "agent_hostname": agent_hostname,
+                        "upload_images": images_list[:5],
+                        "metadata": f_meta,
+                    }
+                    for base in unique_candidates:
+                        threading.Thread(
+                            target=_http_json,
+                            args=("POST", f"{base}/api/browser-ai/intercept", payload),
+                            kwargs=dict(timeout=5),
+                            daemon=True,
+                        ).start()
+                        break
 
         if is_blocked:
             res = {
@@ -1598,13 +1633,12 @@ def check_prompt(
                 _RECENT_FILE_POSTS["ts|" + prompt_req_key] = time.time()
             return res
         else:
-            action_str = "Redacted" if is_redacted else ("Warned" if is_warned else "Allowed")
             res = {
                 "blocked": False,
-                "action": action_str,
+                "action": "Allowed",
                 "message": "",
                 "rule": rule or "",
-                "redacted_prompt": redacted_text if is_redacted else "",
+                "redacted_prompt": "",
             }
             with _RECENT_FILE_POSTS_LOCK:
                 _RECENT_FILE_POSTS["decision|" + prompt_req_key] = res
@@ -1652,6 +1686,9 @@ def check_prompt(
         with _RECENT_FILE_POSTS_LOCK:
             _RECENT_FILE_POSTS["decision|" + prompt_req_key] = res
             _RECENT_FILE_POSTS["ts|" + prompt_req_key] = time.time()
+            if eval_id:
+                _RECENT_FILE_POSTS["eval_dec|" + eval_id] = res
+                _RECENT_FILE_POSTS["eval_ts|" + eval_id] = time.time()
         return res
 
     # Filter out noise prompts and internal RPC protobuf blobs
@@ -1661,10 +1698,10 @@ def check_prompt(
     if len(t_clean) > 40 and " " not in t_clean and re.match(r"^[A-Za-z0-9+/=]+$", t_clean):
         return {"blocked": False, "passthrough": True, "message": "", "rule": ""}
 
-    # Deduplicate non-blocked prompts within 8 seconds
-    file_key = ",".join(file_names) if file_names else ""
-    prompt_dedupe_key = f"{platform}|{file_key}|{text[:100]}"
-    if _is_duplicate_file_post("prompt|" + prompt_dedupe_key, ttl=8.0):
+    # Deduplicate rapid burst retries only (within 0.8s) so identical send bursts don't double-log,
+    # but every distinct user send or consecutive prompt is always predicted and recorded!
+    p_dedupe_key = f"p_eval|{eval_id}" if eval_id else f"p_burst|{platform}|{','.join(file_names)}|{hash(text)}"
+    if _is_duplicate_file_post(p_dedupe_key, ttl=0.8):
         return {"blocked": False, "action": "Allowed", "message": "", "rule": ""}
 
     code = 0
@@ -1720,7 +1757,24 @@ def check_prompt(
                     pass
         # If clean prompt, allow passthrough cleanly without network error
         return {"blocked": False, "action": "Allowed", "passthrough": True, "message": "", "rule": ""}
-    return interpret_guard_decision(data, text, rule)
+    final_dec = interpret_guard_decision(data, text, rule)
+    if final_dec.get("blocked") or str(final_dec.get("action") or "").lower() == "blocked":
+        _record_extension_eval(
+            clean_host or host,
+            user_caption or text,
+            file_names,
+            platform=platform,
+            eval_id=eval_id,
+            is_blocked=True,
+            action=str(final_dec.get("action") or "Blocked"),
+            rule=str(final_dec.get("rule") or rule),
+            message=str(final_dec.get("message") or ""),
+        )
+    if eval_id:
+        with _RECENT_FILE_POSTS_LOCK:
+            _RECENT_FILE_POSTS["eval_dec|" + eval_id] = final_dec
+            _RECENT_FILE_POSTS["eval_ts|" + eval_id] = time.time()
+    return final_dec
 
 
 def _flush_pending_audit_logs() -> None:
@@ -2543,6 +2597,37 @@ def local_base_url() -> str:
     return ""
 
 
+def are_related_ai_hosts(h1: str, h2: str) -> bool:
+    h1 = (h1 or "").lower().replace("www.", "").strip(".")
+    h2 = (h2 or "").lower().replace("www.", "").strip(".")
+    if not h1 or not h2:
+        return False
+    if h1 == h2:
+        return True
+    pairs = [
+        ("chatgpt.com", "openai.com"),
+        ("chat.openai.com", "chatgpt.com"),
+        ("ab.chatgpt.com", "chatgpt.com"),
+        ("claude.ai", "anthropic.com"),
+        ("gemini.google.com", "aistudio.google.com"),
+        ("gemini.google.com", "bard.google.com"),
+        ("gemini.google.com", "google.com"),
+        ("copilot.microsoft.com", "copilot.com"),
+        ("copilot.microsoft.com", "copilot.cloud.microsoft"),
+        ("copilot.microsoft.com", "bing.com"),
+        ("copilot.microsoft.com", "githubcopilot.com"),
+        ("deepseek.com", "chat.deepseek.com"),
+        ("mistral.ai", "chat.mistral.ai"),
+        ("perplexity.ai", "www.perplexity.ai"),
+    ]
+    for p0, p1 in pairs:
+        if (h1 == p0 or h1.endswith("." + p0)) and (h2 == p1 or h2.endswith("." + p1)):
+            return True
+        if (h1 == p1 or h1.endswith("." + p1)) and (h2 == p0 or h2.endswith("." + p0)):
+            return True
+    return False
+
+
 def authorize_ai_session(payload: dict) -> dict:
     """Forward an AI session authorization check to the Gateway backend."""
     if not isinstance(payload, dict):
@@ -2591,7 +2676,7 @@ def authorize_ai_session(payload: dict) -> dict:
         for p in parts:
             if not p:
                 continue
-            if p == provider or (page_host and (page_host == p or page_host.endswith("." + p) or p in page_host)):
+            if p == provider or (page_host and (page_host == p or page_host.endswith("." + p) or p in page_host or are_related_ai_hosts(page_host, p))):
                 matched_target = True
                 break
         if not matched_target:
@@ -2631,7 +2716,11 @@ def authorize_ai_session(payload: dict) -> dict:
         }
 
     # Check if domain matches configured corporate domains
-    domain_allowed = (email_domain in allowed_domains) or any(email_domain.endswith("." + ad) for ad in allowed_domains)
+    domain_allowed = (
+        (email_domain in allowed_domains)
+        or any(email_domain.endswith("." + ad) for ad in allowed_domains)
+        or any((not "." in ad) and (email_domain.startswith(ad + ".") or email_domain == ad + ".com" or f".{ad}." in email_domain) for ad in allowed_domains)
+    )
     if not domain_allowed:
         block_msg = str(gov.get("corporate_block_message") or "").strip()
         if not block_msg:

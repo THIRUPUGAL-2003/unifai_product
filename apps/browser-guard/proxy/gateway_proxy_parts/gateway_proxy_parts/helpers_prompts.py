@@ -1398,8 +1398,8 @@ def _clean_prompt_text(text: str) -> str | None:
     return cleaned
 
 
-DEDUPE_TTL = 1.2
-BLOCK_DEDUPE_TTL = 900.0  # 15 minutes dedupe for site block & file block loops
+DEDUPE_TTL = 0.8
+BLOCK_DEDUPE_TTL = 3.0  # 3 seconds debounce for duplicate packet retransmissions only
 
 
 def is_duplicate_event(domain: str, event_key: str, ttl: float = DEDUPE_TTL, *, mark: bool = True) -> bool:

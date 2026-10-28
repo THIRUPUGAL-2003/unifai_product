@@ -130,7 +130,17 @@ def encrypt_parts_bundle(parts_dir: Path, output_enc_path: Path) -> dict[str, in
         stats[name] = len(marshal.dumps(compile(source_text, f"<{name}>", "exec", optimize=2)))
     if not sources:
         raise RuntimeError(f"No proxy parts found in {parts_dir} to encrypt")
-    output_enc_path.write_bytes(encrypt_source_map(sources))
+    enc_blob = encrypt_source_map(sources)
+    output_enc_path.parent.mkdir(parents=True, exist_ok=True)
+    for attempt in range(5):
+        try:
+            output_enc_path.write_bytes(enc_blob)
+            break
+        except OSError:
+            if attempt == 4:
+                raise
+            import time
+            time.sleep(0.5)
     return stats
 
 
@@ -150,7 +160,15 @@ def encrypt_guard_code_bundle(root: Path, output_enc_path: Path) -> dict[str, in
         raise RuntimeError(f"missing agent modules under {agent}")
     blob = encrypt_source_map(sources)
     output_enc_path.parent.mkdir(parents=True, exist_ok=True)
-    output_enc_path.write_bytes(blob)
+    for attempt in range(5):
+        try:
+            output_enc_path.write_bytes(blob)
+            break
+        except OSError:
+            if attempt == 4:
+                raise
+            import time
+            time.sleep(0.5)
     return {name: len(sources[name].encode("utf-8")) for name in sources}
 
 

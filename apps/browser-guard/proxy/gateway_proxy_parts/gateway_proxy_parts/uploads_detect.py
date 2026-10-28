@@ -2556,9 +2556,9 @@ def upload_domain_aliases(domain: str) -> list[str]:
             "claude.ai", "anthropic.com", "api.anthropic.com", "console.anthropic.com",
             "claudeusercontent.com", "files.claudeusercontent.com",
         ])
-    elif any(x in d for x in ("gemini", "bard", "googleusercontent", "clients6.google.com")):
+    elif any(x in d for x in ("gemini", "bard", "aistudio", "googleusercontent", "clients6.google.com")):
         fam_set.update([
-            "gemini.google.com", "bard.google.com", "google.com",
+            "gemini.google.com", "bard.google.com", "aistudio.google.com", "google.com",
             "generativelanguage.googleapis.com", "googleusercontent.com",
             "clients6.google.com", "alkalimakersuite-pa.clients6.google.com",
             "content-push.googleapis.com", "push.gemini.google.com",

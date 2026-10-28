@@ -149,18 +149,68 @@
     return matchDomainInMap(host, blockedSitesMap, blockedDomains);
   }
 
+  function areRelatedAIHosts(h1, h2) {
+    if (!h1 || !h2) return false;
+    h1 = normalizeDomainHost(h1);
+    h2 = normalizeDomainHost(h2);
+    if (h1 === h2) return true;
+    var pairs = [
+      ["chatgpt.com", "openai.com"],
+      ["chat.openai.com", "chatgpt.com"],
+      ["ab.chatgpt.com", "chatgpt.com"],
+      ["claude.ai", "anthropic.com"],
+      ["gemini.google.com", "aistudio.google.com"],
+      ["gemini.google.com", "bard.google.com"],
+      ["gemini.google.com", "google.com"],
+      ["copilot.microsoft.com", "copilot.com"],
+      ["copilot.microsoft.com", "copilot.cloud.microsoft"],
+      ["copilot.microsoft.com", "bing.com"],
+      ["copilot.microsoft.com", "githubcopilot.com"],
+      ["deepseek.com", "chat.deepseek.com"],
+      ["mistral.ai", "chat.mistral.ai"],
+      ["perplexity.ai", "www.perplexity.ai"]
+    ];
+    for (var i = 0; i < pairs.length; i++) {
+      var p0 = pairs[i][0];
+      var p1 = pairs[i][1];
+      if ((h1 === p0 || h1.endsWith("." + p0)) && (h2 === p1 || h2.endsWith("." + p1))) return true;
+      if ((h1 === p1 || h1.endsWith("." + p1)) && (h2 === p0 || h2.endsWith("." + p0))) return true;
+    }
+    return false;
+  }
+
+  function detectProviderKeyword(host) {
+    var h = (host || "").toLowerCase();
+    if (h.includes("chatgpt") || h.includes("openai")) return "chatgpt";
+    if (h.includes("claude") || h.includes("anthropic")) return "claude";
+    if (h.includes("copilot") || h.includes("bing.com")) return "copilot";
+    if (h.includes("gemini") || h.includes("bard") || h.includes("aistudio")) return "gemini";
+    if (h.includes("deepseek")) return "deepseek";
+    if (h.includes("mistral")) return "mistral";
+    if (h.includes("perplexity")) return "perplexity";
+    return "";
+  }
+
   function hostInConfiguredSites(host, rawSites) {
     var raw = String(rawSites || "").trim();
     if (!raw) return false;
     if (raw.toUpperCase() === "ALL" || raw === "*") return true;
     if (raw.toLowerCase() === "none") return false;
     var current = normalizeDomainHost(host);
+    var currentProv = detectProviderKeyword(current);
     var parts = raw.split(/[;,\s]+/);
     for (var i = 0; i < parts.length; i++) {
       var item = parts[i].trim().replace(/^\*\./, "").replace(/^\./, "");
       if (!item) continue;
-      item = normalizeDomainHost(item.indexOf("://") >= 0 ? item : item.indexOf(":") >= 0 && (item.match(/:/g) || []).length > 1 ? "https://[" + item + "]" : "https://" + item);
-      if (item && (current === item || current.endsWith("." + item))) return true;
+      if (currentProv && item.toLowerCase() === currentProv) return true;
+      var itemHost = normalizeDomainHost(item.indexOf("://") >= 0 ? item : item.indexOf(":") >= 0 && (item.match(/:/g) || []).length > 1 ? "https://[" + item + "]" : "https://" + item);
+      if (!itemHost) {
+        if (currentProv && item.toLowerCase() === currentProv) return true;
+        continue;
+      }
+      if (current === itemHost || current.endsWith("." + itemHost)) return true;
+      if (!itemHost.includes(".") && current.includes(itemHost)) return true;
+      if (areRelatedAIHosts(current, itemHost)) return true;
     }
     return false;
   }
@@ -370,17 +420,25 @@
     if (isCopy && ev.clipboardData) {
       try {
         ev.clipboardData.clearData();
-        ev.clipboardData.setData("text/plain", "");
+        ev.clipboardData.setData("text/plain", cleanNoticeMessage(clipboardPolicy.message, "[Clipboard copying from this AI tool is restricted by corporate security policy.]"));
         ev.clipboardData.setData("text/html", "");
       } catch (_) {}
     }
     try {
       var sel = window.getSelection();
-      if (sel) sel.removeAllRanges();
+      if (sel) {
+        if (sel.removeAllRanges) sel.removeAllRanges();
+        if (sel.empty) sel.empty();
+      }
+      if (document.activeElement && typeof document.activeElement.selectionStart === "number") {
+        document.activeElement.selectionEnd = document.activeElement.selectionStart;
+      }
     } catch (_) {}
-    ev.preventDefault();
-    ev.stopPropagation();
-    ev.stopImmediatePropagation();
+    try {
+      ev.preventDefault();
+      ev.stopPropagation();
+      ev.stopImmediatePropagation();
+    } catch (_) {}
     if (isPaste) {
       enforceActiveElementRollback();
     }
@@ -437,6 +495,18 @@
       if (isPaste) {
         enforceActiveElementRollback();
       }
+      if (isCopy) {
+        try {
+          var sel = window.getSelection();
+          if (sel) {
+            if (sel.removeAllRanges) sel.removeAllRanges();
+            if (sel.empty) sel.empty();
+          }
+          if (document.activeElement && typeof document.activeElement.selectionStart === "number") {
+            document.activeElement.selectionEnd = document.activeElement.selectionStart;
+          }
+        } catch (_) {}
+      }
       if (!document.getElementById("yp-raksha-alert-card")) {
         if (isCopy) {
           showClipboardBlockedNotice("Clipboard Copy Restricted", cleanNoticeMessage(clipboardPolicy.message, "Clipboard copying from this AI tool is restricted by corporate security policy."));
@@ -449,6 +519,40 @@
     }
   }
 
+  // Prevent right-click copy on selected text
+  function handleContextMenuEvent(ev) {
+    if (!clipboardPolicyApplies()) return;
+    try {
+      var sel = window.getSelection();
+      var selectedText = sel ? sel.toString().trim() : "";
+      if (selectedText.length > 0) {
+        if (sel.removeAllRanges) sel.removeAllRanges();
+        if (sel.empty) sel.empty();
+        if (!document.getElementById("yp-raksha-alert-card")) {
+          showClipboardBlockedNotice("Clipboard Copy Restricted", cleanNoticeMessage(clipboardPolicy.message, "Clipboard copying from this AI tool is restricted by corporate security policy."));
+        }
+        recordIsolatedGovernanceLog("--copy paste [CLIPBOARD COPY CONTEXT MENU]", "Clipboard Policy");
+      }
+    } catch (_) {}
+  }
+
+  // Prevent selection of AI output text when clipboard policy is active
+  function handleSelectStartEvent(ev) {
+    if (!clipboardPolicyApplies()) return;
+    var t = ev.target;
+    var tag = (t && t.tagName || "").toLowerCase();
+    var isEditable = tag === "input" || tag === "textarea" || (t && t.isContentEditable) || (t && t.closest && t.closest("input, textarea, [contenteditable='true']"));
+    if (!isEditable) {
+      try {
+        ev.preventDefault();
+      } catch (_) {}
+      try {
+        var sel = window.getSelection();
+        if (sel && sel.removeAllRanges) sel.removeAllRanges();
+      } catch (_) {}
+    }
+  }
+
   ["paste", "beforepaste", "copy", "beforecopy", "cut", "beforecut"].forEach(function (type) {
     window.addEventListener(type, blockClipboardEvent, true);
     document.addEventListener(type, blockClipboardEvent, true);
@@ -457,18 +561,35 @@
   document.addEventListener("beforeinput", handleBeforeInputEvent, true);
   window.addEventListener("keydown", handleClipboardKeys, true);
   document.addEventListener("keydown", handleClipboardKeys, true);
+  window.addEventListener("contextmenu", handleContextMenuEvent, true);
+  document.addEventListener("contextmenu", handleContextMenuEvent, true);
+  document.addEventListener("selectstart", handleSelectStartEvent, true);
 
-  // Intercept clicks on AI "Copy" and "Copy code" buttons in isolated world
-  document.addEventListener("click", function (ev) {
+  // Intercept clicks, mousedown, pointerdown on AI "Copy" and "Copy code" buttons in isolated world
+  function handleCopyButtonIsolated(ev) {
     if (!clipboardPolicyApplies()) return;
     var target = (ev.composedPath && ev.composedPath()[0]) || ev.target;
-    var el = (target && target.closest) ? target.closest("button, [role='button'], a, [data-tooltip], [data-testid]") : null;
+    var el = (target && target.closest) ? target.closest("button, [role='button'], a, [aria-label*='copy' i], [title*='copy' i], [data-testid*='copy' i], [class*='copy' i], [id*='copy' i], [data-tooltip*='copy' i]") : null;
+    if (!el && target) {
+      var curr = target;
+      for (var depth = 0; curr && depth < 5; depth++) {
+        var a = ((curr.getAttribute && curr.getAttribute("aria-label")) || "").toLowerCase();
+        var ti = ((curr.getAttribute && curr.getAttribute("title")) || "").toLowerCase();
+        var cl = String(curr.className || "").toLowerCase();
+        if (a.indexOf("copy") >= 0 || ti.indexOf("copy") >= 0 || cl.indexOf("copy") >= 0) {
+          el = curr;
+          break;
+        }
+        curr = curr.parentElement;
+      }
+    }
     if (!el) return;
     var aria = (el.getAttribute("aria-label") || "").toLowerCase();
     var title = (el.getAttribute("title") || "").toLowerCase();
     var testid = (el.getAttribute("data-testid") || "").toLowerCase();
     var tooltip = (el.getAttribute("data-tooltip") || el.getAttribute("data-tooltip-id") || el.getAttribute("mattooltip") || "").toLowerCase();
     var biId = (el.getAttribute("data-bi-id") || "").toLowerCase();
+    var className = String(el.className || "").toLowerCase();
     var text = (el.innerText || el.textContent || "").toLowerCase().trim();
     var hasCopySvg = !!(el.querySelector && el.querySelector("svg[class*='copy' i], svg[aria-label*='copy' i], [class*='copy-icon' i], [class*='icon-copy' i]"));
     var isCopyBtn =
@@ -477,17 +598,21 @@
       testid.includes("copy") ||
       tooltip.includes("copy") ||
       biId.includes("copy") ||
+      className.includes("copy") ||
       hasCopySvg ||
       text === "copy" ||
       text === "copy code" ||
       text === "copy text" ||
       text === "copy response" ||
       text === "copy prompt" ||
-      text === "copy to clipboard";
+      text === "copy to clipboard" ||
+      text.startsWith("copy ");
     if (isCopyBtn) {
-      ev.preventDefault();
-      ev.stopPropagation();
-      ev.stopImmediatePropagation();
+      try {
+        ev.preventDefault();
+        ev.stopPropagation();
+        ev.stopImmediatePropagation();
+      } catch (_) {}
       try {
         if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
           navigator.clipboard.writeText("").catch(function () {});
@@ -495,14 +620,22 @@
       } catch (_) {}
       try {
         var sel = window.getSelection();
-        if (sel) sel.removeAllRanges();
+        if (sel) {
+          if (sel.removeAllRanges) sel.removeAllRanges();
+          if (sel.empty) sel.empty();
+        }
       } catch (_) {}
       if (!document.getElementById("yp-raksha-alert-card")) {
         showClipboardBlockedNotice("Clipboard Copy Restricted", cleanNoticeMessage(clipboardPolicy.message, "Clipboard copying from this AI tool is restricted by corporate security policy."));
       }
       recordIsolatedGovernanceLog("--copy paste [CLIPBOARD COPY BUTTON]", "Clipboard Policy");
     }
-  }, true);
+  }
+
+  ["pointerdown", "mousedown", "click"].forEach(function (evt) {
+    document.addEventListener(evt, handleCopyButtonIsolated, true);
+    window.addEventListener(evt, handleCopyButtonIsolated, true);
+  });
 
   function applyClipboardPolicyState(state) {
     state = state || {};
