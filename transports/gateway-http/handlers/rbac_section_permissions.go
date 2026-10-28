@@ -232,7 +232,7 @@ func resourcesForGrantedSections(grantedSections string) []string {
 		add("Observability")
 	}
 	if hasGrant("observability", "observability/logs-settings") {
-		add("LogsSettings", "Settings")
+		add("LogsSettings")
 	}
 
 	// 2. Browser AI (8 features)
@@ -266,25 +266,25 @@ func resourcesForGrantedSections(grantedSections string) []string {
 		add("ModelProvider")
 	}
 	if hasGrant("models", "models/model-catalog") {
-		add("ModelCatalog", "ModelProvider")
+		add("ModelCatalog")
 	}
 	if hasGrant("models", "models/budgets-limits") {
-		add("BudgetsLimits", "Governance", "ModelProvider")
+		add("BudgetsLimits")
 	}
 	if hasGrant("models", "models/complexity-router") {
-		add("ComplexityRouter", "RoutingRules", "AdaptiveRouter")
+		add("ComplexityRouter")
 	}
 	if hasGrant("models", "models/routing-rules") {
-		add("RoutingRules", "AdaptiveRouter")
+		add("RoutingRules")
 	}
 	if hasGrant("models", "models/circuit-breaker") {
 		add("CircuitBreaker")
 	}
 	if hasGrant("models", "models/pricing-overrides") {
-		add("PricingOverrides", "ModelProvider")
+		add("PricingOverrides")
 	}
 	if hasGrant("models", "models/model-settings") {
-		add("ModelSettings", "ModelProvider", "Settings")
+		add("ModelSettings")
 	}
 
 	// 4. MCP Gateway (7 features)
@@ -318,39 +318,42 @@ func resourcesForGrantedSections(grantedSections string) []string {
 		add("Governance", "VirtualKeys", "Users", "Teams", "BusinessUnits", "Customers", "UserProvisioning", "RBAC", "AccessProfiles", "AuditLogs")
 	}
 	if hasGrant("governance/virtual-keys") {
-		add("VirtualKeys", "Governance")
+		add("VirtualKeys")
 	}
 	if hasGrant("governance/users") {
-		add("Users", "Governance")
+		add("Users")
 	}
 	if hasGrant("governance/teams") {
-		add("Teams", "Governance")
+		add("Teams")
 	}
 	if hasGrant("governance/business-units") {
-		add("BusinessUnits", "Teams", "Governance")
+		add("BusinessUnits")
 	}
 	if hasGrant("governance/customers") {
-		add("Customers", "Governance")
+		add("Customers")
 	}
 	if hasGrant("governance/user-provisioning") {
-		add("UserProvisioning", "Governance")
+		add("UserProvisioning")
 	}
 	if hasGrant("governance/roles-permissions") {
-		add("RBAC", "Governance")
+		add("RBAC")
 	}
 	if hasGrant("governance/access-profiles") {
-		add("AccessProfiles", "Governance")
+		add("AccessProfiles")
 	}
 	if hasGrant("governance/audit-logs") {
-		add("AuditLogs", "Governance")
+		add("AuditLogs")
 	}
 
 	// 6. Guardrails (3 features)
 	if hasGrant("guardrails", "guardrails/rules") {
-		add("GuardrailRules", "GuardrailsConfig")
+		add("GuardrailRules")
 	}
 	if hasGrant("guardrails", "guardrails/providers") {
-		add("GuardrailsProviders", "GuardrailsConfig")
+		add("GuardrailsProviders")
+	}
+	if hasGrant("guardrails") {
+		add("GuardrailsConfig")
 	}
 	if hasGrant("guardrails", "guardrails/cluster-config", "cluster-config") {
 		add("Cluster")
@@ -358,10 +361,13 @@ func resourcesForGrantedSections(grantedSections string) []string {
 
 	// 7. Adaptive Routing (4 features)
 	if hasGrant("adaptive-routing", "adaptive-routing/dashboard") {
-		add("AdaptiveRoutingDashboard", "AdaptiveRouter")
+		add("AdaptiveRoutingDashboard")
 	}
 	if hasGrant("adaptive-routing", "adaptive-routing/settings") {
-		add("AdaptiveRoutingSettings", "AdaptiveRouter")
+		add("AdaptiveRoutingSettings")
+	}
+	if hasGrant("adaptive-routing") {
+		add("AdaptiveRouter")
 	}
 	if hasGrant("prompt-repository") {
 		add("PromptRepository", "PromptDeploymentStrategy", "Inference")
@@ -375,28 +381,28 @@ func resourcesForGrantedSections(grantedSections string) []string {
 		add("Settings", "ClientSettings", "Compatibility", "Caching", "Security", "APIKeys", "PerformanceTuning", "FeatureFlags", "Proxy", "VirtualKeys")
 	}
 	if hasGrant("settings/client-settings") {
-		add("ClientSettings", "Settings")
+		add("ClientSettings")
 	}
 	if hasGrant("settings/compatibility") {
-		add("Compatibility", "Settings")
+		add("Compatibility")
 	}
 	if hasGrant("settings/caching") {
-		add("Caching", "Settings")
+		add("Caching")
 	}
 	if hasGrant("settings/security") {
-		add("Security", "Settings")
+		add("Security")
 	}
 	if hasGrant("settings/api-keys") {
-		add("APIKeys", "VirtualKeys", "Settings")
+		add("APIKeys", "VirtualKeys")
 	}
 	if hasGrant("settings/proxy") {
-		add("Proxy", "Settings")
+		add("Proxy")
 	}
 	if hasGrant("settings/performance-tuning") {
-		add("PerformanceTuning", "Settings")
+		add("PerformanceTuning")
 	}
 	if hasGrant("settings/feature-flags") {
-		add("FeatureFlags", "Settings")
+		add("FeatureFlags")
 	}
 
 	return out

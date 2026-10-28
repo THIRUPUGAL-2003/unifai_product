@@ -5,9 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { getErrorMessage, useIsAuthEnabledQuery } from "@/lib/store";
+import { getErrorMessage } from "@/lib/store";
 import { Link } from "@tanstack/react-router";
-import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
+import { RbacOperation, RbacResource, useRbacAny } from "@enterprise/lib";
 import { useGetLoadBalancerRoutesQuery, useUpdateLoadBalancerConfigMutation } from "@enterprise/lib/store/apis/loadBalancerApi";
 import { LoadBalancerConfig } from "@enterprise/lib/types/workspace";
 import { Activity, Gauge, Route, Settings2, ShieldAlert } from "lucide-react";
@@ -15,9 +15,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 export default function AdaptiveRoutingView() {
-	const { data: authStatus } = useIsAuthEnabledQuery();
-	const isAdmin = authStatus?.role === "admin" || authStatus?.role === "sub_admin";
-	const hasUpdateAccess = useRbac(RbacResource.RoutingRules, RbacOperation.Update) || isAdmin;
+	const hasUpdateAccess = useRbacAny([RbacResource.AdaptiveRoutingSettings, RbacResource.AdaptiveRouter], RbacOperation.Update);
 
 	const [pollMs, setPollMs] = useState(8000);
 	const { data, isLoading: loading, isError, error, refetch } = useGetLoadBalancerRoutesQuery(undefined, { pollingInterval: pollMs });

@@ -22,6 +22,9 @@ func SectionRequirementFor(method, path string) []string {
 	case strings.HasPrefix(path, "/api/models/catalog"):
 		return []string{"models/model-catalog"}
 	case strings.HasPrefix(path, "/api/load-balancer"):
+		if strings.HasPrefix(path, "/api/load-balancer/routes") {
+			return []string{"adaptive-routing/dashboard"}
+		}
 		return []string{"adaptive-routing/settings"}
 	case strings.HasPrefix(path, "/api/mcp"), strings.HasPrefix(path, "/api/oauth/config"), strings.HasPrefix(path, "/api/oauth2/sessions"):
 		if section := mcpSectionForPath(path); section != "" {

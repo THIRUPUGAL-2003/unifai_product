@@ -162,6 +162,18 @@ func mcpPathRequirement(path, operation string) *PathRequirement {
 	}
 }
 
+func adaptiveRoutingRequirement(path, operation string) *PathRequirement {
+	resource := "AdaptiveRoutingSettings"
+	if strings.HasPrefix(path, "/api/load-balancer/routes") {
+		resource = "AdaptiveRoutingDashboard"
+	}
+	return &PathRequirement{
+		Resource:       resource,
+		Operation:      operation,
+		AnyOfResources: []string{resource, "AdaptiveRouter"},
+	}
+}
+
 func readRequirement(path string) *PathRequirement {
 	// Allow any authenticated session to query their own assigned permissions
 	if path == "/api/rbac/me/permissions" {
@@ -198,7 +210,7 @@ func readRequirement(path string) *PathRequirement {
 	case strings.HasPrefix(path, "/api/feature-flags"):
 		return &PathRequirement{Resource: "FeatureFlags", Operation: "View", AnyOfResources: []string{"FeatureFlags", "Settings"}}
 	case strings.HasPrefix(path, "/api/load-balancer"):
-		return &PathRequirement{Resource: "AdaptiveRouter", Operation: "View", AnyOfResources: []string{"AdaptiveRouter", "AdaptiveRoutingDashboard", "AdaptiveRoutingSettings"}}
+		return adaptiveRoutingRequirement(path, "View")
 	case strings.HasPrefix(path, "/api/cluster"):
 		return &PathRequirement{Resource: "Cluster", Operation: "View"}
 	case strings.HasPrefix(path, "/api/scim"):
@@ -218,6 +230,9 @@ func readRequirement(path string) *PathRequirement {
 	case strings.HasPrefix(path, "/api/oauth/config"), strings.HasPrefix(path, "/api/oauth2/sessions"):
 		return mcpPathRequirement(path, "View")
 	case strings.HasPrefix(path, "/api/governance/virtual-keys"):
+		if strings.HasSuffix(path, "/users") {
+			return &PathRequirement{Resource: "VirtualKeys", Operation: "View", AnyOfResources: []string{"VirtualKeys", "APIKeys", "Users", "Governance"}}
+		}
 		return &PathRequirement{
 			Resource:       "VirtualKeys",
 			Operation:      "View",
@@ -226,6 +241,12 @@ func readRequirement(path string) *PathRequirement {
 	case strings.HasPrefix(path, "/api/governance"):
 		return governanceRequirement(path, "View")
 	case strings.HasPrefix(path, "/api/guardrails"):
+		if path == "/api/guardrails/rules" {
+			return &PathRequirement{Resource: "GuardrailRules", Operation: "View", AnyOfResources: []string{"GuardrailRules", "GuardrailsConfig"}}
+		}
+		if path == "/api/guardrails/providers" {
+			return &PathRequirement{Resource: "GuardrailsProviders", Operation: "View", AnyOfResources: []string{"GuardrailsProviders", "GuardrailsConfig"}}
+		}
 		// Shared /api/guardrails/config blob; Rules UI uses GuardrailsConfig, Providers UI uses GuardrailsProviders.
 		return &PathRequirement{
 			Resource:       "GuardrailsConfig",
@@ -294,6 +315,9 @@ func governanceRequirement(path, op string) *PathRequirement {
 	case strings.HasPrefix(path, "/api/governance/business-units"):
 		return &PathRequirement{Resource: "BusinessUnits", Operation: op, AnyOfResources: []string{"BusinessUnits", "Teams", "Governance"}}
 	case strings.HasPrefix(path, "/api/governance/teams"):
+		if strings.Contains(path, "/members") {
+			return &PathRequirement{Resource: "Teams", Operation: op, AnyOfResources: []string{"Teams", "Users", "Governance"}}
+		}
 		dedicated = "Teams"
 	case strings.HasPrefix(path, "/api/governance/customers"):
 		dedicated = "Customers"
@@ -314,7 +338,10 @@ func governanceRequirement(path, op string) *PathRequirement {
 		return &PathRequirement{Resource: "Governance", Operation: op}
 	}
 	if strings.HasPrefix(path, "/api/governance/complexity-analyzer-config") {
-		return &PathRequirement{Resource: dedicated, Operation: op, AnyOfResources: []string{dedicated, "RoutingRules", "AdaptiveRouter", "Governance"}}
+		return &PathRequirement{Resource: dedicated, Operation: op, AnyOfResources: []string{dedicated, "Governance"}}
+	}
+	if strings.HasPrefix(path, "/api/governance/pricing-overrides") {
+		return &PathRequirement{Resource: dedicated, Operation: op, AnyOfResources: []string{dedicated, "Settings", "Governance"}}
 	}
 	return &PathRequirement{Resource: dedicated, Operation: op, AnyOfResources: []string{dedicated, "Governance"}}
 }
@@ -401,7 +428,7 @@ func writeRequirement(method, path string) *PathRequirement {
 	case strings.HasPrefix(path, "/api/feature-flags"):
 		return &PathRequirement{Resource: "FeatureFlags", Operation: "Update", AnyOfResources: []string{"FeatureFlags", "Settings"}}
 	case strings.HasPrefix(path, "/api/load-balancer"):
-		return &PathRequirement{Resource: "AdaptiveRouter", Operation: "Update", AnyOfResources: []string{"AdaptiveRouter", "AdaptiveRoutingDashboard", "AdaptiveRoutingSettings"}}
+		return adaptiveRoutingRequirement(path, "Update")
 	case strings.HasPrefix(path, "/api/cluster"):
 		return &PathRequirement{Resource: "Cluster", Operation: "Update"}
 	case strings.HasPrefix(path, "/api/scim"):
@@ -438,6 +465,9 @@ func writeRequirement(method, path string) *PathRequirement {
 		if strings.HasSuffix(path, "/rotate") || path == "/api/governance/virtual-keys/rotate" {
 			return &PathRequirement{Resource: "VirtualKeys", Operation: "Update", AnyOfResources: []string{"VirtualKeys", "APIKeys", "Governance"}}
 		}
+		if strings.HasSuffix(path, "/users") {
+			return &PathRequirement{Resource: "VirtualKeys", Operation: op, AnyOfResources: []string{"VirtualKeys", "APIKeys", "Users", "Governance"}}
+		}
 		return &PathRequirement{
 			Resource:       "VirtualKeys",
 			Operation:      op,
@@ -448,9 +478,9 @@ func writeRequirement(method, path string) *PathRequirement {
 	case strings.HasPrefix(path, "/api/governance"):
 		return governanceRequirement(path, op)
 	case path == "/api/guardrails/rules":
-		return &PathRequirement{Resource: "GuardrailsConfig", Operation: op}
+		return &PathRequirement{Resource: "GuardrailRules", Operation: op, AnyOfResources: []string{"GuardrailRules", "GuardrailsConfig"}}
 	case path == "/api/guardrails/providers":
-		return &PathRequirement{Resource: "GuardrailsProviders", Operation: op}
+		return &PathRequirement{Resource: "GuardrailsProviders", Operation: op, AnyOfResources: []string{"GuardrailsProviders", "GuardrailsConfig"}}
 	case strings.HasPrefix(path, "/api/guardrails"):
 		// The combined config blob carries both rules and providers.
 		return &PathRequirement{

@@ -4,8 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Link } from "@tanstack/react-router";
-import { getErrorMessage, useIsAuthEnabledQuery } from "@/lib/store";
-import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
+import { getErrorMessage } from "@/lib/store";
+import { RbacOperation, RbacResource, useRbacAny } from "@enterprise/lib";
 import { useGetLoadBalancerConfigQuery, useUpdateLoadBalancerConfigMutation } from "@enterprise/lib/store/apis/loadBalancerApi";
 import { LoadBalancerConfig } from "@enterprise/lib/types/workspace";
 import { ArrowLeft, Save, ShieldAlert } from "lucide-react";
@@ -21,9 +21,7 @@ const defaults: LoadBalancerConfig = {
 };
 
 export default function LoadBalancerSettingsView() {
-	const { data: authStatus } = useIsAuthEnabledQuery();
-	const isAdmin = authStatus?.role === "admin" || authStatus?.role === "sub_admin";
-	const hasUpdateAccess = useRbac(RbacResource.RoutingRules, RbacOperation.Update) || isAdmin;
+	const hasUpdateAccess = useRbacAny([RbacResource.AdaptiveRoutingSettings, RbacResource.AdaptiveRouter], RbacOperation.Update);
 
 	const { data, isLoading: loading, isError, error, refetch } = useGetLoadBalancerConfigQuery();
 	const [updateConfig, { isLoading: saving }] = useUpdateLoadBalancerConfigMutation();

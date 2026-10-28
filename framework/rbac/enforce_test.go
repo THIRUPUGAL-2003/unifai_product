@@ -99,8 +99,8 @@ func TestSidebarResourcesReachTheirAPIs(t *testing.T) {
 		{"GET", "/api/governance/customers", "View", []string{"Customers", "Governance"}},
 		{"DELETE", "/api/governance/customers/c1", "Delete", []string{"Customers", "Governance"}},
 		{"GET", "/api/governance/routing-rules", "View", []string{"RoutingRules", "Governance"}},
-		{"PUT", "/api/governance/complexity-analyzer-config", "Update", []string{"ComplexityRouter", "RoutingRules", "AdaptiveRouter", "Governance"}},
-		{"GET", "/api/governance/pricing-overrides", "View", []string{"PricingOverrides", "Governance"}},
+		{"PUT", "/api/governance/complexity-analyzer-config", "Update", []string{"ComplexityRouter", "Governance"}},
+		{"GET", "/api/governance/pricing-overrides", "View", []string{"PricingOverrides", "Settings", "Governance"}},
 		{"GET", "/api/mcp/clients", "View", []string{"MCPCatalog", "MCPGateway"}},
 		{"POST", "/api/mcp/client", "Create", []string{"MCPCatalog", "MCPGateway"}},
 		{"PUT", "/api/mcp/client/client-1", "Update", []string{"MCPCatalog", "MCPGateway"}},
@@ -178,7 +178,7 @@ func TestMCPFeaturePermissionsStayScoped(t *testing.T) {
 
 func TestGuardrailsRulesAndProvidersNeedTheirOwnPermission(t *testing.T) {
 	providersOnly := PermissionSet{"GuardrailsProviders": {"View": true, "Update": true}}
-	rulesOnly := PermissionSet{"GuardrailsConfig": {"View": true, "Update": true}}
+	rulesOnly := PermissionSet{"GuardrailRules": {"View": true, "Update": true}}
 	both := PermissionSet{"GuardrailsProviders": {"Update": true}, "GuardrailsConfig": {"Update": true}}
 
 	cases := []struct {

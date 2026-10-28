@@ -243,7 +243,7 @@ function TierSpectrumBar({ boundaries }: { boundaries: TierBoundaries }) {
 }
 
 export default function ComplexityRouterPage() {
-	const canUpdate = useRbac(RbacResource.RoutingRules, RbacOperation.Update);
+	const canUpdate = useRbac(RbacResource.ComplexityRouter, RbacOperation.Update);
 	const { data, isLoading, isFetching, error, refetch } = useGetComplexityAnalyzerConfigQuery();
 	const [updateConfig, { isLoading: isSaving }] = useUpdateComplexityAnalyzerConfigMutation();
 	const [resetConfig, { isLoading: isResetting }] = useResetComplexityAnalyzerConfigMutation();

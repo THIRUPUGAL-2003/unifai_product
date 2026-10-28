@@ -84,6 +84,21 @@ func TestBrowserAIFeatureGrantStaysScoped(t *testing.T) {
 	}
 }
 
+func TestWorkspaceFeatureGrantsDoNotEscalateToParentResources(t *testing.T) {
+	perms := rbac.PermissionSet{}
+	applySectionFullPermissions(perms, "settings/caching,mcp-gateway/mcp-library,governance/teams,adaptive-routing/dashboard,browser-ai/rules")
+	for _, resource := range []string{"Caching", "MCPLibrary", "Teams", "AdaptiveRoutingDashboard", "BrowserAIRules"} {
+		if !rbac.HasPermission(perms, resource, "Update") {
+			t.Errorf("selected feature must grant %s Update", resource)
+		}
+	}
+	for _, resource := range []string{"Settings", "MCPGateway", "Governance", "AdaptiveRouter", "Logs", "BrowserAITargets"} {
+		if rbac.HasPermission(perms, resource, "Update") {
+			t.Errorf("selected child features must not grant parent/sibling resource %s Update", resource)
+		}
+	}
+}
+
 func TestEnsureUserRoleAllowedSections(t *testing.T) {
 	if got := ensureUserRoleAllowedSections("user", ""); got != "prompt-repository" {
 		t.Errorf("empty user sections = %q", got)
