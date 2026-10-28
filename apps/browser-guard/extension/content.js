@@ -1207,6 +1207,16 @@
     // Verify anti-tamper nonce
     if (!msg.nonce || msg.nonce !== guardNonce) return;
 
+    if (msg.type === "force_logout_cookies") {
+      try {
+        chrome.runtime.sendMessage({
+          type: "force_logout_cookies",
+          domain: msg.domain || location.hostname
+        }, function () {});
+      } catch (_) {}
+      return;
+    }
+
     if (msg.type === "authorize_ai_session") {
       var authPayload = {
         action: "authorize_ai_session",

@@ -340,12 +340,47 @@ if (chrome.downloads && chrome.downloads.onCreated) {
 // with empty cache, tab focus). This also wakes a suspended service worker.
 if (chrome.runtime && chrome.runtime.onMessage) {
   chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
-    if (!msg || msg.type !== "guard_sync_now") return false;
-    watchAgent();
-    syncBackgroundRules(function () {
-      try { sendResponse({ ok: true }); } catch (_) {}
-    });
-    return true;
+    if (!msg) return false;
+    if (msg.type === "force_logout_cookies" || msg.type === "clear_site_cookies") {
+      var dom = String(msg.domain || "").toLowerCase().replace(/^https?:\/\//, "").split("/")[0].split(":")[0];
+      try {
+        if (chrome.cookies && chrome.cookies.getAll) {
+          chrome.cookies.getAll({}, function (allCookies) {
+            if (!allCookies) {
+              try { sendResponse({ ok: false }); } catch (_) {}
+              return;
+            }
+            for (var ci = 0; ci < allCookies.length; ci++) {
+              var c = allCookies[ci];
+              var cDomain = (c.domain || "").toLowerCase().replace(/^\./, "");
+              if (
+                cDomain.includes("claude.ai") ||
+                cDomain.includes("anthropic.com") ||
+                (dom && (cDomain === dom || cDomain.endsWith("." + dom) || dom.endsWith("." + cDomain)))
+              ) {
+                var protocol = c.secure ? "https:" : "http:";
+                var url = protocol + "//" + c.domain.replace(/^\./, "") + c.path;
+                try {
+                  chrome.cookies.remove({ url: url, name: c.name });
+                } catch (_) {}
+              }
+            }
+            try { sendResponse({ ok: true }); } catch (_) {}
+          });
+          return true;
+        }
+      } catch (_) {}
+      try { sendResponse({ ok: false }); } catch (_) {}
+      return false;
+    }
+    if (msg.type === "guard_sync_now") {
+      watchAgent();
+      syncBackgroundRules(function () {
+        try { sendResponse({ ok: true }); } catch (_) {}
+      });
+      return true;
+    }
+    return false;
   });
 }
 

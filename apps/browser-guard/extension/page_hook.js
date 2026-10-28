@@ -843,6 +843,8 @@
   var detectedWorkspace = "";
   var lastCheckedKey = "";
   var _lastCorpAuthLoggedAt = 0;
+  var _corpBannerActive = false;
+  var _corpLogoutInitiated = false;
 
   var emailRegex = /\b[A-Za-z0-9._%+-]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})\b/;
 
@@ -865,6 +867,7 @@
 
   function handleSessionAuthDecision(authRes) {
     if (!authRes) return;
+    if (_corpLogoutInitiated) return;
     if (authRes.decision === "block") {
       sessionBlocked = true;
       sessionBlockedReason = authRes.message || "Personal accounts are blocked by corporate security policy.";
@@ -886,54 +889,133 @@
         }, "*");
       }
     } else {
-      sessionBlocked = false;
-      sessionBlockedReason = "";
-      renderCorporateBanner(false);
+      if (!_corpLogoutInitiated) {
+        sessionBlocked = false;
+        sessionBlockedReason = "";
+        renderCorporateBanner(false);
+      }
     }
   }
 
   function performAutoLogout() {
+    if (_corpLogoutInitiated) return;
+    _corpLogoutInitiated = true;
+    _corpBannerActive = false;
+
+    // Immediately remove modal overlay from DOM
+    var existingModal = document.getElementById("yp-corp-policy-banner");
+    if (existingModal && existingModal.parentNode) {
+      existingModal.parentNode.removeChild(existingModal);
+    }
+
+    // 1. Tell extension background worker to purge all session cookies for this provider
     try {
-      sessionStorage.clear();
-      for (var i = localStorage.length - 1; i >= 0; i--) {
-        var k = localStorage.key(i) || "";
-        var kLow = k.toLowerCase();
-        if (kLow.includes("token") || kLow.includes("auth") || kLow.includes("session") || kLow.includes("user") || kLow.includes("oidc") || kLow.includes("profile")) {
-          localStorage.removeItem(k);
+      window.postMessage({
+        source: "gateway-guard-page",
+        nonce: guardNonce,
+        type: "force_logout_cookies",
+        domain: location.hostname
+      }, "*");
+    } catch (_) {}
+
+    // 2. Clear all local storage & session storage immediately
+    try { sessionStorage.clear(); } catch (_) {}
+    try { localStorage.clear(); } catch (_) {}
+
+    // 3. Clear non-HttpOnly cookies from document.cookie
+    try {
+      var cParts = document.cookie.split(";");
+      for (var ci = 0; ci < cParts.length; ci++) {
+        var cName = (cParts[ci].split("=")[0] || "").trim();
+        if (cName) {
+          document.cookie = cName + "=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+          document.cookie = cName + "=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=" + location.hostname + ";";
+          document.cookie = cName + "=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=." + location.hostname + ";";
         }
       }
     } catch (_) {}
+
+    // 4. Delete IndexedDB databases where web clients store cached tokens/sessions
+    try {
+      if (window.indexedDB && indexedDB.databases) {
+        indexedDB.databases().then(function (dbs) {
+          if (Array.isArray(dbs)) {
+            for (var di = 0; di < dbs.length; di++) {
+              if (dbs[di] && dbs[di].name) {
+                try { indexedDB.deleteDatabase(dbs[di].name); } catch (_) {}
+              }
+            }
+          }
+        }).catch(function () {});
+      }
+    } catch (_) {}
+
     var h = (location.hostname || "").toLowerCase();
     if (h.includes("chatgpt.com") || h.includes("openai.com")) {
-      location.href = "https://chatgpt.com/auth/logout";
+      window.location.replace("https://chatgpt.com/auth/logout");
     } else if (h.includes("claude.ai") || h.includes("anthropic.com")) {
+      // Try DOM-level logout trigger on Claude
       try {
-        fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" }).catch(function () {});
-        fetch("/api/auth/signout", { method: "POST", credentials: "same-origin" }).catch(function () {});
+        var allButtons = document.querySelectorAll("button, a, div[role='menuitem'], [role='button'], span");
+        var didClick = false;
+        for (var bi = 0; bi < allButtons.length; bi++) {
+          var bTxt = (allButtons[bi].innerText || allButtons[bi].textContent || "").trim().toLowerCase();
+          if (bTxt === "log out" || bTxt === "sign out") {
+            allButtons[bi].click();
+            didClick = true;
+            break;
+          }
+        }
+        if (!didClick) {
+          var userBtns = document.querySelectorAll("button[data-testid*='user'], button[aria-label*='user'], aside button, nav button, [class*='avatar']");
+          for (var ui = 0; ui < userBtns.length; ui++) {
+            userBtns[ui].click();
+            setTimeout(function () {
+              var mItems = document.querySelectorAll("div[role='menuitem'], button, a");
+              for (var mi = 0; mi < mItems.length; mi++) {
+                var mTxt = (mItems[mi].textContent || "").trim().toLowerCase();
+                if (mTxt === "log out" || mTxt === "sign out") {
+                  mItems[mi].click();
+                  break;
+                }
+              }
+            }, 80);
+          }
+        }
       } catch (_) {}
+
+      try { fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" }).catch(function () {}); } catch (_) {}
+      try { fetch("/api/auth/signout", { method: "POST", credentials: "same-origin" }).catch(function () {}); } catch (_) {}
+
       setTimeout(function () {
-        location.href = "https://claude.ai/login";
-      }, 350);
+        window.location.replace("https://claude.ai/login");
+      }, 200);
+
+      setTimeout(function () {
+        if (location.pathname !== "/login") {
+          window.location.replace("https://claude.ai/login");
+        }
+      }, 800);
       return;
     } else if (h.includes("gemini.google.com") || h.includes("aistudio.google.com") || h.includes("bard.google.com") || h.includes("google.com")) {
-      location.href = "https://accounts.google.com/Logout?continue=" + encodeURIComponent("https://accounts.google.com/AccountChooser?continue=" + encodeURIComponent(location.href));
+      window.location.replace("https://accounts.google.com/Logout?continue=" + encodeURIComponent("https://accounts.google.com/AccountChooser?continue=" + encodeURIComponent(location.href)));
       return;
     } else if (h.includes("deepseek.com")) {
-      location.href = "https://chat.deepseek.com/sign_in";
+      window.location.replace("https://chat.deepseek.com/sign_in");
     } else if (h.includes("copilot.microsoft.com") || h.includes("copilot.cloud.microsoft") || h.includes("copilot.com") || h.includes("bing.com") || h.includes("githubcopilot.com")) {
-      location.href = "https://login.microsoftonline.com/common/oauth2/v2.0/logout";
+      window.location.replace("https://login.microsoftonline.com/common/oauth2/v2.0/logout");
     } else if (h.includes("grok.com") || h.includes("x.ai")) {
-      location.href = "https://grok.com/sign-in";
+      window.location.replace("https://grok.com/sign-in");
     } else if (h.includes("perplexity.ai")) {
-      location.href = "https://www.perplexity.ai/api/auth/signout";
+      window.location.replace("https://www.perplexity.ai/api/auth/signout");
     } else if (h.includes("mistral.ai")) {
-      location.href = "https://chat.mistral.ai/auth/login";
+      window.location.replace("https://chat.mistral.ai/auth/login");
     } else if (h.includes("poe.com")) {
-      location.href = "https://poe.com/login";
+      window.location.replace("https://poe.com/login");
     } else if (h.includes("lovable.dev")) {
-      location.href = "https://lovable.dev/login";
+      window.location.replace("https://lovable.dev/login");
     } else {
-      location.reload();
+      window.location.reload();
     }
   }
 
@@ -941,15 +1023,23 @@
     var existing = document.getElementById("yp-corp-policy-banner");
     if (!isBlocked) {
       if (existing) existing.remove();
+      _corpBannerActive = false;
       return;
     }
-    if (existing) {
-      var msgEl = existing.querySelector(".yp-corp-msg");
-      if (msgEl && message) msgEl.textContent = message;
-      var emailEl = existing.querySelector(".yp-corp-email");
-      if (emailEl && email) emailEl.textContent = email;
+
+    if (_corpLogoutInitiated) return;
+
+    if (_corpBannerActive || existing) {
+      if (existing) {
+        var msgEl = existing.querySelector(".yp-corp-msg");
+        if (msgEl && message) msgEl.textContent = message;
+        var emailEl = existing.querySelector(".yp-corp-email");
+        if (emailEl && email) emailEl.textContent = email;
+      }
       return;
     }
+
+    _corpBannerActive = true;
 
     if (!document.getElementById("yp-corp-keyframes")) {
       var kf = document.createElement("style");
@@ -981,10 +1071,11 @@
       '    <strong style="font-size:14px;letter-spacing:0.06em;text-transform:uppercase;color:#f87171;font-weight:800;">Corporate Policy Restriction</strong>' +
       emailTag +
       '  </div>' +
-      '  <p class="yp-corp-msg" style="font-size:13.5px;color:#cbd5e1;line-height:1.55;margin:4px 0 8px 0;max-width:440px;">' +
+      '  <p class="yp-corp-msg" style="font-size:13.5px;color:#cbd5e1;line-height:1.55;margin:4px 0 6px 0;max-width:440px;">' +
       (message || "Personal accounts are restricted by corporate security policy. Please log in with your company account.") +
       '  </p>' +
-      '  <div id="yp-corp-timer-notice" style="font-size:12.5px;color:#fca5a5;margin-top:6px;display:flex;align-items:center;gap:7px;background:rgba(239,68,68,0.14);padding:8px 16px;border-radius:20px;border:1px solid rgba(239,68,68,0.28);">' +
+      '  <button id="yp-corp-ok-btn" style="background:#ef4444;color:#ffffff;border:none;border-radius:10px;padding:10px 44px;font-size:14px;font-weight:700;cursor:pointer;letter-spacing:0.04em;box-shadow:0 4px 14px rgba(239,68,68,0.4);transition:all 0.2s ease;outline:none;">OK</button>' +
+      '  <div id="yp-corp-timer-notice" style="font-size:12.5px;color:#fca5a5;margin-top:2px;display:flex;align-items:center;gap:7px;background:rgba(239,68,68,0.14);padding:6px 14px;border-radius:20px;border:1px solid rgba(239,68,68,0.28);">' +
       '    <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#ef4444;box-shadow:0 0 8px #ef4444;animation:ypPulse 1s infinite alternate;"></span>' +
       '    <span>Auto signing out in <strong id="yp-corp-countdown" style="color:#ef4444;font-size:13.5px;font-weight:800;">2</strong>s...</span>' +
       '  </div>' +
@@ -994,14 +1085,46 @@
 
     var secondsLeft = 2;
     var timerEl = document.getElementById("yp-corp-countdown");
-    var countdownInterval = setInterval(function () {
+    var countdownInterval = null;
+
+    function handleOkPress(e) {
+      if (e) {
+        try { e.preventDefault(); e.stopPropagation(); } catch (_) {}
+      }
+      if (countdownInterval) clearInterval(countdownInterval);
+      _corpBannerActive = false;
+      if (overlay && overlay.parentNode) {
+        overlay.parentNode.removeChild(overlay);
+      }
+      performAutoLogout();
+    }
+
+    var btnOk = overlay.querySelector("#yp-corp-ok-btn");
+    if (btnOk) {
+      btnOk.addEventListener("click", handleOkPress, true);
+      btnOk.addEventListener("pointerdown", handleOkPress, true);
+      btnOk.addEventListener("mouseenter", function () {
+        btnOk.style.background = "#dc2626";
+        btnOk.style.transform = "translateY(-1px)";
+        btnOk.style.boxShadow = "0 6px 18px rgba(239,68,68,0.5)";
+      });
+      btnOk.addEventListener("mouseleave", function () {
+        btnOk.style.background = "#ef4444";
+        btnOk.style.transform = "translateY(0)";
+        btnOk.style.boxShadow = "0 4px 14px rgba(239,68,68,0.4)";
+      });
+    }
+
+    countdownInterval = setInterval(function () {
       secondsLeft--;
-      if (timerEl) timerEl.textContent = String(secondsLeft);
+      if (timerEl) timerEl.textContent = String(Math.max(0, secondsLeft));
       if (secondsLeft <= 0) {
         clearInterval(countdownInterval);
-        if (sessionBlocked) {
-          performAutoLogout();
+        _corpBannerActive = false;
+        if (overlay && overlay.parentNode) {
+          overlay.parentNode.removeChild(overlay);
         }
+        performAutoLogout();
       }
     }, 1000);
   }
@@ -3537,7 +3660,9 @@
     if (sessionBlocked) {
       e.preventDefault();
       e.stopImmediatePropagation();
-      showBubble(sessionBlockedReason || "Corporate policy restricts personal accounts. Please sign in with your corporate account.", "Corporate Policy Block", "block");
+      if (!_corpBannerActive && !_corpLogoutInitiated && !document.getElementById("yp-corp-policy-banner")) {
+        showBubble(sessionBlockedReason || "Corporate policy restricts personal accounts. Please sign in with your corporate account.", "Corporate Policy Block", "block");
+      }
       return;
     }
     var actualTarget = (e.composedPath && e.composedPath()[0]) || e.target;
