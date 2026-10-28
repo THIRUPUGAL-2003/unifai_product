@@ -946,6 +946,9 @@ def _record_extension_eval(
 _RECENT_FILE_POSTS_LOCK = threading.Lock()
 _RECENT_FILE_POSTS: dict[str, float] = {}
 
+_RECENT_FILE_CAPTIONS_LOCK = threading.Lock()
+_RECENT_FILE_CAPTIONS: dict[str, float] = {}
+
 
 def _is_duplicate_file_post(key: str, ttl: float = 15.0) -> bool:
     now = time.time()
@@ -1160,14 +1163,28 @@ def check_prompt(
             if cached_dec and (now_ts - cached_ts < 0.8):
                 return dict(cached_dec)
 
-    # If this exact text was already handled as a caption for attached files on this host within the last 5 seconds,
+    # If this exact text was already handled as a caption for attached files on this host within the last 15 seconds,
     # return the cached decision and skip creating a duplicate standalone text row in Prompt Logs.
-    if not files_list and text and not is_governance_action:
-        clean_text = " ".join(re.sub(r'[\u200B-\u200F\uFEFF\u202A-\u202E\u2060-\u206F]', '', text).replace('\u00A0', ' ').strip().split())
+    if not files_list and not images_list and text and not is_governance_action:
+        clean_text = " ".join(re.sub(r'[\u200B-\u200F\uFEFF\u202A-\u202E\u2060-\u206F]', '', text).replace('\u00A0', ' ').strip().split()).lower()
+        if clean_text:
+            with _RECENT_FILE_CAPTIONS_LOCK:
+                now_c = time.time()
+                for cap_k, cap_ts in list(_RECENT_FILE_CAPTIONS.items()):
+                    if now_c - cap_ts > 20.0:
+                        _RECENT_FILE_CAPTIONS.pop(cap_k, None)
+                    elif cap_k == clean_text or clean_text.startswith(cap_k) or cap_k.startswith(clean_text):
+                        return {
+                            "blocked": False,
+                            "action": "Allowed",
+                            "rule": "",
+                            "message": "",
+                            "redacted_prompt": "",
+                        }
         with _RECENT_EXTENSION_EVALS_LOCK:
             for ev in _RECENT_EXTENSION_EVALS:
-                if (now_ts - float(ev.get("time") or 0) < 5.0) and (ev.get("host") == clean_h or ev.get("host") == host):
-                    ev_preview = ev.get("preview") or ""
+                if (now_ts - float(ev.get("time") or 0) < 15.0):
+                    ev_preview = (ev.get("preview") or "").lower()
                     ev_files = ev.get("files") or []
                     if ev_files and ev_preview and (ev_preview == clean_text[:150] or clean_text[:150].startswith(ev_preview) or ev_preview.startswith(clean_text[:150])):
                         return {
@@ -1638,8 +1655,31 @@ def check_prompt(
             seen_bases.add(b)
             unique_candidates.append(b)
 
+    # If images were attached without explicit file entries, synthesize file items so they enter full file pipeline
+    if not files_list and images_list:
+        files_list = []
+        for img_idx, img_cand in enumerate(images_list):
+            if isinstance(img_cand, str) and img_cand.strip():
+                cand_b64 = img_cand.split(",")[-1].strip() if "," in img_cand else img_cand.strip()
+                cand_mime = "image/png"
+                if "data:image/jpeg" in img_cand.lower() or "data:image/jpg" in img_cand.lower():
+                    cand_mime = "image/jpeg"
+                elif "data:image/webp" in img_cand.lower():
+                    cand_mime = "image/webp"
+                ext = cand_mime.split("/")[-1]
+                files_list.append({
+                    "name": f"image_{img_idx + 1}.{ext}",
+                    "type": cand_mime,
+                    "base64": cand_b64,
+                })
+
     # Multi-file support: Post individual clean record for each attached file (no phantom joined row!)
     if files_list:
+        if user_caption:
+            norm_cap = " ".join(user_caption.strip().split()).lower()
+            if norm_cap:
+                with _RECENT_FILE_CAPTIONS_LOCK:
+                    _RECENT_FILE_CAPTIONS[norm_cap] = time.time()
         n_total_files = len(files_list)
         for f_idx, f in enumerate(files_list):
             fn = (f.get("name") if isinstance(f, dict) else str(f)).strip() or "attachment"
@@ -1683,16 +1723,51 @@ def check_prompt(
                     elif fn_ext == ".pdf":
                         f_ct = "application/pdf"
 
+                # Extract OCR text for images if not already extracted
+                if not f_ext_text and f_bytes and fn_ext in (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".svg"):
+                    try:
+                        p_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "proxy"))
+                        if p_dir not in sys.path:
+                            sys.path.insert(0, p_dir)
+                        import browser_ai_proxy
+                        extract_fn = getattr(browser_ai_proxy, "extract_upload_text_for_rules", None)
+                        if extract_fn:
+                            f_ext_text = extract_fn(f_bytes, content_type=f_ct, file_name=fn)
+                    except Exception:
+                        pass
+
             f_meta = dict(meta)
             f_meta["file_name"] = fn
             f_meta["multi_file_count"] = n_total_files
             f_meta["multi_file_index"] = f_idx + 1
             if f_ext_text:
                 f_meta["extracted_text"] = f_ext_text[:100000]
+            if fb64:
+                f_meta["upload_images"] = [f"data:{f_ct};base64,{fb64}"]
+            elif images_list:
+                f_meta["upload_images"] = images_list[:5]
 
             f_dedupe_key = f"ext_file|{eval_id}|{fn}" if eval_id else f"ext_file|{platform}|{fn}|{hash(user_caption)}"
 
             if not _is_duplicate_file_post(f_dedupe_key, ttl=1.0):
+                if not f_bytes and fb64:
+                    try:
+                        import base64
+                        f_bytes = base64.b64decode(fb64)
+                    except Exception:
+                        pass
+                if not f_bytes and images_list:
+                    for img_cand in images_list:
+                        if isinstance(img_cand, str) and img_cand:
+                            cand_b64 = img_cand.split(",")[-1] if "," in img_cand else img_cand
+                            try:
+                                cand_bytes = base64.b64decode(cand_b64)
+                                if len(cand_bytes) >= 8:
+                                    f_bytes = cand_bytes
+                                    break
+                            except Exception:
+                                pass
+
                 if f_bytes:
                     threading.Thread(
                         target=_post_intercept_file,

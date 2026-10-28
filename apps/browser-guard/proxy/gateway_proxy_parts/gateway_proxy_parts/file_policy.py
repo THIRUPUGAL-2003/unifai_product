@@ -1680,6 +1680,11 @@ def post_upload_intercept(
     if "[FILE UPLOAD] attachment" in prompt:
         prompt = prompt.replace("[FILE UPLOAD] attachment", f"[FILE UPLOAD] {safe_name}")
     _mark_file_logged(safe_name)
+    try:
+        from config_caches_rules import record_proxy_eval
+        record_proxy_eval(domain, prompt, safe_name, is_blocked)
+    except Exception:
+        pass
 
     metadata = {
         "domain": domain,

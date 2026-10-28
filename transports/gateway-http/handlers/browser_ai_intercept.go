@@ -2,8 +2,10 @@ package handlers
 
 import (
 	"crypto/sha256"
+	"encoding/base64"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -411,6 +413,29 @@ func (h *BrowserAIHandler) intercept(ctx *fasthttp.RequestCtx) {
 	if err != nil {
 		SendError(ctx, fasthttp.StatusInternalServerError, err.Error())
 		return
+	}
+
+	// Fallback attachment storage: if images are present in upload_images and not yet saved as attachment
+	if len(payload.UploadImages) > 0 && logEntry.AttachmentStoredName == "" {
+		imgB64 := payload.UploadImages[0]
+		if idx := strings.Index(imgB64, ","); idx != -1 {
+			imgB64 = imgB64[idx+1:]
+		}
+		if rawBytes, bErr := base64.StdEncoding.DecodeString(imgB64); bErr == nil && len(rawBytes) >= 32 {
+			imgName := getMetadataString(payload.Metadata, "file_name")
+			if imgName == "" {
+				imgName = "image.png"
+			}
+			safeName := sanitizeAttachmentFileName(imgName)
+			stored, ctype, storeErr := storeBrowserAIAttachment(logEntry.ID, safeName, rawBytes, "image/png")
+			if storeErr == nil && stored != "" {
+				_ = h.manager.UpdateLogAttachment(ctx, logEntry.ID, safeName, stored, ctype)
+				logEntry.AttachmentName = safeName
+				logEntry.AttachmentStoredName = stored
+				logEntry.AttachmentContentType = ctype
+				logEntry.AttachmentSizeBytes = int64(len(rawBytes))
+			}
+		}
 	}
 
 	allowed := logEntry.Action == "Allowed" || logEntry.Action == "Redacted" || logEntry.Action == "Warned"
@@ -1317,6 +1342,31 @@ func (h *BrowserAIHandler) interceptFile(ctx *fasthttp.RequestCtx) {
 		}
 	}
 	uploadImages := parseUploadImagesMetadata(metadata)
+	if len(uploadImages) == 0 && len(uploadBytes) >= 32 {
+		lowerFn := strings.ToLower(fileName)
+		isImg := strings.HasPrefix(contentTypeHint, "image/") ||
+			strings.HasSuffix(lowerFn, ".png") ||
+			strings.HasSuffix(lowerFn, ".jpg") ||
+			strings.HasSuffix(lowerFn, ".jpeg") ||
+			strings.HasSuffix(lowerFn, ".webp") ||
+			strings.HasSuffix(lowerFn, ".bmp") ||
+			strings.HasSuffix(lowerFn, ".gif")
+		if isImg {
+			mime := contentTypeHint
+			if !strings.HasPrefix(mime, "image/") {
+				ext := strings.TrimPrefix(filepath.Ext(lowerFn), ".")
+				if ext == "jpg" {
+					ext = "jpeg"
+				}
+				if ext == "" {
+					ext = "png"
+				}
+				mime = "image/" + ext
+			}
+			b64 := base64.StdEncoding.EncodeToString(uploadBytes)
+			uploadImages = []string{"data:" + mime + ";base64," + b64}
+		}
+	}
 	scanApplied := h.applyScanGuardFromMetadata(ctx, logEntry, metadata, &ruleWarning)
 	// Never stamp AI Guard Bot "security OK" on filename-only prefixes with no extract/images.
 	if !scanApplied && logEntry.Action != "Blocked" && (extractedText != "" || len(uploadImages) > 0) {

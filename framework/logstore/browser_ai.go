@@ -2775,6 +2775,20 @@ func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, prompt
 	cleanAttachmentName := SanitizeDBString(attachmentName)
 	cleanMeta := SanitizeDBString(string(metaBytes))
 
+	// If a prompt log with attached files was already recorded within the last 15 seconds for this platform/domain,
+	// and this incoming prompt is identical to the file prompt caption, deduplicate and reuse the existing log entry.
+	if cleanAttachmentName == "" && !uploadScan && strings.TrimSpace(cleanPromptFull) != "" {
+		var existingLog BrowserAILog
+		cutoff := time.Now().Add(-15 * time.Second)
+		captionPattern := "% -- " + strings.TrimSpace(cleanPromptFull)
+		if err := db.WithContext(ctx).Where(
+			"timestamp >= ? AND (domain = ? OR platform = ?) AND (user_prompt_full = ? OR user_prompt_full LIKE ? OR metadata LIKE ?)",
+			cutoff, cleanDomain, cleanPlatform, cleanPromptFull, captionPattern, "%"+cleanPromptFull+"%",
+		).Order("timestamp DESC").First(&existingLog).Error; err == nil && existingLog.ID != "" {
+			return &existingLog, matchedWarning, nil
+		}
+	}
+
 	logEntry := BrowserAILog{
 		ID:                uuid.New().String(),
 		Timestamp:         time.Now(),

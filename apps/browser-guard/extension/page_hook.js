@@ -182,6 +182,8 @@
   var _lastHandledPromptTime = 0;
   var _lastHandledPromptText = "";
   var _lastHandledPromptId = "";
+  var _lastHandledFilePromptTime = 0;
+  var _lastHandledFilePromptCaption = "";
   var _lastBlockedPromptTime = 0;
   var _lastBlockedPromptText = "";
   var lastDecisionCache = { text: "", time: 0, decision: null };
@@ -3888,10 +3890,33 @@
 
   function mergeStagedAndDomFiles() {
     var staged = getAllFreshStagedFiles();
+    var result = [];
     if (staged.length > 0) {
-      return staged;
+      result = staged.slice();
+    } else {
+      result = extractDOMAttachedFiles();
     }
-    return extractDOMAttachedFiles();
+    // Enrich any files lacking base64 with cached staged files or stagedImages
+    for (var i = 0; i < result.length; i++) {
+      var rf = result[i];
+      var cached = getCachedStagedFile(rf.name);
+      if (cached) {
+        if (!rf.base64 && cached.base64) rf.base64 = cached.base64;
+        if (!rf.text && cached.text) rf.text = cached.text;
+        if (!rf.size && cached.size) rf.size = cached.size;
+        if (!rf.type && cached.type) rf.type = cached.type;
+      }
+      var isImg = (rf.type && rf.type.indexOf("image/") === 0) || /\.(png|jpg|jpeg|webp|bmp|gif|svg)$/i.test(rf.name || "");
+      if (isImg && !rf.base64 && stagedImages && stagedImages.length > 0) {
+        var rawB64 = stagedImages[0].split(",")[1] || stagedImages[0];
+        rf.base64 = rawB64;
+        if (!rf.type || rf.type === "application/octet-stream") {
+          var ext = (rf.name.split(".").pop() || "png").toLowerCase();
+          rf.type = "image/" + ext;
+        }
+      }
+    }
+    return result;
   }
 
   // Keyboard Enter
@@ -3911,6 +3936,13 @@
     var text = stripInvisible(composerFrom(actualTarget) || composerFrom(e.target) || composerFrom(getDeepActiveElement()));
     var effectiveFiles = mergeStagedAndDomFiles();
     if (!text && effectiveFiles.length === 0 && stagedImages.length === 0) return;
+
+    var normT = (text || "").trim().toLowerCase();
+    if (_lastHandledFilePromptTime && (Date.now() - _lastHandledFilePromptTime < 10000)) {
+      if (!normT || normT === _lastHandledFilePromptCaption || (_lastHandledFilePromptCaption && (_lastHandledFilePromptCaption.indexOf(normT) >= 0 || normT.indexOf(_lastHandledFilePromptCaption) >= 0))) {
+        return;
+      }
+    }
 
     if (_lastHandledPromptText && _lastHandledPromptText === text && effectiveFiles.length === 0 && (Date.now() - _lastHandledPromptTime < 4000)) {
       return;
@@ -4031,12 +4063,17 @@
       e.preventDefault();
       e.stopImmediatePropagation();
       var target = e.target;
+      var fileCaption = (text || "").trim();
+      _lastHandledFilePromptTime = Date.now();
+      _lastHandledFilePromptCaption = fileCaption.toLowerCase();
       ask(text, effectiveFiles, stagedImages).then(function (decision) {
         handleDecision(decision, function () {
           clearAllStagedFiles();
           passKey = true;
           passClick = true;
-          _passUntil = Date.now() + 600;
+          _passUntil = Date.now() + 5000;
+          _lastHandledFilePromptTime = Date.now();
+          _lastHandledFilePromptCaption = fileCaption.toLowerCase();
           var pId = "eval_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2);
           _lastHandledPromptId = pId;
           _lastHandledPromptTime = Date.now();
@@ -4061,6 +4098,12 @@
     }
 
     // Fast path: Clean text prompt without files sends instantly with native Enter (0ms delay)
+    if (_lastHandledFilePromptTime && (Date.now() - _lastHandledFilePromptTime < 10000)) {
+      var normFast = (text || "").trim().toLowerCase();
+      if (!normFast || normFast === _lastHandledFilePromptCaption || (_lastHandledFilePromptCaption && (_lastHandledFilePromptCaption.indexOf(normFast) >= 0 || normFast.indexOf(_lastHandledFilePromptCaption) >= 0))) {
+        return;
+      }
+    }
     var fastId = "eval_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2);
     _lastHandledPromptId = fastId;
     _lastHandledPromptTime = Date.now();
@@ -4210,6 +4253,13 @@
     var effectiveFiles = mergeStagedAndDomFiles();
     if (!text && effectiveFiles.length === 0 && stagedImages.length === 0) return;
 
+    var normClickT = (text || "").trim().toLowerCase();
+    if (_lastHandledFilePromptTime && (Date.now() - _lastHandledFilePromptTime < 10000)) {
+      if (!normClickT || normClickT === _lastHandledFilePromptCaption || (_lastHandledFilePromptCaption && (_lastHandledFilePromptCaption.indexOf(normClickT) >= 0 || normClickT.indexOf(_lastHandledFilePromptCaption) >= 0))) {
+        return;
+      }
+    }
+
     if (_lastHandledPromptText && _lastHandledPromptText === text && effectiveFiles.length === 0 && (Date.now() - _lastHandledPromptTime < 4000)) {
       return;
     }
@@ -4314,12 +4364,17 @@
     if (effectiveFiles.length > 0 || stagedImages.length > 0) {
       e.preventDefault();
       e.stopImmediatePropagation();
+      var fileCaptionClick = (text || "").trim();
+      _lastHandledFilePromptTime = Date.now();
+      _lastHandledFilePromptCaption = fileCaptionClick.toLowerCase();
       ask(text, effectiveFiles, stagedImages).then(function (decision) {
         handleDecision(decision, function () {
           clearAllStagedFiles();
           passClick = true;
           passKey = true;
-          _passUntil = Date.now() + 600;
+          _passUntil = Date.now() + 5000;
+          _lastHandledFilePromptTime = Date.now();
+          _lastHandledFilePromptCaption = fileCaptionClick.toLowerCase();
           var clickId = "eval_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2);
           _lastHandledPromptId = clickId;
           _lastHandledPromptTime = Date.now();
@@ -4336,6 +4391,12 @@
     }
 
     // Fast path: Clean text prompt without files proceeds with native click instantly (0ms delay)
+    if (_lastHandledFilePromptTime && (Date.now() - _lastHandledFilePromptTime < 10000)) {
+      var normFastClick = (text || "").trim().toLowerCase();
+      if (!normFastClick || normFastClick === _lastHandledFilePromptCaption || (_lastHandledFilePromptCaption && (_lastHandledFilePromptCaption.indexOf(normFastClick) >= 0 || normFastClick.indexOf(_lastHandledFilePromptCaption) >= 0))) {
+        return;
+      }
+    }
     var fastClickId = "eval_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2);
     _lastHandledPromptId = fastClickId;
     _lastHandledPromptTime = Date.now();
@@ -4373,6 +4434,13 @@
     var text = stripInvisible(composerFrom(form) || composerFrom(document.activeElement));
     var effectiveFiles = mergeStagedAndDomFiles();
     if (!text && effectiveFiles.length === 0 && stagedImages.length === 0) return;
+
+    var normSubT = (text || "").trim().toLowerCase();
+    if (_lastHandledFilePromptTime && (Date.now() - _lastHandledFilePromptTime < 10000)) {
+      if (!normSubT || normSubT === _lastHandledFilePromptCaption || (_lastHandledFilePromptCaption && (_lastHandledFilePromptCaption.indexOf(normSubT) >= 0 || normSubT.indexOf(_lastHandledFilePromptCaption) >= 0))) {
+        return;
+      }
+    }
 
     if (_lastHandledPromptText && _lastHandledPromptText === text && effectiveFiles.length === 0 && (Date.now() - _lastHandledPromptTime < 4000)) {
       return;
@@ -4854,6 +4922,13 @@
           };
           showBubble(bDec.message, bDec.rule, "block");
           return createBlockedFetchResponse(bDec, url);
+        }
+      }
+
+      // 2.5 Deduplicate against recently handled file prompt captions within 10 seconds:
+      if (_lastHandledFilePromptTime && (Date.now() - _lastHandledFilePromptTime < 10000)) {
+        if (!ptClean || ptClean === _lastHandledFilePromptCaption || (_lastHandledFilePromptCaption && (_lastHandledFilePromptCaption.indexOf(ptClean) >= 0 || ptClean.indexOf(_lastHandledFilePromptCaption) >= 0))) {
+          return origFetch.apply(this, arguments);
         }
       }
 

@@ -1265,6 +1265,56 @@ def is_already_handled_by_extension(domain: str, prompt: str = "", file_name: st
     return True
 
 
+def record_proxy_eval(domain: str, prompt: str = "", file_name: str = "", is_blocked: bool = False) -> None:
+    """Record a proxy-handled prompt or file upload to recent_extension_evals.json so extension does not double-log."""
+    try:
+        if sys.platform == "win32":
+            base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+        elif sys.platform == "darwin":
+            base = os.path.join(os.path.expanduser("~"), "Library", "Application Support")
+        else:
+            base = os.environ.get("XDG_DATA_HOME") or os.path.join(os.path.expanduser("~"), ".local", "share")
+        candidates = [
+            os.path.join(base, "Gateway", "Guard", "recent_extension_evals.json"),
+            os.path.join(base, "YP", "Raksha", "recent_extension_evals.json"),
+        ]
+        clean_d = (domain or "").lower().strip(".")
+        if clean_d.startswith("www."):
+            clean_d = clean_d[4:]
+        p_clean = " ".join((prompt or "").strip().split())
+        fn_clean = (file_name or "").strip()
+        now = time.time()
+        entry = {
+            "host": clean_d,
+            "preview": p_clean[:150],
+            "files": [fn_clean] if fn_clean else [],
+            "time": now,
+            "is_blocked": bool(is_blocked),
+            "action": "Blocked" if is_blocked else "Allowed",
+        }
+        for cp in candidates:
+            try:
+                os.makedirs(os.path.dirname(cp), exist_ok=True)
+                evals = []
+                if os.path.isfile(cp):
+                    try:
+                        with open(cp, "r", encoding="utf-8") as f:
+                            data = json.load(f)
+                            if isinstance(data, list):
+                                evals = [e for e in data if now - float(e.get("time") or 0) < 60]
+                    except Exception:
+                        pass
+                evals.append(entry)
+                tmp = cp + f".tmp.{os.getpid()}"
+                with open(tmp, "w", encoding="utf-8") as f:
+                    json.dump(evals, f)
+                os.replace(tmp, cp)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
 def evaluate_prompt_coalesced(
     platform: str, domain: str, prompt: str, client_ip: str, url: str, method: str,
 ) -> tuple[bool, str, str, str, str]:
