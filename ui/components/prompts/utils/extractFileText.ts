@@ -1,6 +1,8 @@
 import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 const MAX_EXTRACT_CHARS = 10_000_000; // 10M characters (full context for long books & documents)
+/** Keep large local Office/PDF/text extraction from allocating multiple copies in browser memory. */
+export const MAX_TEXT_EXTRACTION_BYTES = 50 * 1024 * 1024;
 const MAX_PDF_PAGES = 10_000; // Unlimited PDF pages
 const MAX_PPTX_SLIDES = 5_000; // Unlimited PowerPoint slides
 
@@ -170,12 +172,7 @@ async function extractDocText(buf: ArrayBuffer): Promise<string> {
 }
 
 async function extractPptBinaryText(buf: ArrayBuffer): Promise<string> {
-	return extractFromOleCompound(buf, [
-		"/PowerPoint Document",
-		"PowerPoint Document",
-		"/Current User",
-		"Current User",
-	]);
+	return extractFromOleCompound(buf, ["/PowerPoint Document", "PowerPoint Document", "/Current User", "Current User"]);
 }
 
 async function extractPptxText(buf: ArrayBuffer): Promise<string> {
@@ -530,19 +527,143 @@ async function firstExtracted(steps: Array<() => Promise<string | null | undefin
 	return null;
 }
 
+function isTextAttachment(fileName: string, mime: string): boolean {
+	const baseName = fileName.split("/").pop()?.split("\\").pop() || fileName;
+	return (
+		TEXT_CODE_EXT_RE.test(fileName) ||
+		TEXT_STANDALONE_NAMES.has(baseName) ||
+		TEXT_STANDALONE_NAMES.has(fileName) ||
+		mime.startsWith("text/") ||
+		mime.includes("json") ||
+		mime.includes("xml") ||
+		mime.includes("yaml") ||
+		mime.includes("javascript") ||
+		mime.includes("typescript") ||
+		mime.includes("markdown")
+	);
+}
+
+/** Stream large plain-text/code files instead of allocating a second full-size buffer. */
+async function extractLargeTextStream(file: File): Promise<string | null> {
+	let reader: ReadableStreamDefaultReader<Uint8Array>;
+	try {
+		reader = file.stream().getReader();
+	} catch (error) {
+		return `[File: ${file.name} | Size: ${(file.size / (1024 * 1024)).toFixed(1)} MB | Extraction error: ${error instanceof Error ? error.message : String(error)}]`;
+	}
+
+	let decoder: TextDecoder | null = null;
+	let text = "";
+	let truncated = false;
+	try {
+		while (true) {
+			const { done, value } = await reader.read();
+			if (done) {
+				if (decoder) text += decoder.decode();
+				break;
+			}
+			if (!value?.byteLength) continue;
+
+			let chunk = value;
+			if (!decoder) {
+				if (chunk[0] === 0xff && chunk[1] === 0xfe) {
+					decoder = new TextDecoder("utf-16le");
+					chunk = chunk.subarray(2);
+				} else if (chunk[0] === 0xfe && chunk[1] === 0xff) {
+					decoder = new TextDecoder("utf-16be");
+					chunk = chunk.subarray(2);
+				} else if (chunk[0] === 0xef && chunk[1] === 0xbb && chunk[2] === 0xbf) {
+					decoder = new TextDecoder("utf-8");
+					chunk = chunk.subarray(3);
+				} else {
+					const sample = chunk.subarray(0, Math.min(chunk.length, 8192));
+					let evenNuls = 0;
+					let oddNuls = 0;
+					for (let i = 0; i + 1 < sample.length; i += 2) {
+						if (sample[i] === 0) evenNuls++;
+						if (sample[i + 1] === 0) oddNuls++;
+					}
+					const pairs = Math.max(1, Math.floor(sample.length / 2));
+					if (oddNuls / pairs > 0.25 && evenNuls / pairs < 0.05) {
+						decoder = new TextDecoder("utf-16le");
+					} else if (evenNuls / pairs > 0.25 && oddNuls / pairs < 0.05) {
+						decoder = new TextDecoder("utf-16be");
+					} else if (sample.includes(0)) {
+						return `[File: ${file.name} | Size: ${(file.size / (1024 * 1024)).toFixed(1)} MB | Extraction error: the file does not appear to contain readable text]`;
+					} else {
+						decoder = new TextDecoder("utf-8");
+					}
+				}
+			}
+
+			text += decoder.decode(chunk, { stream: true });
+			if (text.length >= MAX_EXTRACT_CHARS) {
+				text = text.slice(0, MAX_EXTRACT_CHARS);
+				truncated = true;
+				try {
+					await reader.cancel();
+				} catch {
+					// Cancellation is best-effort; the extraction result is already bounded.
+				}
+				break;
+			}
+		}
+	} catch (error) {
+		return `[File: ${file.name} | Size: ${(file.size / (1024 * 1024)).toFixed(1)} MB | Extraction error: ${error instanceof Error ? error.message : String(error)}]`;
+	} finally {
+		try {
+			reader.releaseLock();
+		} catch {
+			// The reader may have been released by a failed stream.
+		}
+	}
+
+	const name = file.name.toLowerCase();
+	if (name.endsWith(".html") || name.endsWith(".htm") || name.endsWith(".xhtml")) {
+		text = htmlToPlainText(text);
+	}
+	const extracted = text.trim();
+	if (!extracted) return null;
+	if (!truncated) return extracted;
+	const notice = `\n\n[Truncated: only the first ${MAX_EXTRACT_CHARS.toLocaleString()} characters were extracted; the rest was not included.]`;
+	return `${extracted.slice(0, MAX_EXTRACT_CHARS - notice.length).trimEnd()}${notice}`;
+}
+
 /** Best-effort plain text for prompt-repo attachments (PDF / Office / Code / Text). */
 export async function extractPromptFileText(file: File, mimeType: string): Promise<string | null> {
-	const buf = await file.arrayBuffer();
-	const bytes = new Uint8Array(buf);
-	if (bytes.length === 0) {
+	if (file.size === 0) {
 		return null;
 	}
 
 	const name = file.name.toLowerCase();
 	const baseName = name.split("/").pop()?.split("\\").pop() || name;
 	const mime = (mimeType || file.type || "").toLowerCase();
+	if (file.size > MAX_TEXT_EXTRACTION_BYTES) {
+		if (isTextAttachment(name, mime)) {
+			return extractLargeTextStream(file);
+		}
+		const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
+		return `[File: ${file.name} | Size: ${sizeMb} MB | Extraction skipped: this file is larger than the ${Math.round(MAX_TEXT_EXTRACTION_BYTES / (1024 * 1024))} MB safe in-browser text extraction limit.]`;
+	}
 
-	const isPdf = mime.includes("pdf") || name.endsWith(".pdf") || (bytes.length >= 5 && new TextDecoder().decode(bytes.slice(0, 5)) === "%PDF-");
+	let buf: ArrayBuffer;
+	try {
+		buf = await file.arrayBuffer();
+	} catch (error) {
+		const sizekb = (file.size / 1024).toFixed(1);
+		return `[File: ${file.name} | Size: ${sizekb} KB | Extraction error: ${error instanceof Error ? error.message : String(error)}]`;
+	}
+	if (buf.byteLength > MAX_TEXT_EXTRACTION_BYTES) {
+		const sizeMb = (buf.byteLength / (1024 * 1024)).toFixed(1);
+		return `[File: ${file.name} | Size: ${sizeMb} MB | Extraction skipped: this file is larger than the ${Math.round(MAX_TEXT_EXTRACTION_BYTES / (1024 * 1024))} MB safe in-browser text extraction limit.]`;
+	}
+	const bytes = new Uint8Array(buf);
+	if (bytes.length === 0) {
+		return null;
+	}
+
+	const isPdf =
+		mime.includes("pdf") || name.endsWith(".pdf") || (bytes.length >= 5 && new TextDecoder().decode(bytes.slice(0, 5)) === "%PDF-");
 	const isZip = looksLikeZipOffice(bytes);
 
 	try {
@@ -555,7 +676,9 @@ export async function extractPromptFileText(file: File, mimeType: string): Promi
 
 		const wordOoxml = /\.(docx|docm|dotx|dotm)$/i.test(name) || mime.includes("wordprocessingml");
 		const sheetOoxml =
-			/\.(xlsx|xlsm|xlsb|xltx|xltm|xlt|xls|ods|ots|fods|numbers|dbf|dif|slk|sylk|wk1|wk3|wk2|wk4|wks|123|wq1|wq2|wb1|wb2|wb3|qpw|xlr|eth|prn)$/i.test(name) ||
+			/\.(xlsx|xlsm|xlsb|xltx|xltm|xlt|xls|ods|ots|fods|numbers|dbf|dif|slk|sylk|wk1|wk3|wk2|wk4|wks|123|wq1|wq2|wb1|wb2|wb3|qpw|xlr|eth|prn)$/i.test(
+				name,
+			) ||
 			mime.includes("spreadsheetml") ||
 			mime.includes("opendocument.spreadsheet") ||
 			mime.includes("excel");
@@ -575,7 +698,13 @@ export async function extractPromptFileText(file: File, mimeType: string): Promi
 		}
 
 		// Legacy Word .doc is an OLE compound file, not a zip.
-		if (!isZip && (name.endsWith(".doc") || name.endsWith(".dot") || mime.includes("msword") || (looksLikeOleCompound(bytes) && (name.endsWith(".doc") || name.endsWith(".dot"))))) {
+		if (
+			!isZip &&
+			(name.endsWith(".doc") ||
+				name.endsWith(".dot") ||
+				mime.includes("msword") ||
+				(looksLikeOleCompound(bytes) && (name.endsWith(".doc") || name.endsWith(".dot"))))
+		) {
 			steps.push(async () => {
 				const text = await extractDocText(buf);
 				return text && isUsefulExtractedText(text) ? text : null;
@@ -590,7 +719,10 @@ export async function extractPromptFileText(file: File, mimeType: string): Promi
 		// Legacy PowerPoint .ppt / .pps is OLE. A zip package must not take this path.
 		if (
 			!isZip &&
-			(name.endsWith(".ppt") || name.endsWith(".pps") || name.endsWith(".pot") || (mime.includes("ms-powerpoint") && !mime.includes("macroenabled")))
+			(name.endsWith(".ppt") ||
+				name.endsWith(".pps") ||
+				name.endsWith(".pot") ||
+				(mime.includes("ms-powerpoint") && !mime.includes("macroenabled")))
 		) {
 			steps.push(async () => {
 				const text = await extractPptBinaryText(buf);
@@ -604,13 +736,7 @@ export async function extractPromptFileText(file: File, mimeType: string): Promi
 		}
 
 		// Spreadsheets: SheetJS for workbooks, plain decode for CSV/TSV.
-		if (
-			sheetOoxml ||
-			name.endsWith(".csv") ||
-			name.endsWith(".tsv") ||
-			mime.includes("csv") ||
-			mime.includes("tab-separated")
-		) {
+		if (sheetOoxml || name.endsWith(".csv") || name.endsWith(".tsv") || mime.includes("csv") || mime.includes("tab-separated")) {
 			if (name.endsWith(".csv") || name.endsWith(".tsv") || mime.includes("csv") || mime.includes("tab-separated")) {
 				steps.push(async () => decodeTextBytes(bytes));
 			} else {
@@ -676,13 +802,7 @@ export async function extractPromptFileText(file: File, mimeType: string): Promi
 						/* keep raw text */
 					}
 				}
-				if (
-					name.endsWith(".html") ||
-					name.endsWith(".htm") ||
-					name.endsWith(".xhtml") ||
-					name.endsWith(".fb2") ||
-					mime.includes("html")
-				) {
+				if (name.endsWith(".html") || name.endsWith(".htm") || name.endsWith(".xhtml") || name.endsWith(".fb2") || mime.includes("html")) {
 					text = htmlToPlainText(text);
 				}
 				return text;

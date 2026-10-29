@@ -1,13 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Message } from "@/lib/message";
+import { MAX_TEXT_EXTRACTION_BYTES } from "./extractFileText";
 
-const { normalizeAudioToWavFile, transcribeAudioFile, ocrImageFile } = vi.hoisted(() => ({
-	normalizeAudioToWavFile: vi.fn(),
-	transcribeAudioFile: vi.fn(),
-	ocrImageFile: vi.fn(),
+const { normalizeAudioToWavFile, transcribeAudioFile, ocrImageFile, toastError, toastLoading, toastMessage, toastSuccess, toastWarning } =
+	vi.hoisted(() => ({
+		normalizeAudioToWavFile: vi.fn(),
+		transcribeAudioFile: vi.fn(),
+		ocrImageFile: vi.fn(),
+		toastError: vi.fn(),
+		toastLoading: vi.fn(),
+		toastMessage: vi.fn(),
+		toastSuccess: vi.fn(),
+		toastWarning: vi.fn(),
+	}));
+
+vi.mock("sonner", () => ({
+	toast: { error: toastError, loading: toastLoading, message: toastMessage, success: toastSuccess, warning: toastWarning },
 }));
-
-vi.mock("sonner", () => ({ toast: { error: vi.fn(), message: vi.fn(), success: vi.fn(), warning: vi.fn() } }));
 vi.mock("./audioNormalize", () => ({
 	audioFormatFromMimeOrName: (mimeType: string, fileName: string) => {
 		const lower = `${mimeType} ${fileName}`.toLowerCase();
@@ -35,15 +44,20 @@ vi.mock("./ocrImage", () => ({
 	}),
 }));
 
-import { fileToAttachment, normalizeImageForModel } from "./attachment";
+import { fileToAttachment, filesToAttachments, normalizeImageForModel } from "./attachment";
 
-describe("audio file attachments", () => {
+describe("prompt attachments", () => {
 	afterEach(() => {
 		vi.unstubAllGlobals();
 		vi.restoreAllMocks();
 	});
 
 	beforeEach(() => {
+		toastError.mockClear();
+		toastLoading.mockClear();
+		toastMessage.mockClear();
+		toastSuccess.mockClear();
+		toastWarning.mockClear();
 		normalizeAudioToWavFile.mockReset().mockResolvedValue(null);
 		transcribeAudioFile.mockReset().mockResolvedValue({ text: "", model: "", error: "provider unavailable" });
 		ocrImageFile.mockReset().mockResolvedValue(null);
@@ -214,5 +228,37 @@ describe("audio file attachments", () => {
 		await fileToAttachment(invalid, { silent: true }, "image/png");
 
 		expect(ocrImageFile).not.toHaveBeenCalled();
+	});
+
+	it("does not turn an oversized image metadata stub into successful OCR", async () => {
+		const createObjectURL = vi.spyOn(URL, "createObjectURL");
+		const file = {
+			name: "large-scan.png",
+			size: MAX_TEXT_EXTRACTION_BYTES + 1,
+		} as File;
+
+		const attachment = await fileToAttachment(file, {}, "image/png");
+
+		expect(attachment?.type).toBe("text");
+		expect(attachment?.text).toContain("Extraction skipped:");
+		expect(attachment?.text).not.toContain("OCR extracted content");
+		expect(createObjectURL).not.toHaveBeenCalled();
+		expect(toastError).toHaveBeenCalledWith(
+			'Could not read image "large-scan.png"',
+			expect.objectContaining({ description: expect.stringContaining("safe in-browser extraction limit") }),
+		);
+	});
+
+	it("reports unreadable files in a bulk import instead of claiming every file succeeded", async () => {
+		const unreadable = new File([new Uint8Array(64)], "opaque.bin");
+		const readable = [1, 2, 3, 4].map((index) => new File([`readable file ${index}`], `notes-${index}.txt`, { type: "text/plain" }));
+
+		await filesToAttachments([unreadable, ...readable]);
+
+		expect(toastWarning).toHaveBeenCalledWith(
+			expect.stringContaining("1 file(s) failed"),
+			expect.objectContaining({ description: expect.stringContaining("opaque.bin") }),
+		);
+		expect(toastSuccess).not.toHaveBeenCalledWith(expect.stringContaining("Successfully imported all"), expect.anything());
 	});
 });

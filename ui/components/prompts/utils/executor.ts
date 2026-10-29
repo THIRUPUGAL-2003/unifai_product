@@ -756,7 +756,7 @@ export async function executePrompt(
 				.join("\n\n")
 				.slice(-12000);
 			try {
-				callbacks.onStreamChunk("Writing the file in the code panel…");
+				callbacks.onStreamChunk("Preparing the file and preview…");
 				const filename = await runDocumentStudio({
 					kind: fileRequest.kind,
 					instruction: fileRequest.instruction,

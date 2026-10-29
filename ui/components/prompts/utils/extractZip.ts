@@ -1,7 +1,9 @@
 /** Zip archive helpers for Prompt Repo file import. */
 
 const MAX_ZIP_ENTRIES = 1000;
-const MAX_NESTED_ZIP_BYTES = 1024 * 1024 * 1024; // 1 GB
+const MAX_ARCHIVE_BYTES = 50 * 1024 * 1024;
+const MAX_ARCHIVE_ENTRY_BYTES = 50 * 1024 * 1024;
+const MAX_TOTAL_EXTRACTED_BYTES = 100 * 1024 * 1024;
 const SKIP_NAME_RE = /(^|\/)(__MACOSX|\.DS_Store|Thumbs\.db)(\/|$)/i;
 
 const INNER_EXT_MIME: Record<string, string> = {
@@ -133,6 +135,13 @@ export async function extractZipInnerFiles(zipFile: File): Promise<{
 	skipped: number;
 	errors: string[];
 }> {
+	if (zipFile.size > MAX_ARCHIVE_BYTES) {
+		return {
+			files: [],
+			skipped: 1,
+			errors: [`${zipFile.name} exceeds the ${Math.round(MAX_ARCHIVE_BYTES / (1024 * 1024))} MB safe archive limit`],
+		};
+	}
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	const JSzipMod: any = await import("jszip");
 	const JSZip = JSzipMod.default ?? JSzipMod;
@@ -153,20 +162,38 @@ export async function extractZipInnerFiles(zipFile: File): Promise<{
 	const files: File[] = [];
 	const errors: string[] = [];
 	let skipped = Math.max(0, entries.length - MAX_ZIP_ENTRIES);
+	let totalExtractedBytes = 0;
 
 	for (const name of entries.slice(0, MAX_ZIP_ENTRIES)) {
 		try {
 			const entry = zip.files[name];
+			const declaredSize = Number((entry as unknown as { _data?: { uncompressedSize?: number } })._data?.uncompressedSize);
+			if (Number.isFinite(declaredSize) && declaredSize > MAX_ARCHIVE_ENTRY_BYTES) {
+				errors.push(`${baseName(name)} exceeds the ${Math.round(MAX_ARCHIVE_ENTRY_BYTES / (1024 * 1024))} MB per-file archive limit`);
+				skipped += 1;
+				continue;
+			}
+			if (Number.isFinite(declaredSize) && totalExtractedBytes + declaredSize > MAX_TOTAL_EXTRACTED_BYTES) {
+				errors.push(`Archive contents exceed the ${Math.round(MAX_TOTAL_EXTRACTED_BYTES / (1024 * 1024))} MB total extraction limit`);
+				skipped += 1;
+				continue;
+			}
 			const blob: Blob = await entry.async("blob");
 			if (blob.size <= 0) {
 				skipped += 1;
 				continue;
 			}
-			if (blob.size > MAX_NESTED_ZIP_BYTES) {
-				errors.push(`${baseName(name)} too large`);
+			const accountedBytes = Math.max(blob.size, Number.isFinite(declaredSize) ? declaredSize : 0);
+			if (
+				blob.size > MAX_ARCHIVE_ENTRY_BYTES ||
+				accountedBytes > MAX_ARCHIVE_ENTRY_BYTES ||
+				totalExtractedBytes + accountedBytes > MAX_TOTAL_EXTRACTED_BYTES
+			) {
+				errors.push(`${baseName(name)} exceeds the safe archive extraction limit`);
 				skipped += 1;
 				continue;
 			}
+			totalExtractedBytes += accountedBytes;
 			const fileName = baseName(name);
 			const ext = extOf(fileName);
 			const mime = INNER_EXT_MIME[ext] || "application/octet-stream";

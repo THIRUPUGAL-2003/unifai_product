@@ -167,13 +167,11 @@ export function FileStudioPanel() {
 
 	if (!event || event.phase === "close") return null;
 
-	const running = event.phase === "open" || event.phase === "code" || event.phase === "run";
-
 	return (
 		<aside className="absolute top-0 right-0 bottom-0 z-40 flex w-[min(440px,48%)] flex-col border-l border-zinc-800 bg-zinc-950 text-zinc-100 shadow-2xl">
 			<div className="flex items-center justify-between border-b border-zinc-800 px-3 py-2">
 				<div className="min-w-0">
-					<p className="text-[11px] tracking-wide text-zinc-400 uppercase">{event.kind ? kindLabel(event.kind) : "Code"}</p>
+					<p className="text-[11px] tracking-wide text-zinc-400 uppercase">{event.kind ? kindLabel(event.kind) : "File studio"}</p>
 					<p className="truncate text-sm font-medium">{event.title || "File studio"}</p>
 				</div>
 				<button
@@ -190,7 +188,7 @@ export function FileStudioPanel() {
 						pdfPreviewUrlRef.current = null;
 						setEvent(null);
 					}}
-					aria-label="Close code panel"
+					aria-label="Close file studio"
 				>
 					<X className="size-4" />
 				</button>
@@ -227,7 +225,15 @@ export function FileStudioPanel() {
 				</pre>
 			)}
 			<div className="border-t border-zinc-800 px-3 py-2 text-[11px] text-zinc-300">
-				{running ? "Running…" : event.phase === "error" ? "Stopped" : "Finished"}
+				{event.phase === "open"
+					? "Preparing…"
+					: event.phase === "code"
+						? "Writing…"
+						: event.phase === "run"
+							? "Generating…"
+							: event.phase === "error"
+								? "Stopped"
+								: "Finished"}
 				{event.log ? ` · ${event.log}` : ""}
 			</div>
 		</aside>

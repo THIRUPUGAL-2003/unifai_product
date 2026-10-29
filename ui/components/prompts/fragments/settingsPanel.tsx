@@ -828,7 +828,7 @@ export function SettingsPanel() {
 			}
 		}
 
-		if (isMemberOnly || allowedModels !== null) {
+		if (isMemberOnly) {
 			const committedModels = allowedModels !== null ? allowedModels : (model ? [model] : []);
 			if (committedModels.length === 0) return [];
 			if (!committedModels.includes("*")) {
@@ -846,6 +846,18 @@ export function SettingsPanel() {
 					}
 				}
 			}
+		} else if (allowedModels !== null) {
+			// For admins: Ensure any custom or committed models not in the raw catalog are visible as options
+			for (const scope of allowedModels) {
+				if (!scope || scope === "*") continue;
+				const pair = splitModelScope(scope, provider);
+				if (!pair.model || pair.model === "*") continue;
+				if (activeProviders.length > 0 && !isWildcard && !selectedProviderSet.has(pair.provider.toLowerCase())) continue;
+				const value = pair.provider ? `${pair.provider.toLowerCase()}/${pair.model}` : pair.model;
+				if (!opts.some((option) => option.value.toLowerCase() === value.toLowerCase())) {
+					opts.push({ label: `${pair.provider || provider} --- ${pair.model}`, value });
+				}
+			}
 		}
 		return opts;
 	}, [hasProviderSelected, modelsData, model, provider, isMemberOnly, allowedModels, allowedProviders, activeVkList]);
@@ -855,6 +867,7 @@ export function SettingsPanel() {
 			if (allowedModels.length === 0) return [];
 			if (allowedModels.includes("*")) return modelOptions.map((option) => option.value);
 			return modelOptions.filter((option) => {
+				if (allowedModels.includes(option.value)) return true;
 				const pair = splitModelScope(option.value, provider);
 				return modelScopeAllows(allowedModels, pair.provider, pair.model);
 			}).map((option) => option.value);
@@ -869,17 +882,24 @@ export function SettingsPanel() {
 	// Auto-select valid model whenever models change or when selected model is invalid for current provider/VK
 	useEffect(() => {
 		if (modelOptions.length > 0) {
+			if (allowedModels !== null && allowedModels.length === 0) {
+				return;
+			}
 			const currentScope = provider ? `${provider.toLowerCase()}/${model}` : model;
-			const currentModelValid = model && model !== "*" && modelOptions.some((o) => o.value.toLowerCase() === currentScope.toLowerCase());
+			const isAllowed = allowedModels === null || allowedModels.includes("*") || modelScopeAllows(allowedModels, provider, model);
+			const currentModelValid = model && model !== "*" && isAllowed && modelOptions.some((o) => o.value.toLowerCase() === currentScope.toLowerCase());
 			if (!currentModelValid) {
-				const currentProviderOption = modelOptions.find((option) => splitModelScope(option.value, provider).provider.toLowerCase() === provider.toLowerCase());
-				const exactAllowedOption = modelOptions.find((option) => allowedModels?.includes(option.value));
-				const targetScope = currentProviderOption?.value || exactAllowedOption?.value || modelOptions[0].value;
-				const target = splitModelScope(targetScope, provider);
-				if (target.provider && target.provider !== "*") setProvider(target.provider);
-				onModelChange(target.model);
-				if (!isMemberOnly && allowedModels === null) {
-					setAllowedModels([targetScope]);
+				const allowedOption = modelOptions.find((option) => {
+					const pair = splitModelScope(option.value, provider);
+					return allowedModels === null || allowedModels.includes("*") || modelScopeAllows(allowedModels, pair.provider, pair.model);
+				});
+				if (allowedOption) {
+					const target = splitModelScope(allowedOption.value, provider);
+					if (target.provider && target.provider !== "*") setProvider(target.provider);
+					onModelChange(target.model);
+					if (!isMemberOnly && allowedModels === null) {
+						setAllowedModels([allowedOption.value]);
+					}
 				}
 			}
 		}
@@ -1199,15 +1219,19 @@ export function SettingsPanel() {
 										onValueChange={(next) => {
 											if (next.length === 0) {
 												onModelChange("");
+												if (!isMemberOnly) setAllowedModels([]);
 											} else {
-								const currentScope = provider && model ? `${provider.toLowerCase()}/${model}` : model;
-								const activeScope = next.includes(currentScope) ? currentScope : next[next.length - 1] || next[0] || "";
-								if (!isMemberOnly) setAllowedModels(next.includes("*") ? ["*"] : next);
-								if (activeScope && activeScope !== "*") {
-									const target = splitModelScope(activeScope, provider);
-									if (target.provider && target.provider !== "*") setProvider(target.provider);
-									onModelChange(target.model);
-								}
+												const currentScope = provider && model ? `${provider.toLowerCase()}/${model}` : model;
+												const activeScope = next.includes(currentScope) ? currentScope : next[next.length - 1] || next[0] || "";
+												if (!isMemberOnly) {
+													const isAllSelected = modelOptions.length > 0 && modelOptions.every((opt) => next.includes(opt.value));
+													setAllowedModels(next.includes("*") || isAllSelected ? ["*"] : next);
+												}
+												if (activeScope && activeScope !== "*") {
+													const target = splitModelScope(activeScope, provider);
+													if (target.provider && target.provider !== "*") setProvider(target.provider);
+													onModelChange(target.model);
+												}
 											}
 										}}
 										placeholder={!hasProviderSelected ? "Select a provider first" : "Select model"}

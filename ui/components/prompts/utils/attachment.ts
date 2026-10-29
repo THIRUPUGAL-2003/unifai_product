@@ -902,10 +902,29 @@ const MODEL_IMAGE_MIMES = new Set(["image/png", "image/jpeg", "image/webp", "ima
 /** Anthropic rejects inline images above 5 MB; stay under it with base64 overhead in mind. */
 const MODEL_IMAGE_MAX_BYTES = 3.75 * 1024 * 1024;
 const MODEL_IMAGE_MAX_DIMENSION = 2048;
+const MAX_IMAGE_DECODE_BYTES = 50 * 1024 * 1024;
 /** Mistral OCR accepts images up to 20 MB. Avoid base64-encoding arbitrary or oversized files. */
 const OCR_IMAGE_MAX_BYTES = 20 * 1024 * 1024;
 const OCR_RAW_IMAGE_MIMES = new Set(["image/png", "image/jpeg", "image/gif", "image/bmp", "image/tiff", "image/webp", "image/avif"]);
 const GATEWAY_TRANSCRIPTION_EXTENSIONS = new Set(["flac", "mp3", "mp4", "mpeg", "mpga", "m4a", "ogg", "wav", "webm"]);
+
+function attachmentImportProblem(attachment: MessageContent): string | null {
+	if (attachment.type !== "text" || !attachment.text) return null;
+	const marker = attachment.text.match(
+		/\[Transcription unavailable:|\[No readable text content found|Extraction (?:error|skipped):|\[Archive partial:|Extracted Strings & Metadata|image pixels could not be decoded and no readable text was extracted|\[Truncated:/i,
+	);
+	return marker ? attachment.text.slice(marker.index || 0).trim() : null;
+}
+
+function hasUsableMediaPayload(attachments: MessageContent[]): boolean {
+	return attachments.some((attachment) => {
+		if (attachment.type === "image_url") return Boolean(attachment.image_url?.url);
+		if (attachment.type === "video_url") return Boolean(attachment.video_url?.url);
+		if (attachment.type === "input_audio") return Boolean(attachment.input_audio?.data);
+		if (attachment.type === "file") return Boolean(attachment.file?.file_data || attachment.file?.file_id);
+		return false;
+	});
+}
 
 function loadImageElement(file: File): Promise<HTMLImageElement> {
 	return new Promise((resolve, reject) => {
@@ -929,6 +948,7 @@ function loadImageElement(file: File): Promise<HTMLImageElement> {
  * Returns null when the browser cannot decode the image (e.g. HEIC outside Safari).
  */
 export async function normalizeImageForModel(file: File, mimeType: string): Promise<string | null> {
+	if (file.size > MAX_IMAGE_DECODE_BYTES) return null;
 	const supported = MODEL_IMAGE_MIMES.has(mimeType);
 	try {
 		const img = await loadImageElement(file);
@@ -1071,15 +1091,11 @@ export async function filesToAttachments(files: FileList | File[], opts?: Attach
 					name: file.name,
 					error: `No attachments were created for "${file.name}"`,
 				});
-			} else if (
-				res.some(
-					(attachment) =>
-						attachment.type === "text" &&
-						attachment.text?.startsWith("Voice transcript") &&
-						attachment.text.includes("[Transcription unavailable:"),
-				)
-			) {
-				failedFiles.push({ name: file.name, error: `Voice audio could not be transcribed: ${file.name}` });
+			} else {
+				const importProblem = res.map(attachmentImportProblem).find(Boolean);
+				if (importProblem && !hasUsableMediaPayload(res)) {
+					failedFiles.push({ name: file.name, error: importProblem });
+				}
 			}
 			completedCount++;
 			if (isBulk && (completedCount % 5 === 0 || completedCount === filesList.length)) {
@@ -1159,6 +1175,12 @@ async function attachmentsFromZip(zipFile: File, opts?: AttachmentImportOptions,
 			if (!opts?.silent) toast.error(err instanceof Error ? err.message : `Failed to import "${inner.name}"`);
 		}
 	}
+	if (out.length > 0 && (skipped > 0 || errors.length > 0)) {
+		out.push({
+			type: "text",
+			text: `[Archive partial: ${skipped} entr${skipped === 1 ? "y was" : "ies were"} skipped${errors[0] ? `; ${errors[0]}` : ""}. Some archive contents were not imported.]`,
+		});
+	}
 	if (out.length > 0 && !opts?.silent) {
 		const extra = skipped > 0 || errors.length > 0 ? ` (${skipped} skipped${errors.length ? `; ${errors[0]}` : ""})` : "";
 		toast.success(`Imported ${out.length} file(s) from ${zipFile.name}${extra}`);
@@ -1214,6 +1236,7 @@ async function imageFileAttachments(file: File, mimeType: string, opts?: Attachm
 	const dataUrl = await normalizeImageForModel(file, mimeType);
 	const ocrSource = dataUrl || (await rawImageForOcr(file, mimeType));
 	let extracted = "";
+	let fallbackProblem = "";
 	if (ocrSource) {
 		if (!opts?.silent) toast.message(`Extracting text from image ${file.name}…`);
 		try {
@@ -1225,8 +1248,15 @@ async function imageFileAttachments(file: File, mimeType: string, opts?: Attachm
 	}
 	if (!extracted) {
 		const fallback = await extractPromptFileText(file, mimeType);
-		if (fallback?.trim() && !fallback.startsWith("[Binary File:") && !fallback.includes("[No readable text content found")) {
-			extracted = fallback.trim();
+		const fallbackText = fallback?.trim() || "";
+		if (
+			fallbackText.startsWith("[Binary File:") ||
+			fallbackText.startsWith("[File:") ||
+			fallbackText.includes("[No readable text content found")
+		) {
+			fallbackProblem = fallbackText;
+		} else {
+			extracted = fallbackText;
 		}
 	}
 	if (dataUrl) {
@@ -1247,7 +1277,8 @@ async function imageFileAttachments(file: File, mimeType: string, opts?: Attachm
 		out.push(
 			textAttachmentFromExtract(
 				file.name,
-				`[Image: ${file.name} (${mimeType || "image"}, ${(file.size / 1024).toFixed(1)} KB) — image pixels could not be decoded and no readable text was extracted]`,
+				fallbackProblem ||
+					`[Image: ${file.name} (${mimeType || "image"}, ${(file.size / 1024).toFixed(1)} KB) — image pixels could not be decoded and no readable text was extracted]`,
 			),
 		);
 	}
@@ -1260,8 +1291,9 @@ async function imageFileAttachments(file: File, mimeType: string, opts?: Attachm
 			toast.success(`Image attached: ${file.name}`);
 		} else {
 			toast.error(`Could not read image "${file.name}"`, {
-				description:
-					"The image could not be decoded and OCR found no readable text, so image questions cannot be answered from this upload.",
+				description: fallbackProblem.toLowerCase().includes("extraction skipped:")
+					? "The image is larger than the safe in-browser extraction limit, and OCR could not read it. Split or resize the image before retrying."
+					: "The image could not be decoded and OCR found no readable text, so image questions cannot be answered from this upload.",
 			});
 		}
 	}
@@ -1566,6 +1598,7 @@ export async function fileToAttachment(
 			return ocrTextAttachment(file.name, combinedText);
 		}
 		if (extractedText.trim()) {
+			const pdfTextLayerIsPartial = isThinExtractedText(extractedText) || pdfTextLayerMissesPages(extractedText);
 			if (!opts?.silent && pdfTextLayerMissesPages(extractedText)) {
 				toast.warning(`Some pages in ${file.name} could not be read`, {
 					description: "The extracted text layer misses pages; OCR is unavailable, so scanned-only content may be missing.",
@@ -1575,7 +1608,12 @@ export async function fileToAttachment(
 					description: "OCR unavailable. Configure Mistral OCR for better scan results.",
 				});
 			}
-			return textAttachmentFromExtract(file.name, extractedText);
+			return textAttachmentFromExtract(
+				file.name,
+				pdfTextLayerIsPartial
+					? `${extractedText}\n\n[Truncated: the PDF text layer is sparse or misses pages; scanned content may be missing.]`
+					: extractedText,
+			);
 		}
 		if (!opts?.silent) {
 			toast.error(`Could not extract text from scanned PDF "${file.name}"`, {
@@ -1590,9 +1628,16 @@ export async function fileToAttachment(
 		const isSilent = Boolean(opts?.silent);
 		if (isBinaryStub) {
 			const lowerExtract = extractedText.toLowerCase();
-			if (!isSilent && (lowerExtract.includes("no readable text content found") || lowerExtract.includes("extraction error:"))) {
+			if (
+				!isSilent &&
+				(lowerExtract.includes("no readable text content found") ||
+					lowerExtract.includes("extraction error:") ||
+					lowerExtract.includes("extraction skipped:"))
+			) {
 				toast.error(`Could not read the contents of "${file.name}"`, {
-					description: "Only file metadata is available, so answers about its contents may not be possible.",
+					description: lowerExtract.includes("extraction skipped:")
+						? "The file exceeds the safe in-browser extraction limit. Reduce its size or split it into smaller files."
+						: "Only file metadata is available, so answers about its contents may not be possible.",
 				});
 			} else if (!isSilent) {
 				toast.warning(`Only part of "${file.name}" could be read`, {

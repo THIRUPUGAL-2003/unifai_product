@@ -163,7 +163,11 @@ function contentFromModelCode(code: string): { title: string; body: string; csv:
 function safeSvg(svg: string): string | null {
 	const trimmed = svg.trim();
 	if (!/^<svg\b[\s\S]*<\/svg>$/i.test(trimmed)) return null;
-	if (/<script\b|<foreignObject\b|<(?:iframe|object|embed|audio|video)\b|\bon[a-z][\w:-]*\s*=|javascript:|vbscript:|data:text\/html/i.test(trimmed)) {
+	if (
+		/<script\b|<foreignObject\b|<(?:iframe|object|embed|audio|video)\b|\bon[a-z][\w:-]*\s*=|javascript:|vbscript:|data:text\/html/i.test(
+			trimmed,
+		)
+	) {
 		return null;
 	}
 	return trimmed;
@@ -216,7 +220,7 @@ export async function runDocumentStudio(opts: {
 		kind: opts.kind,
 		language: "json",
 		code: "",
-		log: "The model is writing the code…",
+		log: "Preparing the file content…",
 	});
 
 	const revising = Boolean(opts.revise && opts.previous?.markdown);
@@ -271,7 +275,7 @@ export async function runDocumentStudio(opts: {
 	for (let i = 0; i < lines.length; i++) {
 		shown += (shown ? "\n" : "") + lines[i];
 		if (i % 4 === 0 || i === lines.length - 1) {
-			emitStudio({ phase: "code", language: "json", code: shown, log: "Writing…" });
+			emitStudio({ phase: "code", language: "json", code: shown, log: "Writing file content…" });
 			await sleep(40);
 		}
 	}
@@ -291,7 +295,7 @@ export async function runDocumentStudio(opts: {
 		previewCsv: plan.csv,
 		previewHtml: opts.kind === "html" ? plan.markdown : undefined,
 		previewSvg: opts.kind === "svg" ? plan.svg : undefined,
-		log: revising ? "Updating the file…" : "Running…",
+		log: revising ? "Updating the file…" : "Generating the file…",
 	});
 	const filename = await saveDocument(opts.kind, plan.title || "Document", plan);
 	rememberFile({

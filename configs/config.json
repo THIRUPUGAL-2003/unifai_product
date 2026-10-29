@@ -61,7 +61,24 @@
       }
     }
   },
-  "guardrails_config": {},
+  "guardrails_config": {
+    "guardrail_providers": [
+      {
+        "id": 9999,
+        "provider_name": "regex",
+        "policy_name": "Block Secrets",
+        "enabled": true,
+        "config": {
+          "patterns": [
+            {
+              "description": "secret",
+              "pattern": "CONFIDENTIAL"
+            }
+          ]
+        }
+      }
+    ]
+  },
   "logs_store": {
     "enabled": true,
     "type": "postgres",

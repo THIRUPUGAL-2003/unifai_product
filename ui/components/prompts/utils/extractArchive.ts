@@ -3,15 +3,12 @@
 import { extractZipInnerFiles } from "./extractZip";
 
 const MAX_ARCHIVE_ENTRIES = 1000;
+const MAX_ARCHIVE_BYTES = 50 * 1024 * 1024;
 const SKIP_NAME_RE = /(^|\/)(__MACOSX|\.DS_Store|Thumbs\.db)(\/|$)/i;
 
 function baseName(path: string): string {
 	const parts = path.replace(/\\/g, "/").split("/");
 	return parts[parts.length - 1] || path;
-}
-
-function isZipName(name: string): boolean {
-	return name.toLowerCase().endsWith(".zip");
 }
 
 type ArchiveCtor = {
@@ -27,10 +24,7 @@ async function loadArchiveReader(): Promise<ArchiveCtor> {
 			const workerMod = await import("libarchive.js/dist/worker-bundle.js?raw");
 			const wasmMod = await import("libarchive.js/dist/libarchive.wasm?url");
 			const wasmUrl = new URL(wasmMod.default, window.location.href).toString();
-			const source = String(workerMod.default).replaceAll(
-				'new URL("libarchive.wasm",import.meta.url).href',
-				JSON.stringify(wasmUrl),
-			);
+			const source = String(workerMod.default).replaceAll('new URL("libarchive.wasm",import.meta.url).href', JSON.stringify(wasmUrl));
 			if (source === String(workerMod.default)) {
 				throw new Error("Archive reader could not locate its decoder");
 			}
@@ -83,7 +77,9 @@ export function isPromptArchive(file: File, mimeType: string): boolean {
 	const name = file.name.toLowerCase();
 	const mime = (mimeType || "").toLowerCase();
 	return (
-		/\.(zip|tar|tar\.gz|tgz|gz|gzip|bz2|xz|7z|rar|tbz2|txz|cab|iso|jar|war|apk|ear|zst|tzst|whl|nupkg|msix|appx|appxbundle|aab|cbz|dmg|img|wim|msi|deb|rpm|appimage|pkg|lzh|lha|z|sfx)$/i.test(name) ||
+		/\.(zip|tar|tar\.gz|tgz|gz|gzip|bz2|xz|7z|rar|tbz2|txz|cab|iso|jar|war|apk|ear|zst|tzst|whl|nupkg|msix|appx|appxbundle|aab|cbz|dmg|img|wim|msi|deb|rpm|appimage|pkg|lzh|lha|z|sfx)$/i.test(
+			name,
+		) ||
 		mime === "application/zip" ||
 		mime === "application/x-zip-compressed" ||
 		mime.includes("gzip") ||
@@ -106,11 +102,21 @@ export function isPromptArchive(file: File, mimeType: string): boolean {
 }
 
 /** Inner files from a zip (JSZip) or from tar/gzip/7z/rar (libarchive). */
-export async function extractArchiveInnerFiles(file: File, detectedMimeType?: string): Promise<{
+export async function extractArchiveInnerFiles(
+	file: File,
+	detectedMimeType?: string,
+): Promise<{
 	files: File[];
 	skipped: number;
 	errors: string[];
 }> {
+	if (file.size > MAX_ARCHIVE_BYTES) {
+		return {
+			files: [],
+			skipped: 1,
+			errors: [`${file.name} exceeds the ${Math.round(MAX_ARCHIVE_BYTES / (1024 * 1024))} MB safe archive limit`],
+		};
+	}
 	const lower = file.name.toLowerCase();
 	const mime = (detectedMimeType || file.type || "").toLowerCase();
 	const zipPackage = /\.(zip|jar|war|apk|ear|whl|nupkg|msix|appx|appxbundle|aab|cbz)$/i.test(lower);
