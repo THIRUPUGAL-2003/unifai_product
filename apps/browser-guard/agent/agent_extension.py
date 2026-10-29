@@ -1153,6 +1153,7 @@ def check_prompt(
     is_blocked: bool = False,
     rule: str = "",
     eval_id: str = "",
+    action: str = "",
 ) -> dict:
     """Evaluate prompt, files, and images against Gateway DLP policies."""
     if _is_telemetry_payload(prompt, url):
@@ -1652,6 +1653,8 @@ def check_prompt(
         "file_count": len(files_list),
         "image_count": len(images_list),
     }
+    if action:
+        meta["action"] = action
     user_caption = (prompt or "").strip()
     user_caption = re.sub(r'\[(?:File|Extracted File):.*?\]', '', user_caption).strip()
 
@@ -1704,6 +1707,7 @@ def check_prompt(
         rule = "Corporate AI Workspace Policy"
         is_blocked = True
 
+    eval_action = action or meta.get("status") or ("Blocked" if is_blocked else "Allowed")
     _record_extension_eval(
         clean_host or host,
         user_caption or text,
@@ -1711,7 +1715,7 @@ def check_prompt(
         platform=platform,
         eval_id=eval_id,
         is_blocked=is_blocked,
-        action=meta.get("status") or ("Blocked" if is_blocked else "Allowed"),
+        action=eval_action,
         rule=rule or meta.get("blocked_reason") or "",
         message=block_message or meta.get("blocked_reason") or "",
     )
