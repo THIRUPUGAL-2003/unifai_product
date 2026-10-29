@@ -77,7 +77,7 @@ export default function SecurityView() {
 		use_tls: true,
 		notify_on_login: false,
 		notify_on_user_create: true,
-		email_provider: "smtp" as "smtp" | "outlook",
+		email_provider: "smtp" as "smtp" | "outlook" | "none",
 		outlook_enabled: false,
 		outlook_client_id: "",
 		outlook_client_secret: "",
@@ -134,7 +134,7 @@ export default function SecurityView() {
 			use_tls: smtpData.use_tls,
 			notify_on_login: smtpData.notify_on_login,
 			notify_on_user_create: smtpData.notify_on_user_create,
-			email_provider: (smtpData.email_provider as "smtp" | "outlook") || (smtpData.outlook_enabled ? "outlook" : "smtp"),
+			email_provider: (smtpData.email_provider as "smtp" | "outlook" | "none") || (smtpData.outlook_enabled ? "outlook" : "smtp"),
 			outlook_enabled: !!smtpData.outlook_enabled,
 			outlook_client_id: smtpData.outlook_client_id || "",
 			outlook_client_secret: "",
@@ -396,7 +396,7 @@ export default function SecurityView() {
 										...f,
 										enabled: checked,
 										outlook_enabled: checked ? false : f.outlook_enabled,
-										email_provider: checked ? "smtp" : (f.outlook_enabled ? "outlook" : "smtp"),
+										email_provider: checked ? "smtp" : (f.outlook_enabled ? "outlook" : "none"),
 									}));
 								}}
 								disabled={!hasSettingsUpdateAccess}
@@ -498,7 +498,7 @@ export default function SecurityView() {
 										...f,
 										outlook_enabled: checked,
 										enabled: checked ? false : f.enabled,
-										email_provider: checked ? "outlook" : (f.enabled ? "smtp" : "outlook"),
+										email_provider: checked ? "outlook" : (f.enabled ? "smtp" : "none"),
 									}));
 								}}
 								disabled={!hasSettingsUpdateAccess}

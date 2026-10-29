@@ -440,23 +440,40 @@ def run_uninstall(key: str, schedule_cleanup: bool = True) -> int:
             except Exception:
                 pass
 
-        valid_hashes = []
-        if cached.get("agent_key_hash"):
-            valid_hashes.append(str(cached["agent_key_hash"]).lower().strip())
-        if cached.get("company_key_hash"):
-            valid_hashes.append(str(cached["company_key_hash"]).lower().strip())
-        if not valid_hashes:
-            chrome_file = os.path.join(data_dir(), "chrome_storage_cache.json")
-            if os.path.isfile(chrome_file):
-                try:
-                    with open(chrome_file, "r", encoding="utf-8") as f:
-                        c_data = json.load(f)
-                    if c_data.get("company_key_hash"):
-                        valid_hashes.append(str(c_data["company_key_hash"]).lower().strip())
-                    if c_data.get("agent_key_hash"):
-                        valid_hashes.append(str(c_data["agent_key_hash"]).lower().strip())
-                except Exception:
-                    pass
+        valid_hashes = set()
+        sources = [cached]
+        chrome_file = os.path.join(data_dir(), "chrome_storage_cache.json")
+        if os.path.isfile(chrome_file):
+            try:
+                with open(chrome_file, "r", encoding="utf-8") as f:
+                    sources.append(json.load(f))
+            except Exception:
+                pass
+
+        for s in sources:
+            if not isinstance(s, dict):
+                continue
+            for k in ("agent_key_hash", "company_key_hash", "daily_key_hash", "common_key_hash"):
+                val = s.get(k)
+                if val and str(val).strip():
+                    valid_hashes.add(str(val).lower().strip())
+
+        if not valid_hashes or key_hash.lower() not in valid_hashes:
+            try:
+                from agent_extension import scan_disk_for_browser_extension_storage
+                disk_storage = scan_disk_for_browser_extension_storage()
+                for k in ("agent_key_hash", "company_key_hash", "daily_key_hash", "common_key_hash"):
+                    val = disk_storage.get(k)
+                    if val and str(val).strip():
+                        valid_hashes.add(str(val).lower().strip())
+                if disk_storage.get("company_key_hash") or disk_storage.get("agent_key_hash"):
+                    try:
+                        with open(cache_file, "w", encoding="utf-8") as f:
+                            json.dump(disk_storage, f, indent=2)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
 
         if valid_hashes and key_hash.lower() in valid_hashes:
             print("[Gateway Guard] Offline uninstall authorized by valid cached daily/company key.")

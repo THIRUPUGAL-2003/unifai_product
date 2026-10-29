@@ -71,11 +71,15 @@ function policyFromRules(data) {
     policy.uninstall_key_configured = Boolean(data.uninstall_key_configured);
     policy.uninstall_key_rotated_at = data.uninstall_key_rotated_at || "";
   }
-  if (data.company_key_hash) {
-    policy.company_key_hash = String(data.company_key_hash);
+  if (data.company_key_hash || data.common_key_hash) {
+    var cHash = String(data.company_key_hash || data.common_key_hash);
+    policy.company_key_hash = cHash;
+    policy.common_key_hash = cHash;
   }
-  if (data.agent_key_hash) {
-    policy.agent_key_hash = String(data.agent_key_hash);
+  if (data.agent_key_hash || data.daily_key_hash) {
+    var dHash = String(data.agent_key_hash || data.daily_key_hash);
+    policy.agent_key_hash = dHash;
+    policy.daily_key_hash = dHash;
   }
   return policy;
 }
@@ -261,6 +265,7 @@ function recordDownloadBlockedLog(sourceHost, item) {
     var sHost = gatewayHost(stored && stored.server_host) ||
       gatewayHost(typeof GATEWAY_SERVER_HOST === "string" ? GATEWAY_SERVER_HOST : "");
     var siteHost = sourceHost || "website";
+    var fileName = (item && (item.filename || (item.url ? item.url.split("/").pop().split("?")[0] : ""))) || "";
     var promptText = "--download [DOWNLOAD BLOCKED] -- " + siteHost + (fileName ? (" (" + fileName + ")") : "");
     var payload = {
       id: "dl_block_" + Date.now().toString(36),

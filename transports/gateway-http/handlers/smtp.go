@@ -165,18 +165,22 @@ func (h *SMTPHandler) updateSMTPConfig(ctx *fasthttp.RequestCtx) {
 	}
 
 	// Mutual exclusivity: enabling one disables the other
-	if payload.OutlookEnabled {
+	if payload.OutlookEnabled && payload.Enabled {
+		if payload.EmailProvider == "outlook" {
+			payload.Enabled = false
+		} else {
+			payload.OutlookEnabled = false
+		}
+	} else if payload.OutlookEnabled {
 		payload.Enabled = false
 		payload.EmailProvider = "outlook"
 	} else if payload.Enabled {
 		payload.OutlookEnabled = false
 		payload.EmailProvider = "smtp"
-	} else if payload.EmailProvider == "outlook" {
-		payload.OutlookEnabled = true
+	} else {
 		payload.Enabled = false
-	} else if payload.EmailProvider == "smtp" {
-		payload.Enabled = true
 		payload.OutlookEnabled = false
+		payload.EmailProvider = "none"
 	}
 
 	existing, err := store.GetSMTPConfig(ctx)

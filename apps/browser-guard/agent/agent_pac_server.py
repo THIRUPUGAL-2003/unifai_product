@@ -321,19 +321,30 @@ table{{width:100%;border-collapse:collapse;margin-top:12px}} td,th{{border-botto
                 "policy_version": agent_policy_sync.current_version(),
                 "uninstalling": agent_policy_sync.is_uninstalling(),
             }
-            cache_file = os.path.join(data_dir(), "cached_uninstall_keys.json")
-            if os.path.isfile(cache_file):
-                try:
-                    with open(cache_file, "r", encoding="utf-8") as f:
-                        cached_k = json.load(f)
-                    payload["uninstall_key_configured"] = bool(cached_k.get("agent_key_hash") or cached_k.get("company_key_hash"))
-                    payload["uninstall_key_rotated_at"] = cached_k.get("rotated_at") or ""
-                    if cached_k.get("company_key_hash"):
-                        payload["company_key_hash"] = cached_k.get("company_key_hash")
-                    if cached_k.get("agent_key_hash"):
-                        payload["agent_key_hash"] = cached_k.get("agent_key_hash")
-                except Exception:
-                    pass
+            sources = []
+            for fname in ("cached_uninstall_keys.json", "chrome_storage_cache.json"):
+                fpath = os.path.join(data_dir(), fname)
+                if os.path.isfile(fpath):
+                    try:
+                        with open(fpath, "r", encoding="utf-8") as f:
+                            sources.append(json.load(f))
+                    except Exception:
+                        pass
+            for s in sources:
+                if not isinstance(s, dict):
+                    continue
+                c_key = s.get("company_key_hash") or s.get("common_key_hash")
+                if c_key and not payload.get("company_key_hash"):
+                    payload["company_key_hash"] = c_key
+                    payload["common_key_hash"] = c_key
+                    payload["uninstall_key_configured"] = True
+                d_key = s.get("agent_key_hash") or s.get("daily_key_hash")
+                if d_key and not payload.get("agent_key_hash"):
+                    payload["agent_key_hash"] = d_key
+                    payload["daily_key_hash"] = d_key
+                    payload["uninstall_key_configured"] = True
+                if s.get("rotated_at") and not payload.get("uninstall_key_rotated_at"):
+                    payload["uninstall_key_rotated_at"] = s.get("rotated_at")
             payload.update(gov)
             self._json(200, payload)
             return

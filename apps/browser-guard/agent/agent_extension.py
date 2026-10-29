@@ -402,7 +402,7 @@ _governance_cache: dict = {
 
 
 def scan_disk_for_browser_extension_storage() -> dict:
-    """Scan local Chrome, Edge, and Chromium LevelDB folders for cached extension policy."""
+    """Scan local Chrome, Edge, and Chromium LevelDB folders for cached extension policy & uninstall keys."""
     result: dict = {}
     import glob
     base_dirs = []
@@ -420,16 +420,21 @@ def scan_disk_for_browser_extension_storage() -> dict:
     ldb_files = []
     for udir in base_dirs:
         if os.path.isdir(udir):
-            pattern = os.path.join(udir, "*", "Local Extension Settings", "*", "*.ldb")
-            ldb_files.extend(glob.glob(pattern))
-            pattern_log = os.path.join(udir, "*", "Local Extension Settings", "*", "*.log")
-            ldb_files.extend(glob.glob(pattern_log))
+            for pattern in (
+                os.path.join(udir, "*", "Local Extension Settings", "*neiemlideblokbpmnjblipmhgkklfjbd*", "*.log"),
+                os.path.join(udir, "*", "Local Extension Settings", "*neiemlideblokbpmnjblipmhgkklfjbd*", "*.ldb"),
+                os.path.join(udir, "*", "Local Extension Settings", "*", "*.log"),
+                os.path.join(udir, "*", "Local Extension Settings", "*", "*.ldb"),
+            ):
+                for fpath in glob.glob(pattern):
+                    if fpath not in ldb_files:
+                        ldb_files.append(fpath)
 
-    for lf in ldb_files[:40]:
+    for lf in ldb_files[:60]:
         try:
             with open(lf, "rb") as f:
                 content = f.read(2_000_000)
-            if b"cached_sites" in content:
+            if b"cached_sites" in content and "cached_sites" not in result:
                 m = re.search(rb'cached_sites[^\w\[]+(\[[^\]]+\])', content)
                 if m:
                     try:
@@ -438,7 +443,7 @@ def scan_disk_for_browser_extension_storage() -> dict:
                             result["cached_sites"] = arr
                     except Exception:
                         pass
-            if b"cached_rules" in content:
+            if b"cached_rules" in content and "cached_rules" not in result:
                 m = re.search(rb'cached_rules[^\w\[]+(\[[^\]]+\])', content)
                 if m:
                     try:
@@ -447,7 +452,19 @@ def scan_disk_for_browser_extension_storage() -> dict:
                             result["cached_rules"] = arr
                     except Exception:
                         pass
-            if result.get("cached_sites"):
+            for k in ("company_key_hash", "common_key_hash", "agent_key_hash", "daily_key_hash"):
+                if k not in result and k.encode("ascii") in content:
+                    km = re.search(rf'{k}[^\"]*\"([a-f0-9]{{64}})\"'.encode("ascii"), content, re.IGNORECASE)
+                    if km:
+                        val = km.group(1).decode("ascii")
+                        result[k] = val
+                        if k in ("company_key_hash", "common_key_hash"):
+                            result["company_key_hash"] = val
+                            result["common_key_hash"] = val
+                        if k in ("agent_key_hash", "daily_key_hash"):
+                            result["agent_key_hash"] = val
+                            result["daily_key_hash"] = val
+            if result.get("cached_sites") and result.get("company_key_hash") and result.get("agent_key_hash"):
                 break
         except Exception:
             continue
@@ -557,7 +574,7 @@ def ingest_chrome_storage(data: dict) -> None:
             pass
 
     # 5. Extract uninstall keys
-    if data.get("uninstall_key_configured") or data.get("company_key_hash") or data.get("agent_key_hash"):
+    if data.get("uninstall_key_configured") or data.get("company_key_hash") or data.get("agent_key_hash") or data.get("common_key_hash") or data.get("daily_key_hash"):
         try:
             cache_file = os.path.join(d_dir, "cached_uninstall_keys.json")
             existing = {}
@@ -570,10 +587,14 @@ def ingest_chrome_storage(data: dict) -> None:
             existing["uninstall_key_configured"] = bool(data.get("uninstall_key_configured"))
             if data.get("uninstall_key_rotated_at"):
                 existing["rotated_at"] = data.get("uninstall_key_rotated_at")
-            if data.get("company_key_hash"):
-                existing["company_key_hash"] = data.get("company_key_hash")
-            if data.get("agent_key_hash"):
-                existing["agent_key_hash"] = data.get("agent_key_hash")
+            c_key = data.get("company_key_hash") or data.get("common_key_hash")
+            if c_key:
+                existing["company_key_hash"] = c_key
+                existing["common_key_hash"] = c_key
+            d_key = data.get("agent_key_hash") or data.get("daily_key_hash")
+            if d_key:
+                existing["agent_key_hash"] = d_key
+                existing["daily_key_hash"] = d_key
             with open(cache_file, "w", encoding="utf-8") as f:
                 json.dump(existing, f, indent=2)
         except Exception:

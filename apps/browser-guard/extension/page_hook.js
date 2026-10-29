@@ -3716,7 +3716,7 @@
       }
       var codeSnippet = "";
       try {
-        var codeBlock = btn.closest("pre, .code-block, div") || btn.parentElement;
+        var codeBlock = el.closest("pre, .code-block, div") || el.parentElement;
         if (codeBlock) {
           codeSnippet = (codeBlock.innerText || codeBlock.textContent || "").trim();
         }

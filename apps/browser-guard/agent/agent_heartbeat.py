@@ -104,15 +104,26 @@ def cache_uninstall_key_hashes(data: dict | None) -> None:
         return
     cache_file = os.path.join(data_dir(), "cached_uninstall_keys.json")
     try:
-        keys_data = {
-            "agent_key_hash": agent_key_hash,
-            "company_key_hash": company_key_hash,
-            "agent_id": agent_info.get("id") if isinstance(agent_info, dict) else "",
-            "rotated_at": agent_info.get("uninstall_key_rotated_at") if isinstance(agent_info, dict) else "",
-            "synced_at": time.time(),
-        }
+        existing = {}
+        if os.path.isfile(cache_file):
+            try:
+                with open(cache_file, "r", encoding="utf-8") as f:
+                    existing = json.load(f)
+            except Exception:
+                pass
+        if agent_key_hash:
+            existing["agent_key_hash"] = agent_key_hash
+            existing["daily_key_hash"] = agent_key_hash
+        if company_key_hash:
+            existing["company_key_hash"] = company_key_hash
+            existing["common_key_hash"] = company_key_hash
+        if isinstance(agent_info, dict) and agent_info.get("id"):
+            existing["agent_id"] = agent_info["id"]
+        if isinstance(agent_info, dict) and agent_info.get("uninstall_key_rotated_at"):
+            existing["rotated_at"] = agent_info["uninstall_key_rotated_at"]
+        existing["synced_at"] = time.time()
         with open(cache_file, "w", encoding="utf-8") as f:
-            json.dump(keys_data, f, indent=2)
+            json.dump(existing, f, indent=2)
     except Exception:
         pass
 
