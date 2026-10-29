@@ -382,10 +382,10 @@ DB_HOST=10.0.0.5
 DB_PORT=5432
 # PostgreSQL connection port.
 
-DB_NAME=Unifai_test
+DB_NAME=gateway_production
 # Target database name.
 
-DB_USER=Unifai_test
+DB_USER=gateway_admin
 # Database connection username.
 
 DB_PASSWORD=YourSecureDatabasePassword123!
