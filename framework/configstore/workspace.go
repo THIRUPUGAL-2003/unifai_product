@@ -161,6 +161,8 @@ type WorkspaceStore interface {
 
 	ListAuditLogs(ctx context.Context, query AuditLogQuery) ([]tables.TableAuditLog, int64, error)
 	CreateAuditLog(ctx context.Context, row *tables.TableAuditLog) error
+	ClearAuditLogsInRange(ctx context.Context, since, until *time.Time) error
+	DeleteAuditLogsByIDs(ctx context.Context, ids []uint) (int64, error)
 }
 
 // AsWorkspaceStore returns the workspace persistence layer when the config
@@ -986,6 +988,28 @@ func (s *RDBConfigStore) ListAuditLogs(ctx context.Context, query AuditLogQuery)
 
 func (s *RDBConfigStore) CreateAuditLog(ctx context.Context, row *tables.TableAuditLog) error {
 	return s.DB().WithContext(ctx).Create(row).Error
+}
+
+func (s *RDBConfigStore) ClearAuditLogsInRange(ctx context.Context, since, until *time.Time) error {
+	db := s.DB().WithContext(ctx)
+	if since == nil && until == nil {
+		return db.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&tables.TableAuditLog{}).Error
+	}
+	if since != nil && until != nil {
+		return db.Where("created_at >= ? AND created_at <= ?", *since, *until).Delete(&tables.TableAuditLog{}).Error
+	}
+	if since != nil {
+		return db.Where("created_at >= ?", *since).Delete(&tables.TableAuditLog{}).Error
+	}
+	return db.Where("created_at <= ?", *until).Delete(&tables.TableAuditLog{}).Error
+}
+
+func (s *RDBConfigStore) DeleteAuditLogsByIDs(ctx context.Context, ids []uint) (int64, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	res := s.DB().WithContext(ctx).Where("id IN ?", ids).Delete(&tables.TableAuditLog{})
+	return res.RowsAffected, res.Error
 }
 
 func firstByID[T any](db *gorm.DB, id uint) (*T, error) {

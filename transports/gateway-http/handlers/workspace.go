@@ -122,6 +122,9 @@ func (h *WorkspaceHandler) RegisterRoutes(r *router.Router, middlewares ...schem
 	r.POST("/api/alert-channels/{id}/test", wrap(h.testAlertChannel))
 
 	r.GET("/api/audit-logs", wrap(h.listAuditLogs))
+	r.DELETE("/api/audit-logs", wrap(h.deleteAuditLogs))
+	r.POST("/api/audit-logs/bulk-delete", wrap(h.bulkDeleteAuditLogs))
+	r.DELETE("/api/audit-logs/{id}", wrap(h.deleteAuditLog))
 	r.GET("/api/audit-logs/export", wrap(h.exportAuditLogs))
 	r.GET("/api/audit-logs/settings", wrap(h.getAuditSettings))
 	r.PUT("/api/audit-logs/settings", wrap(h.updateAuditSettings))

@@ -439,7 +439,10 @@ func writeRequirement(method, path string) *PathRequirement {
 	case strings.HasPrefix(path, "/api/scim"):
 		return &PathRequirement{Resource: "UserProvisioning", Operation: "Update"}
 	case strings.HasPrefix(path, "/api/audit-logs"):
-		return &PathRequirement{Resource: "AuditLogs", Operation: "Update"}
+		if strings.HasSuffix(path, "/bulk-delete") {
+			return &PathRequirement{Resource: "AuditLogs", Operation: "Delete", AnyOfResources: []string{"AuditLogs", "Governance"}}
+		}
+		return &PathRequirement{Resource: "AuditLogs", Operation: op, AnyOfResources: []string{"AuditLogs", "Governance"}}
 	case strings.HasPrefix(path, "/api/access-profiles"):
 		if strings.HasSuffix(path, "/activate") || strings.HasSuffix(path, "/deactivate") {
 			return &PathRequirement{Resource: "AccessProfiles", Operation: "Update"}

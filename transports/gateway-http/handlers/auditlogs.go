@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 	"time"
 
@@ -54,6 +55,88 @@ func (h *WorkspaceHandler) listAuditLogs(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	SendJSON(ctx, map[string]any{"logs": rows, "count": len(rows), "total_count": total})
+}
+
+func (h *WorkspaceHandler) deleteAuditLogs(ctx *fasthttp.RequestCtx) {
+	store := h.requireStore(ctx)
+	if store == nil {
+		return
+	}
+	since, until, label, ok := logDeleteWindow(ctx)
+	if !ok {
+		return
+	}
+	if err := store.ClearAuditLogsInRange(ctx, since, until); err != nil {
+		SendError(ctx, fasthttp.StatusInternalServerError, "failed to clear audit logs: "+err.Error())
+		return
+	}
+	msg := "All audit logs cleared"
+	if label != "" {
+		msg = "Audit logs deleted " + label
+	}
+	SendJSON(ctx, map[string]any{"status": "success", "message": msg})
+}
+
+func (h *WorkspaceHandler) bulkDeleteAuditLogs(ctx *fasthttp.RequestCtx) {
+	store := h.requireStore(ctx)
+	if store == nil {
+		return
+	}
+	var payload struct {
+		IDs []any `json:"ids"`
+	}
+	if err := json.Unmarshal(ctx.PostBody(), &payload); err != nil {
+		SendError(ctx, fasthttp.StatusBadRequest, "invalid request body")
+		return
+	}
+	if len(payload.IDs) == 0 {
+		SendError(ctx, fasthttp.StatusBadRequest, "ids array is required")
+		return
+	}
+	var uintIDs []uint
+	for _, raw := range payload.IDs {
+		switch v := raw.(type) {
+		case float64:
+			uintIDs = append(uintIDs, uint(v))
+		case string:
+			if n, err := strconv.ParseUint(strings.TrimSpace(v), 10, 64); err == nil {
+				uintIDs = append(uintIDs, uint(n))
+			}
+		}
+	}
+	if len(uintIDs) == 0 {
+		SendError(ctx, fasthttp.StatusBadRequest, "no valid IDs provided")
+		return
+	}
+	deleted, err := store.DeleteAuditLogsByIDs(ctx, uintIDs)
+	if err != nil {
+		SendError(ctx, fasthttp.StatusInternalServerError, "failed to delete audit logs: "+err.Error())
+		return
+	}
+	SendJSON(ctx, map[string]any{"status": "success", "deleted": deleted})
+}
+
+func (h *WorkspaceHandler) deleteAuditLog(ctx *fasthttp.RequestCtx) {
+	store := h.requireStore(ctx)
+	if store == nil {
+		return
+	}
+	idStr, _ := ctx.UserValue("id").(string)
+	id, err := strconv.ParseUint(strings.TrimSpace(idStr), 10, 64)
+	if err != nil || id == 0 {
+		SendError(ctx, fasthttp.StatusBadRequest, "invalid audit log id")
+		return
+	}
+	deleted, err := store.DeleteAuditLogsByIDs(ctx, []uint{uint(id)})
+	if err != nil {
+		SendError(ctx, fasthttp.StatusInternalServerError, "failed to delete audit log: "+err.Error())
+		return
+	}
+	if deleted == 0 {
+		SendError(ctx, fasthttp.StatusNotFound, "audit log not found")
+		return
+	}
+	SendJSON(ctx, map[string]any{"status": "success", "deleted": deleted})
 }
 
 func (h *WorkspaceHandler) exportAuditLogs(ctx *fasthttp.RequestCtx) {
