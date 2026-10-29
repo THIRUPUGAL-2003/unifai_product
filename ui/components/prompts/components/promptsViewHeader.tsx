@@ -194,17 +194,17 @@ export default function PromptsViewHeader() {
 		if (skillId.trim()) {
 			params.skill_id = skillId.trim();
 		}
-		const effProviders = (allowedProviders && allowedProviders.length > 0) ? allowedProviders : (provider ? [provider] : undefined);
-		if (effProviders) params.prompt_allowed_providers = effProviders;
+		if (allowedProviders !== null) params.prompt_allowed_providers = [...allowedProviders];
+		else if (provider) params.prompt_allowed_providers = [provider];
 
-		const effModels = (allowedModels && allowedModels.length > 0) ? allowedModels : (model ? [model] : undefined);
-		if (effModels) params.prompt_allowed_models = effModels;
+		if (allowedModels !== null) params.prompt_allowed_models = [...allowedModels];
+		else if (model) params.prompt_allowed_models = [model];
 
-		const effVks = (allowedVirtualKeys && allowedVirtualKeys.length > 0) ? allowedVirtualKeys : (virtualKeyId && virtualKeyId !== "__auto__" && virtualKeyId !== "__none__" ? [virtualKeyId] : undefined);
-		if (effVks) params.prompt_allowed_virtual_keys = effVks;
+		if (allowedVirtualKeys !== null) params.prompt_allowed_virtual_keys = [...allowedVirtualKeys];
+		else if (virtualKeyId && virtualKeyId !== "__auto__" && virtualKeyId !== "__none__") params.prompt_allowed_virtual_keys = [virtualKeyId];
 
-		const effApiKeys = (allowedApiKeys && allowedApiKeys.length > 0) ? allowedApiKeys : (apiKeyId && apiKeyId !== "__auto__" && apiKeyId !== "__none__" ? [apiKeyId] : undefined);
-		if (effApiKeys) params.prompt_allowed_api_keys = effApiKeys;
+		if (allowedApiKeys !== null) params.prompt_allowed_api_keys = [...allowedApiKeys];
+		else if (apiKeyId && apiKeyId !== "__auto__" && apiKeyId !== "__none__") params.prompt_allowed_api_keys = [apiKeyId];
 
 		if (allowedSkills) params.prompt_allowed_skills = allowedSkills;
 		if (mcpIncludeTools) params.prompt_allowed_mcp_tools = mcpIncludeTools;

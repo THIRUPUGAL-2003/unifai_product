@@ -599,7 +599,7 @@ CREATE TABLE browser_control_settings (
     corporate_email_domains TEXT,
     allowed_workspace_ids TEXT,
     corporate_block_message TEXT,
-    corporate_target_websites TEXT DEFAULT 'all',
+    corporate_target_websites TEXT DEFAULT 'none',
     policy_version INT DEFAULT 1,
     block_clipboard BOOLEAN DEFAULT FALSE,
     block_drag_drop BOOLEAN DEFAULT FALSE,

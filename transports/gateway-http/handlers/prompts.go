@@ -12,11 +12,11 @@ import (
 	"time"
 
 	"github.com/fasthttp/router"
-	"github.com/google/uuid"
 	"github.com/gateway/gateway/core/schemas"
 	"github.com/gateway/gateway/framework/configstore"
 	"github.com/gateway/gateway/framework/configstore/tables"
 	"github.com/gateway/gateway/transports/gateway-http/lib"
+	"github.com/google/uuid"
 	"github.com/valyala/fasthttp"
 )
 
@@ -689,7 +689,6 @@ func (h *PromptsHandler) deleteFolder(ctx *fasthttp.RequestCtx) {
 		}
 	}
 
-
 	// Unassign every prompt in this folder and its subfolders from all users immediately
 	if h.store != nil && h.store.DB() != nil {
 		var childPrompts []tables.TablePrompt
@@ -1354,85 +1353,71 @@ func (h *PromptsHandler) checkPromptAccess(ctx *fasthttp.RequestCtx, promptID st
 		return false
 	}
 
-	// Check if prompt is in an archived/trash folder - regular users cannot access deleted prompts
-	if prompt.FolderID != nil && h.store != nil && h.store.DB() != nil {
-		var f tables.TableFolder
-		if fErr := h.store.DB().Where("id = ?", *prompt.FolderID).First(&f).Error; fErr == nil {
-			if strings.HasPrefix(f.Type, "system_removed_") ||
-				strings.HasPrefix(f.Type, "archived_") ||
-				strings.HasPrefix(f.Name, "Removed ") ||
-				strings.HasSuffix(f.Name, " (Archived)") {
+	return userCanAccessPrompt(ctx, h.store, dbUser, prompt)
+}
+
+// userCanAccessPrompt is the shared, fail-closed assignment check used for both
+// Prompt Repository reads and inference requests. An empty allowlist grants no
+// access by itself; ownership, an explicit user grant, or team/customer scope is
+// required.
+func userCanAccessPrompt(ctx context.Context, store configstore.ConfigStore, dbUser *tables.TableUser, prompt *tables.TablePrompt) bool {
+	if store == nil || dbUser == nil || prompt == nil {
+		return false
+	}
+	if prompt.FolderID != nil && store.DB() != nil {
+		var folder tables.TableFolder
+		if err := store.DB().WithContext(ctx).Where("id = ?", *prompt.FolderID).First(&folder).Error; err == nil {
+			if strings.HasPrefix(folder.Type, "system_removed_") ||
+				strings.HasPrefix(folder.Type, "archived_") ||
+				strings.HasPrefix(folder.Name, "Removed ") ||
+				strings.HasSuffix(folder.Name, " (Archived)") {
 				return false
 			}
 		}
 	}
-
-	// 1. Owner
 	if prompt.OwnerUserID != nil && *prompt.OwnerUserID == dbUser.ID {
 		return true
 	}
-
-	// 2. Direct User assignment in prompt.UserIDs
-	if prompt.UserIDs != "" {
-		for _, uid := range strings.Split(prompt.UserIDs, ",") {
-			if strings.TrimSpace(uid) == dbUser.ID {
-				return true
-			}
+	for _, userID := range strings.Split(prompt.UserIDs, ",") {
+		if strings.TrimSpace(userID) == dbUser.ID && dbUser.ID != "" {
+			return true
 		}
 	}
-
-	// 3. User AllowedPromptRepos list
-	if dbUser.AllowedPromptRepos != "" {
-		for _, id := range strings.Split(dbUser.AllowedPromptRepos, ",") {
-			if strings.TrimSpace(id) == promptID {
-				return true
-			}
+	for _, promptID := range strings.Split(dbUser.AllowedPromptRepos, ",") {
+		if id := strings.TrimSpace(promptID); id != "" && id == prompt.ID {
+			return true
 		}
 	}
-
-	// 4. Team assignment in prompt.TeamIDs
-	if prompt.TeamIDs != "" && h.store != nil {
-		ws, ok := configstore.AsWorkspaceStore(h.store)
-		if ok && ws != nil {
-			if teams, err := ws.ListTeamsForUser(ctx, dbUser.ID); err == nil {
-				teamIDSet := make(map[string]bool)
-				for _, t := range teams {
-					teamIDSet[t.TeamID] = true
-				}
-				for _, tid := range strings.Split(prompt.TeamIDs, ",") {
-					if teamIDSet[strings.TrimSpace(tid)] {
-						return true
-					}
-				}
-			}
+	ws, ok := configstore.AsWorkspaceStore(store)
+	if !ok || ws == nil {
+		return false
+	}
+	teams, err := ws.ListTeamsForUser(ctx, dbUser.ID)
+	if err != nil {
+		return false
+	}
+	teamIDs := make(map[string]bool, len(teams))
+	customerIDs := make(map[string]bool)
+	for _, membership := range teams {
+		if membership.TeamID == "" {
+			continue
+		}
+		teamIDs[membership.TeamID] = true
+		team, teamErr := store.GetTeam(ctx, membership.TeamID)
+		if teamErr == nil && team != nil && team.CustomerID != nil && *team.CustomerID != "" {
+			customerIDs[*team.CustomerID] = true
 		}
 	}
-
-	// 5. Customer assignment in prompt.CustomerIDs
-	if prompt.CustomerIDs != "" && h.store != nil {
-		ws, ok := configstore.AsWorkspaceStore(h.store)
-		if ok && ws != nil {
-			if teams, err := ws.ListTeamsForUser(ctx, dbUser.ID); err == nil {
-				custIDSet := make(map[string]bool)
-				for _, t := range teams {
-					if tm, err := h.store.GetTeam(ctx, t.TeamID); err == nil && tm != nil && tm.CustomerID != nil {
-						custIDSet[*tm.CustomerID] = true
-					}
-				}
-				for _, cid := range strings.Split(prompt.CustomerIDs, ",") {
-					if custIDSet[strings.TrimSpace(cid)] {
-						return true
-					}
-				}
-			}
+	for _, teamID := range strings.Split(prompt.TeamIDs, ",") {
+		if teamIDs[strings.TrimSpace(teamID)] {
+			return true
 		}
 	}
-
-	// If prompt has no scoping restrictions and user has no allowed_prompt_repos configured, allow open access
-	if prompt.CustomerIDs == "" && prompt.TeamIDs == "" && prompt.UserIDs == "" && dbUser.AllowedPromptRepos == "" {
-		return true
+	for _, customerID := range strings.Split(prompt.CustomerIDs, ",") {
+		if customerIDs[strings.TrimSpace(customerID)] {
+			return true
+		}
 	}
-
 	return false
 }
 

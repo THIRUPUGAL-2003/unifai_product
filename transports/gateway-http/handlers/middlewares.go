@@ -852,6 +852,17 @@ func (m *AuthMiddleware) enrichInferenceFromDashboardSession(ctx *fasthttp.Reque
 		return "Failed to resolve assigned Virtual Key. Contact your admin."
 	}
 	existingVK := governance.ParseVirtualKeyFromFastHTTPRequest(ctx)
+	// Direct provider keys are checked against this prompt's committed key list
+	// below. Do not auto-bind a Virtual Key alongside that credential.
+	if apiKeyIDHeader := strings.TrimSpace(string(ctx.Request.Header.Peek("x-uf-api-key-id"))); apiKeyIDHeader != "" {
+		return ""
+	}
+	promptVKScope, promptVKScopeConfigured := []string(nil), false
+	if promptID := strings.TrimSpace(string(ctx.Request.Header.Peek("x-uf-prompt-id"))); promptID != "" {
+		if prompt, promptErr := m.store.GetPromptByID(context.Background(), promptID); promptErr == nil && prompt != nil {
+			promptVKScope, promptVKScopeConfigured = promptVirtualKeyScope(prompt)
+		}
+	}
 	allowedValues := make(map[string]string, len(allowedIDs)) // value → id
 	var firstValue string
 	assignedKeys := 0
@@ -869,6 +880,9 @@ func (m *AuthMiddleware) enrichInferenceFromDashboardSession(ctx *fasthttp.Reque
 		if val == "" || !strings.HasPrefix(strings.ToLower(val), governance.VirtualKeyPrefix) {
 			continue
 		}
+		if promptVKScopeConfigured && !promptAllowsValue(promptVKScope, vk.ID) && !promptAllowsValue(promptVKScope, val) {
+			continue
+		}
 		allowedValues[val] = vk.ID
 		usable = append(usable, vk)
 	}
@@ -883,9 +897,8 @@ func (m *AuthMiddleware) enrichInferenceFromDashboardSession(ctx *fasthttp.Reque
 	if len(usable) > 0 {
 		firstValue = strings.TrimSpace(usable[0].Value.GetValue())
 	}
-	// No VK assigned (or every assigned VK was deleted): allow Prompt Repo via
-	// Auto / configured provider keys. Strip any client-supplied VK so members
-	// cannot use a foreign key.
+	// No VK assigned (or every assigned VK was deleted): allow Prompt Repo only
+	// for an explicitly committed direct API key. Strip client-supplied VKs.
 	if assignedKeys == 0 {
 		if existingVK != nil && *existingVK != "" {
 			ctx.Request.Header.Del("Authorization")
@@ -895,6 +908,9 @@ func (m *AuthMiddleware) enrichInferenceFromDashboardSession(ctx *fasthttp.Reque
 		return ""
 	}
 	if firstValue == "" {
+		if promptVKScopeConfigured {
+			return "No assigned Virtual Key is available for this prompt."
+		}
 		return "Assigned Virtual Key is inactive or invalid. Contact your admin."
 	}
 
@@ -908,21 +924,101 @@ func (m *AuthMiddleware) enrichInferenceFromDashboardSession(ctx *fasthttp.Reque
 		return ""
 	}
 
-	// If the caller explicitly requested a direct provider API key (x-uf-api-key-id),
-	// allow them to run through the provider directly so provider/user budgets apply.
-	if apiKeyIDHeader := strings.TrimSpace(string(ctx.Request.Header.Peek("x-uf-api-key-id"))); apiKeyIDHeader != "" {
-		return ""
-	}
-
 	// Auto / no VK header: force assigned Virtual Key so budget ticks on the right meter.
 	ctx.Request.Header.Set("Authorization", "Bearer "+firstValue)
 	return ""
 }
 
-// enforceCommittedPromptModelForMember checks the member's prompt allowlist when x-uf-prompt-id
-// is set. Members running on an assigned Virtual Key keep the model they picked — the key's
-// provider/model allowlist is enforced by governance. Without a key (Auto), or when no model
-// was sent, the prompt's committed provider/model is used.
+func promptScopeStringList(params tables.ModelParams, key string) ([]string, bool) {
+	raw, exists := params[key]
+	if !exists {
+		return nil, false
+	}
+	values := make([]string, 0)
+	switch list := raw.(type) {
+	case []string:
+		values = append(values, list...)
+	case []any:
+		for _, item := range list {
+			if value, ok := item.(string); ok {
+				values = append(values, value)
+			}
+		}
+	case string:
+		values = strings.Split(list, ",")
+	}
+	clean := values[:0]
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
+			clean = append(clean, value)
+		}
+	}
+	return clean, true
+}
+
+func promptAllowsValue(values []string, value string) bool {
+	if len(values) == 0 {
+		return false
+	}
+	for _, candidate := range values {
+		if candidate == "*" || strings.EqualFold(candidate, value) {
+			return true
+		}
+	}
+	return false
+}
+
+func promptAllowsModel(values []string, provider, model string) bool {
+	provider = strings.TrimSpace(provider)
+	model = strings.TrimSpace(model)
+	if promptAllowsValue(values, model) || promptAllowsValue(values, provider+"/"+model) {
+		return true
+	}
+	for _, scope := range values {
+		scope = strings.TrimSpace(scope)
+		separator := strings.IndexByte(scope, '/')
+		if separator < 0 {
+			continue
+		}
+		scopeProvider, scopeModel := strings.TrimSpace(scope[:separator]), strings.TrimSpace(scope[separator+1:])
+		if (scopeProvider == "*" || strings.EqualFold(scopeProvider, provider)) && (scopeModel == "*" || strings.EqualFold(scopeModel, model)) {
+			return true
+		}
+	}
+	return false
+}
+
+func promptAllowsMCPTool(values []string, tool string) bool {
+	if promptAllowsValue(values, tool) {
+		return true
+	}
+	for _, value := range values {
+		if prefix, wildcard := strings.CutSuffix(strings.TrimSpace(value), "*"); wildcard && strings.HasPrefix(tool, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func promptVirtualKeyScope(prompt *tables.TablePrompt) ([]string, bool) {
+	if prompt == nil || prompt.LatestVersion == nil {
+		return nil, false
+	}
+	if values, configured := promptScopeStringList(prompt.LatestVersion.ModelParams, "prompt_allowed_virtual_keys"); configured {
+		return values, true
+	}
+	if raw, ok := prompt.LatestVersion.ModelParams["virtual_key_id"].(string); ok {
+		raw = strings.TrimSpace(raw)
+		if raw != "" && raw != "__auto__" && raw != "__none__" {
+			return []string{raw}, true
+		}
+	}
+	return nil, false
+}
+
+// enforceCommittedPromptModelForMember applies the same prompt audience check as
+// Prompt Repository reads, then restricts each request to the keys and models
+// committed for that prompt. The key still enforces its own provider and MCP grants.
 func (m *AuthMiddleware) enforceCommittedPromptModelForMember(ctx *fasthttp.RequestCtx) string {
 	if m == nil || m.store == nil {
 		return ""
@@ -951,51 +1047,156 @@ func (m *AuthMiddleware) enforceCommittedPromptModelForMember(ctx *fasthttp.Requ
 	if err != nil || prompt == nil {
 		return "Prompt not found for this chat."
 	}
-	// Members may only run prompts in their allowlist.
 	dbUser, err := m.store.GetUserByUsername(context.Background(), session.Username)
 	if err != nil || dbUser == nil {
 		return "User account not found. Contact your admin."
 	}
-	if dbUser.AllowedPromptRepos == "" {
-		return "No Prompt Repositories assigned. Ask your admin to allow prompts for your user."
-	}
-	allowed := false
-	for _, id := range strings.Split(dbUser.AllowedPromptRepos, ",") {
-		if strings.TrimSpace(id) == promptID {
-			allowed = true
-			break
-		}
-	}
-	if !allowed {
+	if !userCanAccessPrompt(context.Background(), m.store, dbUser, prompt) {
 		return "You do not have access to this prompt."
 	}
+	if prompt.LatestVersion == nil {
+		return "This prompt has no committed configuration. Contact your admin."
+	}
+	params := prompt.LatestVersion.ModelParams
+	if params == nil {
+		params = tables.ModelParams{}
+	}
 	body := ctx.PostBody()
-	if len(body) == 0 {
-		return ""
-	}
 	var payload map[string]any
-	if err := json.Unmarshal(body, &payload); err != nil {
-		return ""
-	}
-	requested, _ := payload["model"].(string)
-	requested = strings.TrimSpace(requested)
-	if vk := governance.ParseVirtualKeyFromFastHTTPRequest(ctx); requested != "" && vk != nil && *vk != "" {
-		return ""
-	}
-	version := prompt.LatestVersion
-	if version == nil || strings.TrimSpace(version.Provider) == "" || strings.TrimSpace(version.Model) == "" {
-		if requested != "" {
-			return ""
+	if len(body) > 0 {
+		if err := json.Unmarshal(body, &payload); err != nil {
+			return "Invalid prompt request."
 		}
-		return "Select a model for this prompt."
 	}
-	payload["model"] = strings.TrimSpace(version.Provider) + "/" + strings.TrimSpace(version.Model)
-	rewritten, err := json.Marshal(payload)
-	if err != nil {
-		return "Failed to lock prompt model."
+	apiKeyID := strings.TrimSpace(string(ctx.Request.Header.Peek("x-uf-api-key-id")))
+	directKeyProvider := ""
+	vkValue := governance.ParseVirtualKeyFromFastHTTPRequest(ctx)
+	if apiKeyID != "" && vkValue != nil && *vkValue != "" {
+		return "Choose either an assigned Virtual Key or an assigned provider API key."
 	}
-	ctx.Request.SetBody(rewritten)
-	ctx.Request.Header.SetContentLength(len(rewritten))
+	if apiKeyID != "" {
+		apiKeyAllowlist, configured := promptScopeStringList(params, "prompt_allowed_api_keys")
+		if !configured {
+			if legacy, ok := params["api_key_id"].(string); ok && strings.TrimSpace(legacy) != "" {
+				apiKeyAllowlist, configured = []string{strings.TrimSpace(legacy)}, true
+			}
+		}
+		if !configured || !promptAllowsValue(apiKeyAllowlist, apiKeyID) {
+			return "This provider API key is not assigned to this prompt."
+		}
+		keys, keyErr := m.store.GetKeysByIDs(context.Background(), []string{apiKeyID})
+		if keyErr != nil || len(keys) != 1 || (keys[0].Enabled != nil && !*keys[0].Enabled) {
+			return "The assigned provider API key is unavailable. Contact your admin."
+		}
+		directKeyProvider = strings.TrimSpace(keys[0].Provider)
+	}
+	virtualKeyAllowlist, vkScopeConfigured := promptVirtualKeyScope(prompt)
+	if vkValue != nil && *vkValue != "" {
+		vk, vkErr := m.store.GetVirtualKeyByValue(context.Background(), *vkValue)
+		if vkErr != nil || vk == nil {
+			return "Assigned Virtual Key is invalid. Contact your admin."
+		}
+		if vkScopeConfigured && !promptAllowsValue(virtualKeyAllowlist, vk.ID) && !promptAllowsValue(virtualKeyAllowlist, *vkValue) {
+			return "This Virtual Key is not assigned to this prompt."
+		}
+		allowedIDs, resolveErr := ResolveAllowedVirtualKeyIDsForUser(context.Background(), m.store, dbUser.ID)
+		if resolveErr != nil || !allowedIDs[vk.ID] {
+			return "This Virtual Key is not assigned to your account."
+		}
+	} else if apiKeyID == "" {
+		return "Select an assigned Virtual Key or provider API key."
+	}
+
+	requested := ""
+	if payload != nil {
+		requested, _ = payload["model"].(string)
+	}
+	requested = strings.TrimSpace(requested)
+	if requested == "" {
+		requestedProvider := strings.TrimSpace(prompt.LatestVersion.Provider)
+		requestedModel := strings.TrimSpace(prompt.LatestVersion.Model)
+		if requestedProvider == "" || requestedModel == "" {
+			return "Select a model for this prompt."
+		}
+		requested = requestedProvider + "/" + requestedModel
+		if payload != nil {
+			payload["model"] = requested
+			rewritten, err := json.Marshal(payload)
+			if err != nil {
+				return "Failed to lock prompt model."
+			}
+			ctx.Request.SetBody(rewritten)
+			ctx.Request.Header.SetContentLength(len(rewritten))
+		}
+	}
+	requestedProvider := strings.TrimSpace(prompt.LatestVersion.Provider)
+	requestedModel := requested
+	if provider, model, found := strings.Cut(requested, "/"); found {
+		requestedProvider = strings.TrimSpace(provider)
+		requestedModel = strings.TrimSpace(model)
+	}
+	if directKeyProvider != "" && !strings.EqualFold(directKeyProvider, requestedProvider) {
+		return "The selected provider does not match this API key."
+	}
+	if providers, configured := promptScopeStringList(params, "prompt_allowed_providers"); configured && !promptAllowsValue(providers, requestedProvider) {
+		return "The selected provider is not allowed for this prompt."
+	}
+	if models, configured := promptScopeStringList(params, "prompt_allowed_models"); configured && !promptAllowsModel(models, requestedProvider, requestedModel) {
+		return "The selected model is not allowed for this prompt."
+	}
+	if apiKeyID != "" && (vkValue == nil || *vkValue == "") {
+		// Direct provider keys have no per-VK MCP grants. Do not expose globally
+		// injected tools through a prompt running without an assigned VK.
+		ctx.Request.Header.Del("x-uf-mcp-include-clients")
+		ctx.Request.Header.Del("x-uf-mcp-include-tools")
+	} else if apiKeyID == "" {
+		if allowedTools, configured := promptScopeStringList(params, "prompt_allowed_mcp_tools"); configured && !promptAllowsValue(allowedTools, "*") {
+			header := strings.TrimSpace(string(ctx.Request.Header.Peek("x-uf-mcp-include-tools")))
+			hasIncludeToolsHeader := false
+			ctx.Request.Header.VisitAll(func(name, _ []byte) {
+				if strings.EqualFold(string(name), "x-uf-mcp-include-tools") {
+					hasIncludeToolsHeader = true
+				}
+			})
+			if !hasIncludeToolsHeader {
+				ctx.Request.Header.Set("x-uf-mcp-include-tools", strings.Join(allowedTools, ","))
+			} else if header != "" {
+				requestedTools := splitNonEmpty(header, ",")
+				filtered := make([]string, 0, len(requestedTools))
+				for _, requestedTool := range requestedTools {
+					switch {
+					case requestedTool == "*":
+						filtered = append(filtered, allowedTools...)
+					case strings.HasSuffix(requestedTool, "-*"):
+						prefix := strings.TrimSuffix(requestedTool, "*")
+						for _, allowedTool := range allowedTools {
+							if strings.HasPrefix(allowedTool, prefix) {
+								filtered = append(filtered, allowedTool)
+							}
+						}
+					default:
+						if !promptAllowsMCPTool(allowedTools, requestedTool) {
+							return "An MCP tool is not assigned to this prompt."
+						}
+						filtered = append(filtered, requestedTool)
+					}
+				}
+				ctx.Request.Header.Set("x-uf-mcp-include-tools", strings.Join(filtered, ","))
+			}
+		}
+	}
+	skillID := strings.TrimSpace(string(ctx.Request.Header.Peek("x-uf-skill-id")))
+	if skillID != "" {
+		allowedSkills, configured := promptScopeStringList(params, "prompt_allowed_skills")
+		if !configured {
+			if legacy, ok := params["skill_id"].(string); ok && strings.TrimSpace(legacy) != "" {
+				allowedSkills, configured = []string{strings.TrimSpace(legacy)}, true
+			}
+		}
+		if !configured || !promptAllowsValue(allowedSkills, skillID) {
+			return "This skill is not assigned to this prompt."
+		}
+	}
 	return ""
 }
 

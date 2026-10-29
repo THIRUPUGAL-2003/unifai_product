@@ -6,7 +6,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { getErrorMessage } from "@/lib/store";
 import { useGetProviderGovernanceQuery, useGetVirtualKeyBillingBlocksQuery } from "@/lib/store/apis/governanceApi";
 import { useIsAuthEnabledQuery } from "@/lib/store/apis/sessionApi";
-import type { DBKey, VirtualKey } from "@/lib/types/governance";
+import type { Budget, DBKey, VirtualKey } from "@/lib/types/governance";
 import { AlertTriangle, KeyRound, RotateCw, Shield } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -274,6 +274,35 @@ export function ApiKeySelectorView({
 		);
 	}, [providerGovData, targetProvider]);
 
+	const entityBudgetGroups = useMemo(() => {
+		if (!selectedVK) return [] as { id: string; label: string; budgets: Budget[] }[];
+		const groups = new Map<string, { id: string; label: string; budgets: Budget[] }>();
+		const teams = new Map<string, NonNullable<VirtualKey["team"]>>();
+		for (const team of [...(selectedVK.teams ?? []), ...(selectedVK.team ? [selectedVK.team] : [])]) teams.set(team.id, team);
+		const customers = new Map<string, NonNullable<VirtualKey["customer"]>>();
+		for (const customer of [...(selectedVK.customers ?? []), ...(selectedVK.customer ? [selectedVK.customer] : [])]) customers.set(customer.id, customer);
+		for (const team of teams.values()) {
+			if (team.budgets?.length) groups.set(`team:${team.id}`, { id: `team:${team.id}`, label: `Team Budget (${team.name})`, budgets: team.budgets });
+			if (team.customer) customers.set(team.customer.id, team.customer);
+		}
+		for (const customer of customers.values()) {
+			if (customer.budgets?.length) groups.set(`customer:${customer.id}`, { id: `customer:${customer.id}`, label: `Customer Budget (${customer.name})`, budgets: customer.budgets });
+		}
+		const matchingConfigs = (selectedVK.provider_configs ?? []).filter((config) => {
+			const configProvider = config.provider.trim().toLowerCase();
+			return config.budgets?.length && (configProvider === targetProvider || configProvider === "*");
+		});
+		for (const config of matchingConfigs) {
+			const configProvider = config.provider === "*" ? (providerLabel || "all providers") : (providerLabel || config.provider);
+			groups.set(`vk-provider:${config.provider}`, {
+				id: `vk-provider:${config.provider}`,
+				label: `Key Provider Budget (${selectedVK.name} · ${configProvider})`,
+				budgets: config.budgets ?? [],
+			});
+		}
+		return [...groups.values()];
+	}, [selectedVK, targetProvider, providerLabel]);
+
 	const providerBudgets = useMemo(() => {
 		if (!activeProviderGov) return [];
 		if (activeProviderGov.budgets && activeProviderGov.budgets.length > 0) {
@@ -286,7 +315,7 @@ export function ApiKeySelectorView({
 	}, [activeProviderGov]);
 
 	const hasSelectedApiKey = Boolean(selectApiKeyValue || (apiKeyValues && apiKeyValues.length > 0));
-	const showProviderBudget = Boolean(targetProvider && hasSelectedApiKey);
+	const showProviderBudget = Boolean(targetProvider && (hasSelectedApiKey || hasSelectedVk));
 
 	const hasVirtualKeysToShow = !isMember || virtualKeys.length > 0;
 	const showProviderKeySection = !isMember || providerKeys.length > 0;
@@ -418,7 +447,7 @@ export function ApiKeySelectorView({
 							if (next.length === 0) {
 								handleApiKeyChange("");
 							} else if (!next.includes(selectApiKeyValue)) {
-								handleApiKeyChange(next[0]);
+								handleApiKeyChange(isMember ? next[next.length - 1] : next[0]);
 							}
 						}}
 						disabled={disabled || (isMember && activeMode !== "api") || apiKeyOptions.length === 0}
@@ -594,13 +623,13 @@ export function ApiKeySelectorView({
 						value={effectiveVkValues}
 						onValueChange={(next) => {
 							if (next.length > 0) setUserPreferredMode("vk");
-							if (onVirtualKeyValuesChange) {
-								onVirtualKeyValuesChange(next);
-							}
 							if (next.length === 0) {
 								handleVkChange("__none__");
 							} else if (!next.includes(selectVkValue)) {
-								handleVkChange(next[0]);
+								handleVkChange(isMember ? next[next.length - 1] : next[0]);
+							}
+							if (onVirtualKeyValuesChange) {
+								onVirtualKeyValuesChange(next);
 							}
 						}}
 						disabled={disabled || (isMember && activeMode !== "vk") || vkOptions.length === 0}
@@ -734,6 +763,29 @@ export function ApiKeySelectorView({
 							) : null}
 						</div>
 					)}
+				</div>
+			)}
+
+			{entityBudgetGroups.length > 0 && (
+				<div className="bg-muted/10 border-border/40 space-y-2 rounded-md border p-2 text-xs" data-testid="inherited-scope-budgets">
+					{entityBudgetGroups.map((group) => (
+						<div key={group.id} className="space-y-1">
+							<div className="flex items-center justify-between text-[11px] font-medium text-foreground">
+								<span>{group.label}</span>
+								{onRefreshBudgets && (
+									<button type="button" onClick={onRefreshBudgets} disabled={isRefreshingBudgets} className="text-muted-foreground hover:text-foreground rounded p-0.5" title="Refresh live budget">
+										<RotateCw className={`h-3 w-3 ${isRefreshingBudgets ? "animate-spin text-primary" : ""}`} />
+									</button>
+								)}
+							</div>
+							{group.budgets.map((budget) => (
+								<div key={`${group.id}:${budget.id || budget.reset_duration}`} className="flex items-center justify-between text-[11px] text-muted-foreground">
+									<span>Reset: {fmtReset(budget.reset_duration)}</span>
+									<span className="font-mono text-foreground">{fmt(budget.current_usage)} / {fmtLimit(budget.max_limit)}</span>
+								</div>
+							))}
+						</div>
+					))}
 				</div>
 			)}
 		</div>

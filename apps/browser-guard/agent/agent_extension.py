@@ -2900,7 +2900,14 @@ def authorize_ai_session(payload: dict) -> dict:
     corp_targets = str(gov.get("corporate_target_websites") or "").strip().lower()
     page_url = str(payload.get("page_url") or "").lower()
     provider = str(payload.get("provider") or "").lower()
-    if corp_targets and corp_targets not in ("all", "*"):
+    if not corp_targets or corp_targets == "none":
+        return {
+            "decision": "allow",
+            "reason_code": "NO_TARGET_WEBSITES",
+            "message": "Corporate domain enforcement is not configured for any target websites.",
+            "policy_version": policy_ver,
+        }
+    if corp_targets not in ("all", "*"):
         from urllib.parse import urlparse
         page_host = ""
         try:

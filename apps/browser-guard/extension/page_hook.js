@@ -280,6 +280,10 @@
       dynamicRules = [];
       lastDecisionCache = { text: "", time: 0, decision: null };
     }
+    if (ev.data.type === "show_bubble") {
+      showBubble(ev.data.message, ev.data.title || "Governance Policy", "block");
+      return;
+    }
     if (ev.data.type === "sync_rules") {
       lastCheckedKey = "";
       setTimeout(function () {
@@ -519,8 +523,8 @@
   function isControlActiveForSite(configuredSites) {
     if (isProductOrServerHost(location.hostname)) return false;
     var raw = (configuredSites && typeof configuredSites === "string") ? configuredSites.trim() : "";
-    if (raw.toLowerCase() === "none") return false;
-    if (!raw || raw.toUpperCase() === "ALL" || raw === "*") {
+    if (!raw || raw.toLowerCase() === "none") return false;
+    if (raw.toUpperCase() === "ALL" || raw === "*") {
       return true;
     }
     var currentHost = normalizeDomainHost(location.hostname);
@@ -2613,6 +2617,9 @@
     if (/^download\s*block\s*active$/i.test(s)) {
       return "Downloading files, artifacts, and exports from this AI tool is restricted by corporate security policy.";
     }
+    if (/^upload\s*block\s*active$/i.test(s) || /^file\s*upload\s*restricted$/i.test(s) || /^upload\s*restricted$/i.test(s)) {
+      return "File uploads and attachments to this AI platform are blocked by corporate policy.";
+    }
     if (/^screenshot\s*block\s*active$/i.test(s)) {
       return "Screen capture and recording is restricted on this AI workspace by corporate security policy.";
     }
@@ -2688,18 +2695,22 @@
     var drag = document.getElementById("yp-raksha-isolated-dragdrop-notice");
     if (!card && !clip && !drag) return;
 
+    var now = Date.now();
+    // NEVER dismiss a fresh notice within 2.5s (ensures common governance alerts remain readable!)
+    if (now - _lastBubbleAt < 2500) return;
+
     var target = (e && e.target) || getDeepActiveElement();
     var text = stripInvisible(composerFrom(target) || composerFrom(null));
     var effectiveFiles = (typeof mergeStagedAndDomFiles === "function") ? mergeStagedAndDomFiles() : [];
     var hasStaged = (Array.isArray(stagedImages) && stagedImages.length > 0) || (Array.isArray(effectiveFiles) && effectiveFiles.length > 0);
 
-    // If chat composer becomes empty (no text and no files), dismiss warning immediately!
+    // If chat composer becomes empty after grace period, dismiss warning
     if (!text && !hasStaged) {
       dismissAlertCard();
     }
   }
 
-  ["input", "keyup", "change", "paste"].forEach(function (evName) {
+  ["input", "change"].forEach(function (evName) {
     document.addEventListener(evName, checkAndDismissOnEmptyComposer, true);
     window.addEventListener(evName, checkAndDismissOnEmptyComposer, true);
   });

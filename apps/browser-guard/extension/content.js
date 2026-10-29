@@ -291,8 +291,8 @@
     if (!clipboardPolicy.enabled) return false;
     if (isServerHost(location.hostname)) return false;
     var raw = String(clipboardPolicy.targetSites || "").trim();
-    if (raw.toLowerCase() === "none") return false;
-    if (!raw || raw.toUpperCase() === "ALL" || raw === "*") {
+    if (!raw || raw.toLowerCase() === "none") return false;
+    if (raw.toUpperCase() === "ALL" || raw === "*") {
       var monitoredSites = clipboardPolicy.monitoredSites || monitoredSitesForPolicy;
       if (Array.isArray(monitoredSites) && monitoredSites.length > 0) {
         return hostMatches(location.hostname, monitoredSites);
@@ -314,6 +314,9 @@
     }
     if (/^download\s*block\s*active$/i.test(s)) {
       return "Downloading files, artifacts, and exports from this AI tool is restricted by corporate security policy.";
+    }
+    if (/^upload\s*block\s*active$/i.test(s) || /^file\s*upload\s*restricted$/i.test(s) || /^upload\s*restricted$/i.test(s)) {
+      return "File uploads and attachments to this AI platform are blocked by corporate policy.";
     }
     if (/^screenshot\s*block\s*active$/i.test(s)) {
       return "Screen capture and recording is restricted on this AI workspace by corporate security policy.";
@@ -744,14 +747,15 @@
     if (!corporatePolicy.enabled) return false;
     if (isServerHost(location.hostname)) return false;
     var raw = String(corporatePolicy.targetSites || "").trim();
-    if (raw && raw.toLowerCase() !== "all" && raw !== "*") {
-      return hostInConfiguredSites(location.hostname, raw);
+    if (!raw || raw.toLowerCase() === "none") return false;
+    if (raw.toUpperCase() === "ALL" || raw === "*") {
+      var monitoredSites = corporatePolicy.monitoredSites || monitoredSitesForPolicy;
+      if (Array.isArray(monitoredSites) && monitoredSites.length > 0) {
+        return hostMatches(location.hostname, monitoredSites);
+      }
+      return false;
     }
-    var monitoredSites = corporatePolicy.monitoredSites || monitoredSitesForPolicy;
-    if (Array.isArray(monitoredSites) && monitoredSites.length > 0) {
-      return hostMatches(location.hostname, monitoredSites);
-    }
-    return false;
+    return hostInConfiguredSites(location.hostname, raw);
   }
 
   function applyCorporatePolicyState(state) {
@@ -773,8 +777,8 @@
     if (!dragDropPolicy.enabled) return false;
     if (isServerHost(location.hostname)) return false;
     var raw = String(dragDropPolicy.targetSites || "").trim();
-    if (raw.toLowerCase() === "none") return false;
-    if (!raw || raw.toUpperCase() === "ALL" || raw === "*") {
+    if (!raw || raw.toLowerCase() === "none") return false;
+    if (raw.toUpperCase() === "ALL" || raw === "*") {
       var monitoredSites = dragDropPolicy.monitoredSites || monitoredSitesForPolicy;
       if (Array.isArray(monitoredSites) && monitoredSites.length > 0) {
         return hostMatches(location.hostname, monitoredSites);
@@ -896,8 +900,8 @@
     if (!screenshotPolicy.enabled) return false;
     if (isServerHost(location.hostname)) return false;
     var raw = String(screenshotPolicy.targetSites || "").trim();
-    if (raw.toLowerCase() === "none") return false;
-    if (!raw || raw.toUpperCase() === "ALL" || raw === "*") {
+    if (!raw || raw.toLowerCase() === "none") return false;
+    if (raw.toUpperCase() === "ALL" || raw === "*") {
       var monitoredSites = screenshotPolicy.monitoredSites || monitoredSitesForPolicy;
       if (Array.isArray(monitoredSites) && monitoredSites.length > 0) {
         return hostMatches(location.hostname, monitoredSites);
@@ -940,6 +944,9 @@
     var clip = document.getElementById("yp-raksha-isolated-clipboard-notice");
     var drag = document.getElementById("yp-raksha-isolated-dragdrop-notice");
     if (!clip && !drag) return;
+    var now = Date.now();
+    // Do not dismiss fresh notices within 2.5s grace period
+    if (now - clipboardNoticeAt < 2500 || now - dragDropNoticeAt < 2500) return;
     var target = (e && e.target) || document.activeElement;
     if (target) {
       var val = typeof target.value === "string" ? target.value.trim() : "";
@@ -952,7 +959,7 @@
     }
   }
 
-  ["input", "keyup", "change"].forEach(function (evName) {
+  ["input", "change"].forEach(function (evName) {
     document.addEventListener(evName, checkDismissIsolatedNotice, true);
     window.addEventListener(evName, checkDismissIsolatedNotice, true);
   });
@@ -966,7 +973,15 @@
       curtain = document.createElement("div");
       curtain.id = "yp-blur-curtain";
       curtain.style.cssText = "position:fixed;inset:0;width:100vw;height:100vh;background:#0a0f1d;opacity:0.98;backdrop-filter:blur(30px);-webkit-backdrop-filter:blur(30px);z-index:2147483646;pointer-events:none;display:flex;align-items:center;justify-content:center;color:#f87171;font-family:-apple-system,BlinkMacSystemFont,sans-serif;font-size:20px;font-weight:700;";
-      curtain.innerHTML = '<div style="display:flex;align-items:center;gap:10px;"><span style="font-size:28px;">🛡️</span><span>SCREEN CAPTURE RESTRICTED</span></div>';
+      var sMsg = cleanNoticeMessage(screenshotPolicy.message, "Screen capture and recording is restricted on this AI workspace by corporate security policy.");
+      curtain.innerHTML =
+        '<div style="display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;max-width:480px;padding:24px;">' +
+          '<div style="display:flex;align-items:center;gap:10px;">' +
+            '<span style="font-size:28px;">🛡️</span>' +
+            '<span style="font-size:18px;letter-spacing:0.04em;">SCREEN CAPTURE RESTRICTED</span>' +
+          '</div>' +
+          '<div style="font-size:13.5px;color:#cbd5e1;font-weight:400;line-height:1.5;">' + sMsg + '</div>' +
+        '</div>';
       (document.body || document.documentElement).appendChild(curtain);
     }
   }
@@ -1262,6 +1277,21 @@
       armIfMonitored();
     }
   });
+
+  if (isExtensionValid() && chrome.runtime && chrome.runtime.onMessage) {
+    chrome.runtime.onMessage.addListener(function (msg) {
+      if (!isExtensionValid()) return;
+      if (msg && msg.type === "show_governance_notice") {
+        window.postMessage({
+          source: "gateway-guard",
+          nonce: guardNonce,
+          type: "show_bubble",
+          title: msg.title || "Governance Policy",
+          message: msg.message || "Action restricted by corporate security policy."
+        }, "*");
+      }
+    });
+  }
 
   window.addEventListener("message", function (ev) {
     if (!isExtensionValid()) return;

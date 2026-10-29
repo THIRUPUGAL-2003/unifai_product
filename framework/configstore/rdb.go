@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	"github.com/google/uuid"
 	gateway "github.com/gateway/gateway/core"
 	providerUtils "github.com/gateway/gateway/core/providers/utils"
 	"github.com/gateway/gateway/core/schemas"
@@ -25,6 +24,7 @@ import (
 	"github.com/gateway/gateway/framework/logstore"
 	"github.com/gateway/gateway/framework/queryscope"
 	"github.com/gateway/gateway/framework/vectorstore"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -541,7 +541,6 @@ func (s *RDBConfigStore) DeleteFeatureFlag(ctx context.Context, id string) error
 	s.ensureFeatureFlagsTable(ctx)
 	return s.DB().WithContext(ctx).Where("id = ?", id).Delete(&tables.TableFeatureFlag{}).Error
 }
-
 
 // GetClientConfig retrieves the client configuration from the database.
 func (s *RDBConfigStore) GetClientConfig(ctx context.Context) (*ClientConfig, error) {
@@ -3432,6 +3431,7 @@ func preloadVirtualKeyBaseRelations(db *gorm.DB) *gorm.DB {
 	return db.
 		Preload("Team").
 		Preload("Team.Customer").
+		Preload("Team.Customer.Budgets").
 		Preload("Team.Budgets").
 		Preload("Customer").
 		Preload("Customer.Budgets").
@@ -3446,6 +3446,8 @@ func preloadVirtualKeyBaseRelations(db *gorm.DB) *gorm.DB {
 		Preload("MCPConfigs").
 		Preload("MCPConfigs.MCPClient").
 		Preload("Teams").
+		Preload("Teams.Customer").
+		Preload("Teams.Customer.Budgets").
 		Preload("Teams.Budgets").
 		Preload("Customers").
 		Preload("Customers.Budgets").

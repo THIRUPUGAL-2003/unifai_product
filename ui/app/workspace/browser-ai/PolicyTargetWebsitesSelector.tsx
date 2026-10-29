@@ -71,10 +71,7 @@ export const PolicyTargetWebsitesSelector: React.FC<PolicyTargetWebsitesSelector
 
 	const selectedValues = useMemo<string[]>(() => {
 		const raw = (value || "").trim().toLowerCase();
-		if (!raw || raw === "none") return [];
-		if (raw === "all" || raw === "*") {
-			return options.map((o) => o.value);
-		}
+		if (!raw || raw === "none" || raw === "all" || raw === "*") return [];
 		const tokens = raw
 			.split(/[,\s;]+/)
 			.map((s) => s.trim().toLowerCase())
@@ -109,19 +106,12 @@ export const PolicyTargetWebsitesSelector: React.FC<PolicyTargetWebsitesSelector
 		if (!selected || selected.length === 0) {
 			return "none";
 		}
-		// If all configured target websites are selected, persist "all" so any future
-		// target domains added by the user automatically inherit this policy!
-		if (options.length > 0 && selected.length === options.length) {
-			return "all";
-		}
 		const allDomains = selected.flatMap((val) => optionValueToDomains.get(val) || [val]);
 		return Array.from(new Set(allDomains)).join(", ");
 	};
 
 	const handleValueChange = (next: string[]) => {
 		setDraft(next);
-		const computed = computeValue(next);
-		onChange(computed);
 	};
 
 	const handleSave = async () => {
@@ -135,11 +125,9 @@ export const PolicyTargetWebsitesSelector: React.FC<PolicyTargetWebsitesSelector
 			toast({
 				title: `${displayName} Target Websites Saved`,
 				description:
-					draft.length === options.length && options.length > 0
-						? "Enforced on All Target Websites in database."
-						: draft.length === 0
-							? "Policy is disabled for all target websites."
-							: `Saved ${draft.length} target website(s) in database.`,
+					draft.length === 0
+						? "No target websites selected. Policy is disabled for all sites."
+						: `Saved ${draft.length} target website(s) in database.`,
 			});
 		} catch {
 			toast({
@@ -160,14 +148,7 @@ export const PolicyTargetWebsitesSelector: React.FC<PolicyTargetWebsitesSelector
 					<Label className="text-xs font-semibold text-foreground">
 						{policyName ? `${policyName} Target Websites` : "Target Websites"}
 					</Label>
-					{isAllSelected ? (
-						<Badge
-							variant="outline"
-							className="text-[10px] px-2 py-0.5 border-emerald-500/50 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 font-normal"
-						>
-							All Target Websites ({options.length})
-						</Badge>
-					) : draft.length > 0 ? (
+					{draft.length > 0 ? (
 						<Badge
 							variant="outline"
 							className="text-[10px] px-2 py-0.5 border-blue-500/50 text-blue-600 dark:text-blue-400 bg-blue-500/10 font-normal"
@@ -215,7 +196,7 @@ export const PolicyTargetWebsitesSelector: React.FC<PolicyTargetWebsitesSelector
 						emptyMessage="No matching target websites found."
 						selectAllValue="*"
 						selectAllLabel="Select all"
-						selectAllTriggerLabel={options.length > 0 ? `All Target Websites (${options.length})` : "All Target Websites"}
+						selectAllTriggerLabel={options.length > 0 ? `All Selected (${options.length})` : "All Selected"}
 						className="h-8 w-full bg-background border-border text-foreground text-xs hover:bg-muted/40 font-normal"
 					/>
 				</div>

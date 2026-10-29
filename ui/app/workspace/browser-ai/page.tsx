@@ -2569,51 +2569,7 @@ export default function BrowserAiPage() {
 				}
 			}
 
-			// Automatically update active policies in Browser Settings to include the newly added target domain(s)
-			const allNewDomains = [domain, ...customRelatedHosts.map((x) => normalizeTargetDomain(x.host))].filter(Boolean);
-			if (allNewDomains.length > 0) {
-				const appendToPolicy = (currentVal?: string) => {
-					const raw = (currentVal || "").trim().toLowerCase();
-					if (!raw || raw === "none") return raw;
-					if (raw === "all" || raw === "*") return "all";
-					const existing = raw.split(/[,\s;]+/).map((s) => s.trim().toLowerCase()).filter(Boolean);
-					const combined = Array.from(new Set([...existing, ...allNewDomains.map((h) => h.toLowerCase())]));
-					return combined.join(", ");
-				};
 
-				const policyUpdates: Partial<BrowserControlSettings> = {};
-				if (controls.upload_target_websites && controls.upload_target_websites !== "none") {
-					policyUpdates.upload_target_websites = appendToPolicy(controls.upload_target_websites);
-				}
-				if (controls.file_extension_target_websites && controls.file_extension_target_websites !== "none") {
-					policyUpdates.file_extension_target_websites = appendToPolicy(controls.file_extension_target_websites);
-				}
-				if (controls.download_target_websites && controls.download_target_websites !== "none") {
-					policyUpdates.download_target_websites = appendToPolicy(controls.download_target_websites);
-				}
-				if (controls.drag_drop_target_websites && controls.drag_drop_target_websites !== "none") {
-					policyUpdates.drag_drop_target_websites = appendToPolicy(controls.drag_drop_target_websites);
-				}
-				if (controls.clipboard_target_websites && controls.clipboard_target_websites !== "none") {
-					const mergedClip = appendToPolicy(controls.clipboard_target_websites);
-					policyUpdates.clipboard_target_websites = mergedClip;
-					policyUpdates.governance_target_websites = mergedClip;
-				}
-				if (controls.screenshot_target_websites && controls.screenshot_target_websites !== "none") {
-					policyUpdates.screenshot_target_websites = appendToPolicy(controls.screenshot_target_websites);
-				}
-				if (controls.corporate_target_websites && controls.corporate_target_websites !== "none") {
-					policyUpdates.corporate_target_websites = appendToPolicy(controls.corporate_target_websites);
-				}
-
-				if (Object.keys(policyUpdates).length > 0) {
-					try {
-						await patchControl(policyUpdates);
-					} catch {
-						// best effort
-					}
-				}
-			}
 
 			setNewTargetDomain("");
 			setNewTargetPlatform("");

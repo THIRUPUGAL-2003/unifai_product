@@ -41,15 +41,20 @@ function resolveExecVirtualKey(opts: {
 	virtualKeys: Array<{ id: string; value?: string }> | undefined;
 	isUserRole: boolean;
 	assignedMemberVkValue: string;
+	assignedVirtualKeyIds?: string[];
 	apiKeyId?: string;
 }): string {
 	// If the user explicitly deselected the VK (empty or __none__), do not force any VK!
 	if (opts.virtualKeyId === "" || opts.virtualKeyId === "__none__") {
 		return "";
 	}
+	const hasDirectApiKey = Boolean(opts.apiKeyId && opts.apiKeyId !== "__auto__" && opts.apiKeyId !== "" && !String(opts.apiKeyId).startsWith("sk-uf-"));
+	if (opts.isUserRole && hasDirectApiKey) return "";
 	const allVKs = opts.virtualKeys ?? [];
+	const assignedIds = new Set(opts.assignedVirtualKeyIds ?? []);
 	const findVkVal = (target: string) => {
 		const match = allVKs.find((vk) => vk.value === target || vk.id === target);
+		if (opts.isUserRole && (!match || !assignedIds.has(match.id))) return "";
 		return match?.value && String(match.value).startsWith("sk-uf-") ? match.value : "";
 	};
 	let execVkId = opts.virtualKeyId;
@@ -67,7 +72,6 @@ function resolveExecVirtualKey(opts: {
 		}
 	}
 	// Fall back to assignedMemberVkValue only if virtualKeyId is "__auto__" AND no direct provider API key is chosen
-	const hasDirectApiKey = Boolean(opts.apiKeyId && opts.apiKeyId !== "__auto__" && opts.apiKeyId !== "" && !String(opts.apiKeyId).startsWith("sk-uf-"));
 	if (!String(execVkId).startsWith("sk-uf-") && opts.isUserRole && opts.assignedMemberVkValue && !hasDirectApiKey && opts.virtualKeyId === "__auto__") {
 		execVkId = opts.assignedMemberVkValue;
 	}
@@ -408,8 +412,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 			for (const id of allowedVirtualKeys) {
 				if (id) committedVkIds.add(id);
 			}
-		}
-		if (virtualKeyId && virtualKeyId !== "__auto__" && virtualKeyId !== "__none__") {
+		} else if (virtualKeyId && virtualKeyId !== "__auto__" && virtualKeyId !== "__none__") {
 			committedVkIds.add(virtualKeyId);
 		}
 
@@ -420,29 +423,21 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 
 		const vks = virtualKeysData?.virtual_keys ?? [];
 		const now = Date.now();
+		const userAssignedKeyIds = new Set((memberUserKeys?.virtual_keys ?? []).map((key) => key.id));
 		const validKeys = vks.filter((vk) => {
 			if (vk.is_active === false) return false;
-			if (vk.expires_at && new Date(vk.expires_at).getTime() < now) return false;
+			if (vk.expires_at && new Date(vk.expires_at).getTime() <= now) return false;
 			if (typeof vk.value !== "string" || !vk.value.startsWith("sk-uf-")) return false;
-			return committedVkIds.has(vk.id) || committedVkIds.has(vk.value);
+			return userAssignedKeyIds.has(vk.id) && (committedVkIds.has(vk.id) || committedVkIds.has(vk.value));
 		});
 
 		if (validKeys.length === 0) return "";
-
-		const currentUserId = authStatus?.user_id;
-		const userAssignedKeyIds = new Set((memberUserKeys?.virtual_keys ?? []).map((k) => k.id));
-
-		// Priority resolution: Direct User VK > Assigned to User's key list > Team/Customer VK > Other
-		const getVkPriority = (vk: (typeof validKeys)[0]) => {
-			if (userAssignedKeyIds.has(vk.id)) return 1;
-			if (currentUserId && ((vk.user_ids && vk.user_ids.includes(currentUserId)) || (vk.users && vk.users.some((u) => u.user_id === currentUserId)))) return 1;
-			if (vk.team_id || (vk.team_ids && vk.team_ids.length > 0) || (vk.teams && vk.teams.length > 0)) return 2;
-			if ((vk.business_unit_ids && vk.business_unit_ids.length > 0) || (vk.business_units && vk.business_units.length > 0)) return 3;
-			if (vk.customer_id || (vk.customer_ids && vk.customer_ids.length > 0) || (vk.customers && vk.customers.length > 0)) return 4;
-			return 5;
-		};
-
-		const sortedKeys = [...validKeys].sort((a, b) => getVkPriority(a) - getVkPriority(b));
+		// Match the gateway's stable default: oldest eligible assigned key first.
+		const sortedKeys = [...validKeys].sort((a, b) => {
+			const createdA = a.created_at ? new Date(a.created_at).getTime() : 0;
+			const createdB = b.created_at ? new Date(b.created_at).getTime() : 0;
+			return createdA - createdB || a.id.localeCompare(b.id);
+		});
 
 		const withBudget = sortedKeys.find((vk) => {
 			if (billingBlocks?.blocks?.[vk.id]) return false;
@@ -933,8 +928,27 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 			if (committed.prompt_allowed_api_keys) params.prompt_allowed_api_keys = committed.prompt_allowed_api_keys;
 			if (committed.prompt_allowed_skills) params.prompt_allowed_skills = committed.prompt_allowed_skills;
 			if (committed.prompt_allowed_mcp_tools) params.prompt_allowed_mcp_tools = committed.prompt_allowed_mcp_tools;
-			if (committed.virtual_key_id) params.virtual_key_id = committed.virtual_key_id;
-			if (committed.api_key_id) params.api_key_id = committed.api_key_id;
+			delete params.virtual_key_id;
+			delete params.api_key_id;
+			const assignedIds = new Set((memberUserKeys?.virtual_keys ?? []).map((key) => key.id));
+			const selectedVk = virtualKeysData?.virtual_keys?.find((key) => key.value === virtualKeyId || key.id === virtualKeyId);
+			const promptVkScope = Array.isArray(committed.prompt_allowed_virtual_keys)
+				? committed.prompt_allowed_virtual_keys
+				: committed.virtual_key_id && committed.virtual_key_id !== "__auto__" && committed.virtual_key_id !== "__none__"
+					? [committed.virtual_key_id]
+					: null;
+			if (virtualKeyId !== "__auto__" && virtualKeyId !== "__none__" && selectedVk && assignedIds.has(selectedVk.id) &&
+				(promptVkScope === null || promptVkScope.includes(selectedVk.id) || promptVkScope.includes(selectedVk.value))) {
+				params.virtual_key_id = selectedVk.value;
+			}
+			const promptApiKeyScope = Array.isArray(committed.prompt_allowed_api_keys)
+				? committed.prompt_allowed_api_keys
+				: committed.api_key_id && committed.api_key_id !== "__auto__" && committed.api_key_id !== "__none__"
+					? [committed.api_key_id]
+					: [];
+			if (apiKeyId !== "__auto__" && apiKeyId !== "__none__" && promptApiKeyScope.includes(apiKeyId)) {
+				params.api_key_id = apiKeyId;
+			}
 			return params;
 		}
 		const params = { ...modelParams };
@@ -947,22 +961,22 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 		if (skillId.trim()) {
 			params.skill_id = skillId.trim();
 		}
-		const effProviders = (allowedProviders && allowedProviders.length > 0) ? allowedProviders : (provider ? [provider] : undefined);
-		if (effProviders) params.prompt_allowed_providers = effProviders;
+		if (allowedProviders !== null) params.prompt_allowed_providers = [...allowedProviders];
+		else if (provider) params.prompt_allowed_providers = [provider];
 
-		const effModels = (allowedModels && allowedModels.length > 0) ? allowedModels : (model ? [model] : undefined);
-		if (effModels) params.prompt_allowed_models = effModels;
+		if (allowedModels !== null) params.prompt_allowed_models = [...allowedModels];
+		else if (model) params.prompt_allowed_models = [model];
 
-		const effVks = (allowedVirtualKeys && allowedVirtualKeys.length > 0) ? allowedVirtualKeys : (virtualKeyId && virtualKeyId !== "__auto__" && virtualKeyId !== "__none__" ? [virtualKeyId] : undefined);
-		if (effVks) params.prompt_allowed_virtual_keys = effVks;
+		if (allowedVirtualKeys !== null) params.prompt_allowed_virtual_keys = [...allowedVirtualKeys];
+		else if (virtualKeyId && virtualKeyId !== "__auto__" && virtualKeyId !== "__none__") params.prompt_allowed_virtual_keys = [virtualKeyId];
 
-		const effApiKeys = (allowedApiKeys && allowedApiKeys.length > 0) ? allowedApiKeys : (apiKeyId && apiKeyId !== "__auto__" && apiKeyId !== "__none__" ? [apiKeyId] : undefined);
-		if (effApiKeys) params.prompt_allowed_api_keys = effApiKeys;
+		if (allowedApiKeys !== null) params.prompt_allowed_api_keys = [...allowedApiKeys];
+		else if (apiKeyId && apiKeyId !== "__auto__" && apiKeyId !== "__none__") params.prompt_allowed_api_keys = [apiKeyId];
 
 		if (allowedSkills) params.prompt_allowed_skills = allowedSkills;
 		if (mcpIncludeTools) params.prompt_allowed_mcp_tools = mcpIncludeTools;
 		return params;
-	}, [isUserRole, selectedPrompt, modelParams, virtualKeyId, apiKeyId, skillId, allowedProviders, provider, allowedModels, model, allowedVirtualKeys, allowedApiKeys, allowedSkills, mcpIncludeTools]);
+	}, [isUserRole, selectedPrompt, modelParams, virtualKeyId, apiKeyId, skillId, allowedProviders, provider, allowedModels, model, allowedVirtualKeys, allowedApiKeys, allowedSkills, mcpIncludeTools, memberUserKeys, virtualKeysData]);
 
 	const persistPlaygroundSession = useCallback(
 		async (finalMessages: Message[]) => {
@@ -1016,6 +1030,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 				virtualKeys: virtualKeysData?.virtual_keys,
 				isUserRole,
 				assignedMemberVkValue,
+				assignedVirtualKeyIds: (memberUserKeys?.virtual_keys ?? []).map((key) => key.id),
 				apiKeyId: execApiKeyId,
 			});
 			const { execProvider, execModel } = resolveExecProviderAndModel({
@@ -1172,6 +1187,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 				virtualKeys: virtualKeysData?.virtual_keys,
 				isUserRole,
 				assignedMemberVkValue,
+				assignedVirtualKeyIds: (memberUserKeys?.virtual_keys ?? []).map((key) => key.id),
 				apiKeyId: execApiKeyId,
 			});
 			const { execProvider, execModel } = resolveExecProviderAndModel({
@@ -1324,6 +1340,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 				virtualKeys: virtualKeysData?.virtual_keys,
 				isUserRole,
 				assignedMemberVkValue,
+				assignedVirtualKeyIds: (memberUserKeys?.virtual_keys ?? []).map((key) => key.id),
 				apiKeyId: execApiKeyId,
 			});
 			const { execProvider, execModel } = resolveExecProviderAndModel({

@@ -396,7 +396,7 @@ function recordDownloadBlockedLog(sourceHost, item) {
 function cancelDownloadIfGoverned(item, sourceUrl) {
   var sourceHost = domainFromUrl(sourceUrl);
   if (!sourceHost || !item || typeof item.id !== "number") return;
-  chrome.storage.local.get(["block_download", "download_target_websites", "cached_sites"], function (state) {
+  chrome.storage.local.get(["block_download", "download_target_websites", "cached_sites", "download_block_message", "governance_block_message"], function (state) {
     if (!state || !state.block_download) return;
     var monitored = Array.isArray(state.cached_sites) && state.cached_sites.some(function (site) { return matchesDomain(sourceHost, site); });
     if (!monitored || !matchesDomainList(sourceHost, state.download_target_websites, state.cached_sites)) return;
@@ -404,6 +404,17 @@ function cancelDownloadIfGoverned(item, sourceUrl) {
       chrome.downloads.cancel(item.id, function () {
         if (chrome.runtime && chrome.runtime.lastError) return;
         recordDownloadBlockedLog(sourceHost, item);
+        var dlMsg = (state.download_block_message || state.governance_block_message || "Downloading files, artifacts, and exports from this AI tool is restricted by corporate security policy.").trim();
+        if (item.tabId >= 0 && chrome.tabs && chrome.tabs.sendMessage) {
+          try {
+            chrome.tabs.sendMessage(item.tabId, {
+              type: "show_governance_notice",
+              title: "Download Policy",
+              message: dlMsg,
+              action: "download"
+            });
+          } catch (_) {}
+        }
       });
     } catch (_) {}
   });
