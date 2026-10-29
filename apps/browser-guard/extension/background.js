@@ -15,7 +15,7 @@ var _lastSyncAt = 0;
 
 try {
   if (chrome.runtime && chrome.runtime.setUninstallURL) {
-    chrome.runtime.setUninstallURL("http://127.0.0.1:18195/extension/uninstalled");
+    chrome.runtime.setUninstallURL("");
   }
 } catch (_) {}
 

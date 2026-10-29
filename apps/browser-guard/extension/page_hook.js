@@ -3012,6 +3012,18 @@
     var name = optName || file.name || "file";
     var size = file.size || 0;
     var type = file.type || "";
+    if (!type && name.indexOf(".") >= 0) {
+      var ext = name.split(".").pop().toLowerCase();
+      if (ext === "pdf") type = "application/pdf";
+      else if (ext === "docx" || ext === "doc") type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+      else if (ext === "xlsx" || ext === "xls") type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+      else if (ext === "pptx" || ext === "ppt") type = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+      else if (ext === "csv") type = "text/csv";
+      else if (ext === "txt") type = "text/plain";
+      else if (ext === "json") type = "application/json";
+      else if (ext === "xml") type = "application/xml";
+      else if (ext === "png" || ext === "jpg" || ext === "jpeg" || ext === "webp" || ext === "gif" || ext === "svg") type = "image/" + ext;
+    }
 
     // IMMEDIATELY stage file metadata (name, type, size) so EXE always receives it even if async reader is in-flight
     pushStagedFile({ name: name, size: size, type: type, text: "", base64: "", pending: true });
@@ -3129,7 +3141,7 @@
           }).catch(function () {});
         }
       };
-      rDoc.readAsDataURL(file.slice(0, 1500000)); // Read first 1.5MB fast for deep client inspection
+      rDoc.readAsDataURL(file.slice(0, 5000000)); // Read first 1.5MB fast for deep client inspection
     } else {
       // 5. General fallback: read first 1.5MB as Base64 so desktop proxy/agent extracts & scans it
       var rAny = new FileReader();
@@ -3173,7 +3185,7 @@
           }).catch(function () {});
         }
       };
-      rAny.readAsDataURL(file.slice(0, 1500000));
+      rAny.readAsDataURL(file.slice(0, 5000000));
     }
     return true;
   }
