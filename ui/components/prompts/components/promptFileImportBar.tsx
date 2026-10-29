@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { MessageContent } from "@/lib/message";
-import { Check, Mic, Paperclip, Square, X } from "lucide-react";
+import { Mic, Paperclip, Square, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { usePromptContext } from "../context";
@@ -415,7 +415,7 @@ export function PromptFileImportBar({
 			mediaRecorderRef.current = null;
 			toast.error(getMicrophoneErrorMessage(error));
 		}
-	}, [cleanupAudioVisualizer, cleanupStream, cleanupTimer, onAttachmentsAdded]);
+	}, [apiKeyId, virtualKeyId, cleanupAudioVisualizer, cleanupStream, cleanupTimer, onAttachmentsAdded]);
 
 	const stopAndExtract = useCallback(() => {
 		if (recognitionRef.current) {

@@ -1240,10 +1240,9 @@ async function videoFileAttachments(file: File, mimeType: string, opts?: Attachm
 		console.warn("Could not create object URL for video:", e);
 	}
 
-	const fileExt = file.name.split(".").pop()?.toLowerCase() || "";
 	let transcriptText = "";
 
-	const normalized = (await normalizeAudioToWavFile(file)) || (WHISPER_EXTS.has(fileExt) ? file : null);
+	const normalized = await normalizeAudioToWavFile(file);
 	if (normalized) {
 		toast.message(`Transcribing speech in video ${file.name}…`);
 		try {
@@ -1377,7 +1376,6 @@ export async function fileToAttachment(file: File, opts?: AttachmentImportOption
 		return parts[0] ?? null;
 	}
 
-	const WHISPER_EXTS = new Set(["flac", "mp3", "mp4", "mpeg", "mpga", "m4a", "ogg", "wav", "webm", "aac", "opus", "weba"]);
 	const fileExt = file.name.split(".").pop()?.toLowerCase() || "";
 	const audioLike = mimeType.startsWith("audio/") || ["mp3", "wav", "m4a", "flac", "ogg", "opus", "aac", "wma", "aiff", "aif", "amr", "weba", "mpga"].includes(fileExt);
 
