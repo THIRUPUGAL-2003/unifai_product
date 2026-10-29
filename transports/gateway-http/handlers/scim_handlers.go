@@ -807,12 +807,11 @@ func (h *WorkspaceHandler) scimDeleteUser(ctx *fasthttp.RequestCtx) {
 		scimError(ctx, fasthttp.StatusNotFound, "user not found")
 		return
 	}
-	purgeUserRelations(ctx, h.store.ConfigStore, h.promptLifecycle, user)
-	if err := h.store.ConfigStore.DeleteUser(ctx, id); err != nil {
+	if err := purgeUserRelations(ctx, h.store.ConfigStore, h.promptLifecycle, user); err != nil {
+		logger.Error("SCIM failed to delete user and related records id=%s: %v", id, err)
 		scimError(ctx, fasthttp.StatusInternalServerError, "failed to delete user")
 		return
 	}
-	_ = h.store.ConfigStore.DeleteSessionsByUsername(ctx, user.Username)
 	if syncer, ok := h.governanceManager.(UserGovernanceSyncer); ok && syncer != nil {
 		syncer.DeleteUserGovernance(ctx, id)
 	}

@@ -738,14 +738,22 @@ def dynamic_rules() -> list[dict]:
 def _compile_rule_pattern(raw: str):
     import re
     pattern = (raw or "").strip()
-    flags = 0
+    flags = re.IGNORECASE
     while pattern.startswith("(?i)") or pattern.startswith("(?m)"):
         if pattern.startswith("(?i)"):
-            flags |= re.IGNORECASE
             pattern = pattern[4:]
         else:
             flags |= re.MULTILINE
             pattern = pattern[4:]
+    # In DLP prompt/file scanning, normalize full-string anchors ^...$ so patterns
+    # match sensitive tokens inside full documents, sentences, and paragraphs
+    if pattern.startswith("^") and pattern.endswith("$") and len(pattern) > 2:
+        inner = pattern[1:-1]
+        pattern = r"\b(?:" + inner + r")\b"
+    elif pattern.startswith("^") and len(pattern) > 1:
+        pattern = r"\b(?:" + pattern[1:] + r")"
+    elif pattern.endswith("$") and len(pattern) > 1:
+        pattern = r"(?:" + pattern[:-1] + r")\b"
     return re.compile(pattern, flags)
 
 
@@ -1078,6 +1086,178 @@ def _is_telemetry_payload(prompt: str, url: str = "") -> bool:
     return False
 
 
+
+def extract_file_content(raw_b: bytes, file_name: str = "", content_type: str = "", raw_text: str = "") -> str:
+    """Robust, standalone extraction of text from any file type for DLP policy rules.
+    Extracts PDF (via pypdf or stream decompress), Word .docx, Excel .xlsx, PowerPoint .pptx,
+    OpenDocument .odt/.ods, ZIP archives, plain text, and structured data.
+    """
+    fname = (file_name or "").strip()
+    fext = os.path.splitext(fname)[1].lower()
+    ct = (content_type or "").lower().strip()
+
+    # 1. Try delegated extract_upload_text_for_rules if available
+    try:
+        p_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "proxy"))
+        if p_dir not in sys.path:
+            sys.path.insert(0, p_dir)
+        import browser_ai_proxy
+        fn = getattr(browser_ai_proxy, "extract_upload_text_for_rules", None)
+        if fn:
+            t = fn(raw_b, content_type=ct, raw_text=raw_text, file_name=fname)
+            if t and len(t.strip()) > 3:
+                return t.strip()
+    except Exception:
+        pass
+
+    if not raw_b and raw_text:
+        return raw_text.strip()
+    if not raw_b:
+        return ""
+
+    extracted_parts = []
+
+    # 2. PDF Documents (%PDF- or .pdf)
+    if raw_b.startswith(b"%PDF-") or fext == ".pdf" or "application/pdf" in ct:
+        # A) Try PyPDF
+        try:
+            import io
+            import pypdf
+            reader = pypdf.PdfReader(io.BytesIO(raw_b))
+            pdf_texts = []
+            for page in reader.pages[:100]:
+                pt = page.extract_text()
+                if pt and pt.strip():
+                    pdf_texts.append(pt.strip())
+            if pdf_texts:
+                extracted_parts.append("\n".join(pdf_texts))
+        except Exception:
+            pass
+
+        # B) Fallback: Decompress Flate streams in PDF
+        if not extracted_parts:
+            try:
+                import zlib
+                stream_pattern = re.compile(rb'stream[\r\n]+(.*?)[\r\n]+endstream', re.DOTALL)
+                for m in stream_pattern.finditer(raw_b[:2_000_000]):
+                    stream_data = m.group(1)
+                    try:
+                        decomp = zlib.decompress(stream_data)
+                        text_matches = re.findall(rb'\((.*?)\)\s*T[jJ]', decomp)
+                        if text_matches:
+                            extracted_parts.append(" ".join(t.decode('utf-8', errors='ignore') for t in text_matches))
+                        else:
+                            runs = re.findall(rb'[\x20-\x7E]{4,}', decomp)
+                            if len(runs) > 5:
+                                extracted_parts.append(" ".join(r.decode('ascii', errors='ignore') for r in runs[:500]))
+                    except Exception:
+                        continue
+            except Exception:
+                pass
+
+    # 3. ZIP-based Office Documents (PK\x03\x04: .docx, .xlsx, .pptx, .odt, .ods, .odp, .zip)
+    if raw_b.startswith(b"PK\x03\x04") or fext in (".docx", ".xlsx", ".pptx", ".odt", ".ods", ".odp", ".zip"):
+        try:
+            import io
+            import zipfile
+            with zipfile.ZipFile(io.BytesIO(raw_b)) as zf:
+                names = zf.namelist()
+                # A) Word (.docx)
+                doc_xmls = [n for n in names if n.startswith("word/") and n.endswith(".xml")]
+                if doc_xmls:
+                    for xn in doc_xmls:
+                        try:
+                            xml_bytes = zf.read(xn)
+                            txts = re.findall(r'<w:t[^>]*>([^<]+)</w:t>', xml_bytes.decode('utf-8', errors='ignore'))
+                            if txts:
+                                extracted_parts.append(" ".join(txts))
+                        except Exception:
+                            pass
+
+                # B) Excel (.xlsx)
+                xl_xmls = [n for n in names if (n.startswith("xl/") or n == "xl/sharedStrings.xml") and n.endswith(".xml")]
+                if xl_xmls:
+                    for xn in xl_xmls:
+                        try:
+                            xml_bytes = zf.read(xn)
+                            txts = re.findall(r'<(?:t|v)[^>]*>([^<]+)</(?:t|v)>', xml_bytes.decode('utf-8', errors='ignore'))
+                            if txts:
+                                extracted_parts.append(" ".join(txts[:1000]))
+                        except Exception:
+                            pass
+
+                # C) PowerPoint (.pptx)
+                ppt_xmls = [n for n in names if n.startswith("ppt/slides/") and n.endswith(".xml")]
+                if ppt_xmls:
+                    for xn in ppt_xmls:
+                        try:
+                            xml_bytes = zf.read(xn)
+                            txts = re.findall(r'<a:t[^>]*>([^<]+)</a:t>', xml_bytes.decode('utf-8', errors='ignore'))
+                            if txts:
+                                extracted_parts.append(" ".join(txts))
+                        except Exception:
+                            pass
+
+                # D) OpenDocument (.odt, .ods, .odp)
+                if "content.xml" in names:
+                    try:
+                        xml_bytes = zf.read("content.xml")
+                        txts = re.findall(r'>([^<]{2,})<', xml_bytes.decode('utf-8', errors='ignore'))
+                        if txts:
+                            extracted_parts.append(" ".join(t.strip() for t in txts if t.strip()))
+                    except Exception:
+                        pass
+
+                # E) Generic ZIP: read member text files
+                if not extracted_parts:
+                    for zn in names[:20]:
+                        zext = os.path.splitext(zn)[1].lower()
+                        if zext in (".txt", ".csv", ".json", ".xml", ".py", ".md", ".log", ".yaml", ".yml", ".sql", ".env"):
+                            try:
+                                m_bytes = zf.read(zn)
+                                extracted_parts.append(f"[{zn}]: " + m_bytes.decode('utf-8', errors='ignore')[:10000])
+                            except Exception:
+                                pass
+        except Exception:
+            pass
+
+    # 4. Standard text/code decoding (UTF-8, UTF-16, Latin-1, CP1252)
+    if not extracted_parts:
+        for enc in ("utf-8", "utf-16", "utf-16-le", "utf-16-be", "latin-1", "cp1252"):
+            try:
+                dec = raw_b.decode(enc, errors="strict").strip()
+                if len(dec) >= 2 and dec.count("\x00") < len(dec) * 0.05:
+                    extracted_parts.append(dec)
+                    break
+            except Exception:
+                continue
+
+    # 5. Binary Printable Strings Fallback (ASCII + UTF-16LE)
+    if not extracted_parts and len(raw_b) >= 4:
+        bin_parts = []
+        try:
+            strs = re.findall(rb'[\x20-\x7E]{4,}', raw_b)
+            for s_bytes in strs[:2000]:
+                s_dec = s_bytes.decode("ascii", errors="ignore").strip()
+                if len(s_dec) >= 4:
+                    bin_parts.append(s_dec)
+        except Exception:
+            pass
+        try:
+            u16_strs = re.findall(rb'(?:[\x20-\x7E]\x00){4,}', raw_b)
+            for u_bytes in u16_strs[:2000]:
+                u_dec = u_bytes.decode("utf-16le", errors="ignore").strip()
+                if len(u_dec) >= 4 and u_dec not in bin_parts:
+                    bin_parts.append(u_dec)
+        except Exception:
+            pass
+        if bin_parts:
+            extracted_parts.append(" ".join(bin_parts[:3000]))
+
+    result = "\n".join(p for p in extracted_parts if p.strip()).strip()
+    return result or raw_text
+
+
 def check_prompt(
     host: str,
     url: str,
@@ -1231,65 +1411,8 @@ def check_prompt(
                             pass
 
             extracted = str(f.get("extracted_text") or "").strip()
-            if not extracted and (raw_b or ftext):
-                try:
-                    p_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "proxy"))
-                    if p_dir not in sys.path:
-                        sys.path.insert(0, p_dir)
-                    import browser_ai_proxy
-                    extract_fn = getattr(browser_ai_proxy, "extract_upload_text_for_rules", None)
-                    if extract_fn:
-                        try:
-                            extracted = extract_fn(raw_b, content_type=ctype, raw_text=ftext, file_name=fname)
-                        except TypeError:
-                            try:
-                                extracted = extract_fn(raw_b, file_name=fname)
-                            except Exception:
-                                pass
-                except Exception:
-                    pass
-
-                # Multi-encoding fallback if primary extractors returned empty
-                if not extracted and raw_b:
-                    for enc in ("utf-8", "utf-16", "utf-16-le", "utf-16-be", "latin-1", "cp1252"):
-                        try:
-                            t_dec = raw_b.decode(enc, errors="strict").strip()
-                            if len(t_dec) > 3 and not any(ord(c) == 0 for c in t_dec[:100]):
-                                extracted = t_dec
-                                break
-                        except Exception:
-                            continue
-
-                # Printable ASCII + UTF-16LE strings extraction for .exe, PE binaries, archives, and arbitrary data
-                is_bin = (
-                    raw_b.startswith(b"MZ")
-                    or norm_fext in ("exe", "dll", "sys", "bin", "dat", "so", "dylib", "elf", "class")
-                    or (b"\x00" in raw_b[:512])
-                )
-                if raw_b and (is_bin or not extracted) and len(raw_b) >= 4:
-                    bin_parts = []
-                    try:
-                        strs = re.findall(rb'[\x20-\x7E]{4,}', raw_b)
-                        for s_bytes in strs[:3000]:
-                            s_dec = s_bytes.decode("ascii", errors="ignore").strip()
-                            if len(s_dec) >= 4:
-                                bin_parts.append(s_dec)
-                    except Exception:
-                        pass
-                    try:
-                        u16_strs = re.findall(rb'(?:[\x20-\x7E]\x00){4,}', raw_b)
-                        for u_bytes in u16_strs[:3000]:
-                            u_dec = u_bytes.decode("utf-16le", errors="ignore").strip()
-                            if len(u_dec) >= 4 and u_dec not in bin_parts:
-                                bin_parts.append(u_dec)
-                    except Exception:
-                        pass
-                    if bin_parts:
-                        extra_str = " ".join(bin_parts[:4000])
-                        if extracted:
-                            extracted += "\n" + extra_str
-                        else:
-                            extracted = extra_str
+            if not extracted:
+                extracted = extract_file_content(raw_b, file_name=fname, content_type=ctype, raw_text=ftext)
 
             f_content = extracted or ftext or ""
             if f_content:
@@ -1386,62 +1509,47 @@ def check_prompt(
     prompt_violated = False
     block_message = ""
     matched_rule_dict = None
+    matched_action = ""
     raw_prompt_text = (prompt or "").strip()
 
     # Instant in-memory DLP regex match on prompt and individual files
-    if (eval_text or file_text_map) and not is_blocked:
-        try:
-            p_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "proxy"))
-            if p_dir not in sys.path:
-                sys.path.insert(0, p_dir)
-            import browser_ai_proxy
-            if raw_prompt_text:
-                m_matched, m_rule, m_act = getattr(browser_ai_proxy, "match_guard_rules_on_text", lambda *a: (False, "", ""))(raw_prompt_text)
-                if m_matched and m_act.upper() in ("BLOCK", "BLOCKED"):
-                    is_blocked = True
-                    rule = m_rule
-                    prompt_violated = True
-            for fn, fcontent in file_text_map.items():
-                if fcontent:
-                    fm_matched, fm_rule, fm_act = getattr(browser_ai_proxy, "match_guard_rules_on_text", lambda *a: (False, "", ""))(fcontent)
-                    if fm_matched and fm_act.upper() in ("BLOCK", "BLOCKED"):
+    if (eval_text or file_text_map or raw_prompt_text) and not is_blocked:
+        for r in dynamic_rules():
+            pat = str(r.get("pattern") or "")
+            if not pat:
+                continue
+            try:
+                rx = _compile_rule_pattern(pat)
+                p_match = bool(raw_prompt_text and rx.search(raw_prompt_text))
+                f_matches = []
+                for fn, fcontent in file_text_map.items():
+                    if (fcontent and rx.search(fcontent)) or rx.search(fn):
+                        if fn not in f_matches:
+                            f_matches.append(fn)
+                if not p_match and not f_matches and eval_text and rx.search(eval_text):
+                    p_match = True
+
+                if p_match or f_matches:
+                    r_act = str(r.get("action") or "BLOCK").upper()
+                    r_name = str(r.get("name") or "Security Policy")
+                    r_reason = str(r.get("warning_message") or r.get("description") or "").strip()
+                    matched_rule_dict = r
+                    rule = r_name
+                    matched_action = r_act
+                    if f_matches:
+                        for fm in f_matches:
+                            if fm not in violating_files:
+                                violating_files.append(fm)
+                    if p_match:
+                        prompt_violated = True
+
+                    if r_act in ("BLOCK", "BLOCKED"):
                         is_blocked = True
-                        if not rule:
-                            rule = fm_rule
-                        if fn not in violating_files:
-                            violating_files.append(fn)
-        except Exception:
-            pass
+                        break
+            except Exception:
+                pass
 
-        matched_rule_dict = None
-        if not is_blocked:
-            for r in dynamic_rules():
-                pat = str(r.get("pattern") or "")
-                if pat:
-                    try:
-                        rx = _compile_rule_pattern(pat)
-                        p_match = bool(raw_prompt_text and rx.search(raw_prompt_text))
-                        f_matches = []
-                        for fn, fcontent in file_text_map.items():
-                            if fcontent and rx.search(fcontent):
-                                if fn not in f_matches:
-                                    f_matches.append(fn)
-                        if not p_match and not f_matches and rx.search(eval_text):
-                            p_match = True
-
-                        if p_match or f_matches:
-                            act = str(r.get("action") or "BLOCK").upper()
-                            if act in ("BLOCK", "BLOCKED"):
-                                is_blocked = True
-                                rule = str(r.get("name") or "Security Policy")
-                                prompt_violated = p_match
-                                violating_files = f_matches
-                                matched_rule_dict = r
-                                break
-                    except Exception:
-                        pass
-
-    if is_blocked:
+    if is_blocked or matched_action:
         r_name = rule or "Restricted Content"
         if not matched_rule_dict and r_name:
             for dr in dynamic_rules():
@@ -1818,6 +1926,32 @@ def check_prompt(
                 "rule": rule or "Data Loss Prevention Rule",
                 "violating_files": violating_files,
                 "redacted_prompt": "",
+            }
+            with _RECENT_FILE_POSTS_LOCK:
+                _RECENT_FILE_POSTS["decision|" + prompt_req_key] = res
+                _RECENT_FILE_POSTS["ts|" + prompt_req_key] = time.time()
+            return res
+        elif matched_action in ("WARN", "WARNED", "ALERT"):
+            res = {
+                "blocked": False,
+                "action": "Warned",
+                "message": block_message or "This request triggered a YP-Raksha warning.",
+                "rule": rule or "Security Warning",
+                "violating_files": violating_files,
+                "redacted_prompt": "",
+            }
+            with _RECENT_FILE_POSTS_LOCK:
+                _RECENT_FILE_POSTS["decision|" + prompt_req_key] = res
+                _RECENT_FILE_POSTS["ts|" + prompt_req_key] = time.time()
+            return res
+        elif matched_action in ("REDACT", "REDACTED"):
+            res = {
+                "blocked": False,
+                "action": "Redacted",
+                "message": block_message or "Sensitive text was redacted by YP-Raksha.",
+                "rule": rule or "Data Redaction",
+                "violating_files": violating_files,
+                "redacted_prompt": redact_prompt_text(text, rule),
             }
             with _RECENT_FILE_POSTS_LOCK:
                 _RECENT_FILE_POSTS["decision|" + prompt_req_key] = res

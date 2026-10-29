@@ -37,20 +37,19 @@ func loadPromptAutoCreateOptOut(ctx context.Context, ws configstore.WorkspaceSto
 
 // setPromptAutoCreatePreference records the admin's "auto create prompt" choice so later
 // team assignments respect it instead of always creating a personal prompt.
-func setPromptAutoCreatePreference(ctx context.Context, store configstore.ConfigStore, userID string, enabled bool) {
+func setPromptAutoCreatePreference(ctx context.Context, store configstore.ConfigStore, userID string, enabled bool) error {
 	ws, ok := configstore.AsWorkspaceStore(store)
 	if !ok || ws == nil || userID == "" {
-		return
+		return errors.New("workspace settings are not available")
 	}
 	promptAutoCreateOptOutMu.Lock()
 	defer promptAutoCreateOptOutMu.Unlock()
 	optOut, err := loadPromptAutoCreateOptOut(ctx, ws)
 	if err != nil {
-		logger.Warn("failed to load prompt auto-create preferences: %v", err)
-		return
+		return err
 	}
 	if optOut[userID] == !enabled {
-		return
+		return nil
 	}
 	if enabled {
 		delete(optOut, userID)
@@ -63,11 +62,9 @@ func setPromptAutoCreatePreference(ctx context.Context, store configstore.Config
 	}
 	raw, err := json.Marshal(ids)
 	if err != nil {
-		return
+		return err
 	}
-	if err := ws.UpsertWorkspaceSetting(ctx, configstore.WorkspaceSettingPromptAutoCreateOptOut, string(raw)); err != nil {
-		logger.Warn("failed to save prompt auto-create preference for user %s: %v", userID, err)
-	}
+	return ws.UpsertWorkspaceSetting(ctx, configstore.WorkspaceSettingPromptAutoCreateOptOut, string(raw))
 }
 
 // promptAutoCreateDisabled reports whether the user was created with prompt auto-creation off.

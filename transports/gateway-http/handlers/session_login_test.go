@@ -65,7 +65,7 @@ func (m *memoryConfigStore) GetAuthConfig(ctx context.Context) (*configstore.Aut
 	return m.authConfig, nil
 }
 
-func (m *memoryConfigStore) UpdateAuthConfig(ctx context.Context, config *configstore.AuthConfig) error {
+func (m *memoryConfigStore) UpdateAuthConfig(ctx context.Context, config *configstore.AuthConfig, tx ...*gorm.DB) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.authConfig = config
@@ -90,7 +90,7 @@ func (m *memoryConfigStore) AddUser(user *tables.TableUser) {
 	m.users[strings.ToLower(strings.TrimSpace(user.Username))] = &copied
 }
 
-func (m *memoryConfigStore) CreateSession(ctx context.Context, session *tables.SessionsTable) error {
+func (m *memoryConfigStore) CreateSession(ctx context.Context, session *tables.SessionsTable, tx ...*gorm.DB) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.sessions[session.Token] = session
@@ -114,7 +114,7 @@ func (m *memoryConfigStore) DeleteSession(ctx context.Context, token string) err
 	return nil
 }
 
-func (m *memoryConfigStore) DeleteSessionsByUsername(ctx context.Context, username string) error {
+func (m *memoryConfigStore) DeleteSessionsByUsername(ctx context.Context, username string, tx ...*gorm.DB) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for k, v := range m.sessions {
@@ -297,7 +297,7 @@ func (m *memoryConfigStore) DeleteRateLimit(ctx context.Context, id string, tx .
 	return nil
 }
 
-func (m *memoryConfigStore) UpdateSessionsRoleByUsername(ctx context.Context, username, role string) error {
+func (m *memoryConfigStore) UpdateSessionsRoleByUsername(ctx context.Context, username, role string, tx ...*gorm.DB) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, s := range m.sessions {
@@ -350,7 +350,7 @@ func (m *memoryConfigStore) GetPasswordResetOTPByID(ctx context.Context, id uint
 	return nil, nil
 }
 
-func (m *memoryConfigStore) MarkPasswordResetOTPUsed(ctx context.Context, id uint) error {
+func (m *memoryConfigStore) MarkPasswordResetOTPUsed(ctx context.Context, id uint, tx ...*gorm.DB) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if row, ok := m.otps[id]; ok {
@@ -359,7 +359,7 @@ func (m *memoryConfigStore) MarkPasswordResetOTPUsed(ctx context.Context, id uin
 	return nil
 }
 
-func (m *memoryConfigStore) BurnPasswordResetOTPCode(ctx context.Context, id uint) error {
+func (m *memoryConfigStore) BurnPasswordResetOTPCode(ctx context.Context, id uint, tx ...*gorm.DB) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if row, ok := m.otps[id]; ok {

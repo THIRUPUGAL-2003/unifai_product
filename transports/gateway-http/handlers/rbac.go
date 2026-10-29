@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/gateway/gateway/framework/configstore/tables"
 	"github.com/gateway/gateway/framework/rbac"
 	"github.com/valyala/fasthttp"
+	"gorm.io/gorm"
 )
 
 type rbacRolePayload struct {
@@ -207,18 +209,22 @@ func (h *WorkspaceHandler) reassignUsersRole(ctx *fasthttp.RequestCtx, from, to 
 	if err != nil {
 		return err
 	}
-	for _, u := range users {
-		if u == nil || !strings.EqualFold(u.Role, from) {
-			continue
+	return h.store.ConfigStore.ExecuteTransaction(ctx, func(tx *gorm.DB) error {
+		for _, u := range users {
+			if u == nil || !strings.EqualFold(u.Role, from) {
+				continue
+			}
+			u.Role = to
+			u.UpdatedAt = time.Now()
+			if err := h.store.ConfigStore.UpdateUser(ctx, u, tx); err != nil {
+				return fmt.Errorf("update role for user %s: %w", u.Username, err)
+			}
+			if err := h.store.ConfigStore.UpdateSessionsRoleByUsername(ctx, u.Username, to, tx); err != nil {
+				return fmt.Errorf("update live-session role for user %s: %w", u.Username, err)
+			}
 		}
-		u.Role = to
-		u.UpdatedAt = time.Now()
-		if err := h.store.ConfigStore.UpdateUser(ctx, u); err != nil {
-			return err
-		}
-		_ = h.store.ConfigStore.UpdateSessionsRoleByUsername(ctx, u.Username, to)
-	}
-	return nil
+		return nil
+	})
 }
 
 // callerRole returns the dashboard session role of the request, "admin" when auth is disabled.
@@ -474,12 +480,15 @@ func (h *WorkspaceHandler) assignUserRole(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	user.Role = roleName
-	if err := h.store.ConfigStore.UpdateUser(ctx, user); err != nil {
-		SendError(ctx, fasthttp.StatusInternalServerError, "failed to assign role")
-		return
-	}
-	if err := h.store.ConfigStore.UpdateSessionsRoleByUsername(ctx, user.Username, roleName); err != nil {
-		SendError(ctx, fasthttp.StatusInternalServerError, "role assigned but failed to refresh live sessions")
+	user.UpdatedAt = time.Now()
+	if err := h.store.ConfigStore.ExecuteTransaction(ctx, func(tx *gorm.DB) error {
+		if err := h.store.ConfigStore.UpdateUser(ctx, user, tx); err != nil {
+			return err
+		}
+		return h.store.ConfigStore.UpdateSessionsRoleByUsername(ctx, user.Username, roleName, tx)
+	}); err != nil {
+		logger.Error("failed to assign role and sync live sessions for user=%s: %v", user.Username, err)
+		SendError(ctx, fasthttp.StatusInternalServerError, "failed to assign role and refresh live sessions")
 		return
 	}
 	SendJSON(ctx, map[string]string{"message": "role assigned"})

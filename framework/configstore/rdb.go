@@ -2762,14 +2762,23 @@ func (s *RDBConfigStore) UpdateUser(ctx context.Context, user *tables.TableUser,
 
 // DeleteUser deletes a specific user from the database.
 func (s *RDBConfigStore) DeleteUser(ctx context.Context, id string, tx ...*gorm.DB) error {
-	var txDB *gorm.DB
-	if len(tx) > 0 {
-		txDB = tx[0]
-	} else {
-		txDB = s.DB()
+	if len(tx) == 0 || tx[0] == nil {
+		return s.DB().WithContext(ctx).Transaction(func(transaction *gorm.DB) error {
+			return s.DeleteUser(ctx, id, transaction)
+		})
 	}
-	_ = txDB.WithContext(ctx).Delete(&tables.TableVirtualKeyUser{}, "user_id = ?", id).Error
-	_ = txDB.WithContext(ctx).Delete(&tables.TableTeamMember{}, "user_id = ?", id).Error
+	var txDB *gorm.DB
+	txDB = tx[0]
+	if txDB.Migrator().HasTable(&tables.TableVirtualKeyUser{}) {
+		if err := txDB.WithContext(ctx).Delete(&tables.TableVirtualKeyUser{}, "user_id = ?", id).Error; err != nil {
+			return fmt.Errorf("delete user's virtual-key assignments: %w", err)
+		}
+	}
+	if txDB.Migrator().HasTable(&tables.TableTeamMember{}) {
+		if err := txDB.WithContext(ctx).Delete(&tables.TableTeamMember{}, "user_id = ?", id).Error; err != nil {
+			return fmt.Errorf("delete user's team memberships: %w", err)
+		}
+	}
 	return txDB.WithContext(ctx).Delete(&tables.TableUser{}, "id = ?", id).Error
 }
 
@@ -3473,7 +3482,9 @@ const modelConfigInternalPageSize = 1000
 
 // GetVirtualKeys retrieves all virtual keys from the database.
 func (s *RDBConfigStore) GetVirtualKeys(ctx context.Context) ([]tables.TableVirtualKey, error) {
-	s.EnsureWorkspaceTables(ctx)
+	if err := s.EnsureWorkspaceTables(ctx); err != nil {
+		return nil, err
+	}
 	var allVirtualKeys []tables.TableVirtualKey
 	var lastCreatedAt time.Time
 	var lastID string
@@ -4489,10 +4500,14 @@ func (s *RDBConfigStore) DeleteTeam(ctx context.Context, id string, tx ...*gorm.
 	}
 	// Explicitly clean up junction table entries for teams and team members
 	if txDB.Migrator().HasTable(&tables.TableVirtualKeyTeam{}) {
-		_ = txDB.WithContext(ctx).Where("team_id = ?", id).Delete(&tables.TableVirtualKeyTeam{}).Error
+		if err := txDB.WithContext(ctx).Where("team_id = ?", id).Delete(&tables.TableVirtualKeyTeam{}).Error; err != nil {
+			return fmt.Errorf("delete team's virtual-key assignments: %w", err)
+		}
 	}
 	if txDB.Migrator().HasTable(&tables.TableTeamMember{}) {
-		_ = txDB.WithContext(ctx).Where("team_id = ?", id).Delete(&tables.TableTeamMember{}).Error
+		if err := txDB.WithContext(ctx).Where("team_id = ?", id).Delete(&tables.TableTeamMember{}).Error; err != nil {
+			return fmt.Errorf("delete team memberships: %w", err)
+		}
 	}
 	if err := removeTeamFromBusinessUnits(ctx, txDB, id); err != nil {
 		return err
@@ -4670,7 +4685,9 @@ func (s *RDBConfigStore) DeleteCustomer(ctx context.Context, id string, tx ...*g
 	}
 	// Explicitly clean up junction table entries for customer virtual keys
 	if txDB.Migrator().HasTable(&tables.TableVirtualKeyCustomer{}) {
-		_ = txDB.WithContext(ctx).Where("customer_id = ?", id).Delete(&tables.TableVirtualKeyCustomer{}).Error
+		if err := txDB.WithContext(ctx).Where("customer_id = ?", id).Delete(&tables.TableVirtualKeyCustomer{}).Error; err != nil {
+			return fmt.Errorf("delete customer's virtual-key assignments: %w", err)
+		}
 	}
 	rateLimitID := customer.RateLimitID
 	// Explicitly delete owned budgets before the customer row. FK cascades cannot
@@ -5837,36 +5854,40 @@ func (s *RDBConfigStore) GetAuthConfig(ctx context.Context) (*AuthConfig, error)
 }
 
 // UpdateAuthConfig updates the auth configuration in the database.
-func (s *RDBConfigStore) UpdateAuthConfig(ctx context.Context, config *AuthConfig) error {
-	return s.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Save(&tables.TableGovernanceConfig{
+func (s *RDBConfigStore) UpdateAuthConfig(ctx context.Context, config *AuthConfig, tx ...*gorm.DB) error {
+	update := func(txDB *gorm.DB) error {
+		if err := txDB.Save(&tables.TableGovernanceConfig{
 			Key:   tables.ConfigAdminUsernameKey,
 			Value: config.AdminUserName.GetValue(),
 		}).Error; err != nil {
 			return err
 		}
-		if err := tx.Save(&tables.TableGovernanceConfig{
+		if err := txDB.Save(&tables.TableGovernanceConfig{
 			Key:   tables.ConfigAdminPasswordKey,
 			Value: config.AdminPassword.GetValue(),
 		}).Error; err != nil {
 			return err
 		}
 		if config.AdminEmail != nil && config.AdminEmail.GetValue() != "" {
-			if err := tx.Save(&tables.TableGovernanceConfig{
+			if err := txDB.Save(&tables.TableGovernanceConfig{
 				Key:   tables.ConfigAdminEmailKey,
 				Value: config.AdminEmail.GetValue(),
 			}).Error; err != nil {
 				return err
 			}
 		}
-		if err := tx.Save(&tables.TableGovernanceConfig{
+		if err := txDB.Save(&tables.TableGovernanceConfig{
 			Key:   tables.ConfigIsAuthEnabledKey,
 			Value: fmt.Sprintf("%t", config.IsEnabled),
 		}).Error; err != nil {
 			return err
 		}
 		return nil
-	})
+	}
+	if len(tx) > 0 && tx[0] != nil {
+		return update(tx[0].WithContext(ctx))
+	}
+	return s.DB().WithContext(ctx).Transaction(update)
 }
 
 // GetSMTPConfig returns the single SMTP settings row (or nil).
@@ -6031,10 +6052,21 @@ func (s *RDBConfigStore) GetLatestPasswordResetOTP(ctx context.Context, username
 }
 
 // MarkPasswordResetOTPUsed marks an OTP as consumed.
-func (s *RDBConfigStore) MarkPasswordResetOTPUsed(ctx context.Context, id uint) error {
-	return s.DB().WithContext(ctx).Model(&tables.TablePasswordResetOTP{}).Where("id = ?", id).Updates(map[string]any{
+func (s *RDBConfigStore) MarkPasswordResetOTPUsed(ctx context.Context, id uint, tx ...*gorm.DB) error {
+	db := s.DB()
+	if len(tx) > 0 && tx[0] != nil {
+		db = tx[0]
+	}
+	result := db.WithContext(ctx).Model(&tables.TablePasswordResetOTP{}).Where("id = ? AND used = ?", id, false).Updates(map[string]any{
 		"used": true,
-	}).Error
+	})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("password reset OTP %d was already used or no longer exists", id)
+	}
+	return nil
 }
 
 // IncrementPasswordResetOTPFailures atomically increments failed OTP attempts and returns the new count.
@@ -6065,12 +6097,23 @@ func (s *RDBConfigStore) GetPasswordResetOTPByID(ctx context.Context, id uint) (
 }
 
 // BurnPasswordResetOTPCode replaces the OTP hash so the raw code cannot be reused after verify.
-func (s *RDBConfigStore) BurnPasswordResetOTPCode(ctx context.Context, id uint) error {
+func (s *RDBConfigStore) BurnPasswordResetOTPCode(ctx context.Context, id uint, tx ...*gorm.DB) error {
 	burn, err := encrypt.Hash(uuid.New().String())
 	if err != nil {
 		return err
 	}
-	return s.DB().WithContext(ctx).Model(&tables.TablePasswordResetOTP{}).Where("id = ?", id).Update("otp_hash", burn).Error
+	db := s.DB()
+	if len(tx) > 0 && tx[0] != nil {
+		db = tx[0]
+	}
+	result := db.WithContext(ctx).Model(&tables.TablePasswordResetOTP{}).Where("id = ? AND used = ?", id, false).Update("otp_hash", burn)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("password reset OTP %d was already used or no longer exists", id)
+	}
+	return nil
 }
 
 // GetProxyConfig retrieves the proxy configuration from the database.
@@ -6190,8 +6233,12 @@ func (s *RDBConfigStore) GetSession(ctx context.Context, token string) (*tables.
 }
 
 // CreateSession creates a new session in the database.
-func (s *RDBConfigStore) CreateSession(ctx context.Context, session *tables.SessionsTable) error {
-	return s.DB().WithContext(ctx).Create(session).Error
+func (s *RDBConfigStore) CreateSession(ctx context.Context, session *tables.SessionsTable, tx ...*gorm.DB) error {
+	db := s.DB()
+	if len(tx) > 0 && tx[0] != nil {
+		db = tx[0]
+	}
+	return db.WithContext(ctx).Create(session).Error
 }
 
 // DeleteSession deletes a session from the database.
@@ -6218,24 +6265,32 @@ func (s *RDBConfigStore) FlushSessions(ctx context.Context) error {
 }
 
 // UpdateSessionsRoleByUsername syncs Role on every session row for username.
-func (s *RDBConfigStore) UpdateSessionsRoleByUsername(ctx context.Context, username, role string) error {
+func (s *RDBConfigStore) UpdateSessionsRoleByUsername(ctx context.Context, username, role string, tx ...*gorm.DB) error {
 	username = strings.TrimSpace(username)
 	role = strings.TrimSpace(role)
 	if username == "" || role == "" {
 		return nil
 	}
-	return s.DB().WithContext(ctx).Model(&tables.SessionsTable{}).
+	db := s.DB()
+	if len(tx) > 0 && tx[0] != nil {
+		db = tx[0]
+	}
+	return db.WithContext(ctx).Model(&tables.SessionsTable{}).
 		Where("username = ?", username).
 		Updates(map[string]any{"role": role, "updated_at": time.Now().UTC()}).Error
 }
 
 // DeleteSessionsByUsername terminates all active sessions for a user (on deletion, status change, or password reset).
-func (s *RDBConfigStore) DeleteSessionsByUsername(ctx context.Context, username string) error {
+func (s *RDBConfigStore) DeleteSessionsByUsername(ctx context.Context, username string, tx ...*gorm.DB) error {
 	username = strings.TrimSpace(username)
 	if username == "" {
 		return nil
 	}
-	return s.DB().WithContext(ctx).Where("username = ?", username).Delete(&tables.SessionsTable{}).Error
+	db := s.DB()
+	if len(tx) > 0 && tx[0] != nil {
+		db = tx[0]
+	}
+	return db.WithContext(ctx).Where("username = ?", username).Delete(&tables.SessionsTable{}).Error
 }
 
 // CreateTempToken inserts a new temp_tokens row. The plaintext token must be

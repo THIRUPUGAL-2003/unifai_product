@@ -1230,10 +1230,18 @@ func (h *SessionHandler) createUser(ctx *fasthttp.RequestCtx) {
 			return
 		}
 		if payload.AutoCreatePrompt != nil {
-			setPromptAutoCreatePreference(ctx, h.configStore, existing.ID, autoCreatePrompt)
+			if err := setPromptAutoCreatePreference(ctx, h.configStore, existing.ID, autoCreatePrompt); err != nil {
+				logger.Error("failed to persist prompt auto-create preference for user=%s: %v", existing.ID, err)
+				SendError(ctx, fasthttp.StatusInternalServerError, "User was saved, but the Prompt Repository preference could not be saved: "+err.Error())
+				return
+			}
 		}
 		if h.promptLifecycle != nil {
-			_ = h.promptLifecycle.OnUserCreated(ctx, existing, autoCreatePrompt)
+			if err := h.promptLifecycle.OnUserCreated(ctx, existing, autoCreatePrompt); err != nil {
+				logger.Error("failed to sync Prompt Repository for user=%s: %v", existing.ID, err)
+				SendError(ctx, fasthttp.StatusInternalServerError, "User was saved, but Prompt Repository setup failed: "+err.Error())
+				return
+			}
 		}
 		existing.Password = ""
 		emailTo := strings.TrimSpace(payload.Email)
@@ -1289,10 +1297,18 @@ func (h *SessionHandler) createUser(ctx *fasthttp.RequestCtx) {
 	}
 
 	if payload.AutoCreatePrompt != nil {
-		setPromptAutoCreatePreference(ctx, h.configStore, user.ID, autoCreatePrompt)
+		if err := setPromptAutoCreatePreference(ctx, h.configStore, user.ID, autoCreatePrompt); err != nil {
+			logger.Error("failed to persist prompt auto-create preference for user=%s: %v", user.ID, err)
+			SendError(ctx, fasthttp.StatusInternalServerError, "User was saved, but the Prompt Repository preference could not be saved: "+err.Error())
+			return
+		}
 	}
 	if h.promptLifecycle != nil {
-		_ = h.promptLifecycle.OnUserCreated(ctx, user, autoCreatePrompt)
+		if err := h.promptLifecycle.OnUserCreated(ctx, user, autoCreatePrompt); err != nil {
+			logger.Error("failed to sync Prompt Repository for user=%s: %v", user.ID, err)
+			SendError(ctx, fasthttp.StatusInternalServerError, "User was saved, but Prompt Repository setup failed: "+err.Error())
+			return
+		}
 	}
 
 	user.Password = ""
@@ -1318,7 +1334,7 @@ func (h *SessionHandler) createUser(ctx *fasthttp.RequestCtx) {
 
 // persistUserWithGovernance writes the user + budget/rate-limit rows in one DB transaction.
 // create=true inserts the user; create=false updates an existing row.
-func (h *SessionHandler) persistUserWithGovernance(ctx *fasthttp.RequestCtx, user *tables.TableUser, create bool) error {
+func (h *SessionHandler) persistUserWithGovernance(ctx *fasthttp.RequestCtx, user *tables.TableUser, create bool, afterWrite ...func(*gorm.DB) error) error {
 	err := h.configStore.ExecuteTransaction(ctx, func(tx *gorm.DB) error {
 		if create {
 			if err := h.configStore.CreateUser(ctx, user, tx); err != nil {
@@ -1332,7 +1348,17 @@ func (h *SessionHandler) persistUserWithGovernance(ctx *fasthttp.RequestCtx, use
 		if err := h.materializeUserGovernanceLimits(ctx, user, tx); err != nil {
 			return err
 		}
-		return h.configStore.UpdateUser(ctx, user, tx)
+		if err := h.configStore.UpdateUser(ctx, user, tx); err != nil {
+			return err
+		}
+		for _, action := range afterWrite {
+			if action != nil {
+				if err := action(tx); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		return err
@@ -1577,22 +1603,39 @@ func (h *SessionHandler) verifyOTP(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	if otpRow.FailedAttempts >= maxOTPAttempts {
-		_ = h.configStore.MarkPasswordResetOTPUsed(ctx, otpRow.ID)
+		if err := h.configStore.MarkPasswordResetOTPUsed(ctx, otpRow.ID); err != nil {
+			logger.Error("failed to consume locked password reset OTP id=%d: %v", otpRow.ID, err)
+			SendError(ctx, fasthttp.StatusInternalServerError, "Could not verify the code. Please try again shortly.")
+			return
+		}
 		SendError(ctx, fasthttp.StatusUnauthorized, "Invalid or expired OTP")
 		return
 	}
 	ok, err := encrypt.CompareHash(otpRow.OTPHash, payload.OTP)
 	if err != nil || !ok {
-		fails, _ := h.configStore.IncrementPasswordResetOTPFailures(ctx, otpRow.ID)
+		fails, err := h.configStore.IncrementPasswordResetOTPFailures(ctx, otpRow.ID)
+		if err != nil {
+			logger.Error("failed to record password reset OTP attempt id=%d: %v", otpRow.ID, err)
+			SendError(ctx, fasthttp.StatusInternalServerError, "Could not verify the code. Please try again shortly.")
+			return
+		}
 		if fails >= maxOTPAttempts {
-			_ = h.configStore.MarkPasswordResetOTPUsed(ctx, otpRow.ID)
+			if err := h.configStore.MarkPasswordResetOTPUsed(ctx, otpRow.ID); err != nil {
+				logger.Error("failed to consume exhausted password reset OTP id=%d: %v", otpRow.ID, err)
+				SendError(ctx, fasthttp.StatusInternalServerError, "Could not verify the code. Please try again shortly.")
+				return
+			}
 		}
 		SendError(ctx, fasthttp.StatusUnauthorized, "Invalid or expired OTP")
 		return
 	}
 
 	// Burn the raw OTP so it cannot be replayed; short-lived reset_token is required next.
-	_ = h.configStore.BurnPasswordResetOTPCode(ctx, otpRow.ID)
+	if err := h.configStore.BurnPasswordResetOTPCode(ctx, otpRow.ID); err != nil {
+		logger.Error("failed to burn verified password reset OTP id=%d: %v", otpRow.ID, err)
+		SendError(ctx, fasthttp.StatusInternalServerError, "Could not verify the code. Please try again shortly.")
+		return
+	}
 
 	resetToken, err := issuePasswordResetToken(otpRow.ID, targetUsername, targetEmail)
 	if err != nil {
@@ -1720,27 +1763,34 @@ func (h *SessionHandler) signupTeamID(ctx *fasthttp.RequestCtx, raw string) (*st
 	return &id, true
 }
 
-func (h *SessionHandler) assignRequestedTeam(ctx context.Context, user *tables.TableUser) {
+func (h *SessionHandler) assignRequestedTeam(ctx context.Context, user *tables.TableUser) error {
 	if user == nil || user.RequestedTeamID == nil || strings.TrimSpace(*user.RequestedTeamID) == "" {
-		return
+		return nil
 	}
 	teamID := strings.TrimSpace(*user.RequestedTeamID)
 	ws, ok := configstore.AsWorkspaceStore(h.configStore)
 	if !ok {
-		return
+		return errors.New("workspace team membership store is unavailable")
 	}
 	if _, err := h.configStore.GetTeam(ctx, teamID); err != nil {
+		if !errors.Is(err, configstore.ErrNotFound) {
+			return fmt.Errorf("load requested team %s: %w", teamID, err)
+		}
 		user.RequestedTeamID = nil
-		_ = h.configStore.UpdateUser(ctx, user)
-		return
+		if err := h.configStore.UpdateUser(ctx, user); err != nil {
+			return fmt.Errorf("clear unavailable requested team %s: %w", teamID, err)
+		}
+		return nil
 	}
 	if err := ws.AddTeamMember(ctx, teamID, user.ID); err != nil {
-		logger.Warn("could not add approved user %s to team %s: %v", user.Username, teamID, err)
-		return
+		return fmt.Errorf("add approved user %s to team %s: %w", user.Username, teamID, err)
 	}
 	user.RequestedTeamID = nil
 	user.UpdatedAt = time.Now()
-	_ = h.configStore.UpdateUser(ctx, user)
+	if err := h.configStore.UpdateUser(ctx, user); err != nil {
+		return fmt.Errorf("clear requested team for user %s: %w", user.Username, err)
+	}
+	return nil
 }
 
 // scheduleDemo handles POST /api/session/schedule-demo - Public demo booking from landing page.
@@ -2005,7 +2055,12 @@ func (h *SessionHandler) resetPassword(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	otpRow, err := h.configStore.GetPasswordResetOTPByID(ctx, claims.OTPID)
-	if err != nil || otpRow == nil || otpRow.Used || time.Now().After(otpRow.ExpiresAt) {
+	if err != nil {
+		logger.Error("failed to load password reset OTP id=%d: %v", claims.OTPID, err)
+		SendError(ctx, fasthttp.StatusInternalServerError, "Could not verify the reset request. Please try again shortly.")
+		return
+	}
+	if otpRow == nil || otpRow.Used || time.Now().After(otpRow.ExpiresAt) {
 		SendError(ctx, fasthttp.StatusUnauthorized, invalidResetMsg)
 		return
 	}
@@ -2054,15 +2109,25 @@ func (h *SessionHandler) resetPassword(ctx *fasthttp.RequestCtx) {
 		}
 		user.Password = hashed
 		user.UpdatedAt = time.Now()
-		if err := h.configStore.UpdateUser(ctx, user); err != nil {
-			SendError(ctx, fasthttp.StatusInternalServerError, "Failed to update password")
+		if err := h.configStore.ExecuteTransaction(ctx, func(tx *gorm.DB) error {
+			if err := h.configStore.UpdateUser(ctx, user, tx); err != nil {
+				return fmt.Errorf("update password: %w", err)
+			}
+			if targetOTPID > 0 {
+				if err := h.configStore.MarkPasswordResetOTPUsed(ctx, targetOTPID, tx); err != nil {
+					return fmt.Errorf("consume password reset OTP: %w", err)
+				}
+			}
+			// Terminate every active session in the same transaction as the password and OTP update.
+			if err := h.configStore.DeleteSessionsByUsername(ctx, user.Username, tx); err != nil {
+				return fmt.Errorf("revoke active sessions: %w", err)
+			}
+			return nil
+		}); err != nil {
+			logger.Error("failed to complete password reset for username=%s: %v", user.Username, err)
+			SendError(ctx, fasthttp.StatusInternalServerError, "Could not complete the password reset. Please try again shortly.")
 			return
 		}
-		if targetOTPID > 0 {
-			_ = h.configStore.MarkPasswordResetOTPUsed(ctx, targetOTPID)
-		}
-		// Terminate any existing live sessions on password reset (CWE-613)
-		_ = h.configStore.DeleteSessionsByUsername(ctx, user.Username)
 		// The emailed code proves ownership, so the failed-login lock (which only guards
 		// the old password) is lifted. The per-IP limit still applies.
 		clearAccountLockouts(h.configStore, ctx, user.Username, user.Email)
@@ -2112,18 +2177,33 @@ func (h *SessionHandler) resetPassword(ctx *fasthttp.RequestCtx) {
 	if authConfig.AdminEmail == nil && adminEmail != "" {
 		authConfig.AdminEmail = schemas.NewSecretVar(adminEmail)
 	}
-	if err := h.configStore.UpdateAuthConfig(ctx, authConfig); err != nil {
-		SendError(ctx, fasthttp.StatusInternalServerError, "Failed to update password")
+	if err := h.configStore.ExecuteTransaction(ctx, func(tx *gorm.DB) error {
+		if err := h.configStore.UpdateAuthConfig(ctx, authConfig, tx); err != nil {
+			return fmt.Errorf("update admin password: %w", err)
+		}
+		if err := h.configStore.MarkPasswordResetOTPUsed(ctx, otpRow.ID, tx); err != nil {
+			return fmt.Errorf("consume password reset OTP: %w", err)
+		}
+		seen := make(map[string]struct{}, 3)
+		for _, username := range []string{adminName, adminEmail, "admin"} {
+			username = strings.TrimSpace(username)
+			if username == "" || (strings.EqualFold(username, "admin") && strings.EqualFold(adminName, "admin") && username != "admin") {
+				continue
+			}
+			key := strings.ToLower(username)
+			if _, exists := seen[key]; exists {
+				continue
+			}
+			seen[key] = struct{}{}
+			if err := h.configStore.DeleteSessionsByUsername(ctx, username, tx); err != nil {
+				return fmt.Errorf("revoke admin sessions for %s: %w", username, err)
+			}
+		}
+		return nil
+	}); err != nil {
+		logger.Error("failed to complete admin password reset: %v", err)
+		SendError(ctx, fasthttp.StatusInternalServerError, "Could not complete the password reset. Please try again shortly.")
 		return
-	}
-
-	_ = h.configStore.MarkPasswordResetOTPUsed(ctx, otpRow.ID)
-	_ = h.configStore.DeleteSessionsByUsername(ctx, adminName)
-	if adminEmail != "" && adminEmail != adminName {
-		_ = h.configStore.DeleteSessionsByUsername(ctx, adminEmail)
-	}
-	if !strings.EqualFold(adminName, "admin") {
-		_ = h.configStore.DeleteSessionsByUsername(ctx, "admin")
 	}
 
 	clearAccountLockouts(h.configStore, ctx, adminName, adminEmail, "admin")
@@ -2365,27 +2445,40 @@ func (h *SessionHandler) updateUser(ctx *fasthttp.RequestCtx) {
 	}
 	existingUser.UpdatedAt = time.Now()
 
-	if err := h.persistUserWithGovernance(ctx, existingUser, false); err != nil {
+	syncSessions := func(tx *gorm.DB) error {
+		mustRevokeSessions := payload.Password != "" || payload.SendTemporaryPassword ||
+			(payload.Status != nil && (*payload.Status == tables.UserStatusRejected || *payload.Status == tables.UserStatusPending || *payload.Status == tables.UserStatusDisabled))
+		if mustRevokeSessions {
+			if err := h.configStore.DeleteSessionsByUsername(ctx, existingUser.Username, tx); err != nil {
+				return fmt.Errorf("revoke sessions for updated user: %w", err)
+			}
+			if prevUsername != "" && prevUsername != existingUser.Username {
+				if err := h.configStore.DeleteSessionsByUsername(ctx, prevUsername, tx); err != nil {
+					return fmt.Errorf("revoke sessions for previous username: %w", err)
+				}
+			}
+			return nil
+		}
+		if roleChanged {
+			if err := h.configStore.UpdateSessionsRoleByUsername(ctx, existingUser.Username, existingUser.Role, tx); err != nil {
+				return fmt.Errorf("refresh sessions for updated user role: %w", err)
+			}
+			if prevUsername != "" && prevUsername != existingUser.Username {
+				if err := h.configStore.UpdateSessionsRoleByUsername(ctx, prevUsername, existingUser.Role, tx); err != nil {
+					return fmt.Errorf("refresh sessions for previous username: %w", err)
+				}
+			}
+		}
+		return nil
+	}
+	if err := h.persistUserWithGovernance(ctx, existingUser, false, syncSessions); err != nil {
 		logger.Error("failed to update governance user username=%s: %v", existingUser.Username, err)
 		SendError(ctx, fasthttp.StatusInternalServerError, userUpdateFailureMessage(err))
 		return
 	}
 
-	// Terminate sessions on password change / reject / block; sync or revoke on role change.
-	if payload.Password != "" || payload.SendTemporaryPassword || (payload.Status != nil && (*payload.Status == tables.UserStatusRejected || *payload.Status == tables.UserStatusPending || *payload.Status == tables.UserStatusDisabled)) {
-		_ = h.configStore.DeleteSessionsByUsername(ctx, existingUser.Username)
-		if prevUsername != "" && prevUsername != existingUser.Username {
-			_ = h.configStore.DeleteSessionsByUsername(ctx, prevUsername)
-		}
-		if payload.Password != "" {
-			clearAccountLockouts(h.configStore, ctx, existingUser.Username, existingUser.Email)
-		}
-	} else if roleChanged {
-		// Keep user signed in but refresh RBAC immediately on all live sessions.
-		_ = h.configStore.UpdateSessionsRoleByUsername(ctx, existingUser.Username, existingUser.Role)
-		if prevUsername != "" && prevUsername != existingUser.Username {
-			_ = h.configStore.UpdateSessionsRoleByUsername(ctx, prevUsername, existingUser.Role)
-		}
+	if payload.Password != "" {
+		clearAccountLockouts(h.configStore, ctx, existingUser.Username, existingUser.Email)
 	}
 	// Drop cached session rows so Workspace Access / role changes apply on the next request
 	// instead of waiting for the auth-cache TTL.
@@ -2455,20 +2548,16 @@ func (h *SessionHandler) deleteUser(ctx *fasthttp.RequestCtx) {
 		}
 	}
 
-	// Clean related governance rows before deleting the user so DB stays consistent.
-	purgeUserRelations(ctx, h.configStore, h.promptLifecycle, existing)
-
 	// Send rejection/account termination email notification to the user before removing the account
 	if existing.Email != "" {
 		_, _ = trySendRegistrationDecisionEmail(h.configStore, ctx, existing.Username, existing.Email, "rejected")
 	}
 
-	if err := h.configStore.DeleteUser(ctx, id); err != nil {
-		SendError(ctx, fasthttp.StatusInternalServerError, "Failed to delete user: "+err.Error())
+	if err := purgeUserRelations(ctx, h.configStore, h.promptLifecycle, existing); err != nil {
+		logger.Error("failed to delete user and related records id=%s: %v", id, err)
+		SendError(ctx, fasthttp.StatusInternalServerError, "Failed to delete user and related records: "+err.Error())
 		return
 	}
-	// Terminate any live sessions for the deleted user
-	_ = h.configStore.DeleteSessionsByUsername(ctx, existing.Username)
 	if h.userGovernance != nil {
 		h.userGovernance.DeleteUserGovernance(ctx, id)
 		if evicter, ok := h.userGovernance.(userModelConfigEvicter); ok {
@@ -2769,9 +2858,17 @@ func (h *SessionHandler) approveUser(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusInternalServerError, "Failed to approve user: "+err.Error())
 		return
 	}
-	h.assignRequestedTeam(ctx, user)
+	if err := h.assignRequestedTeam(ctx, user); err != nil {
+		logger.Error("failed to assign approved user %s to requested team: %v", user.Username, err)
+		SendError(ctx, fasthttp.StatusInternalServerError, "User was approved, but team assignment failed: "+err.Error())
+		return
+	}
 	if h.promptLifecycle != nil {
-		_ = h.promptLifecycle.OnUserCreated(ctx, user, true)
+		if err := h.promptLifecycle.OnUserCreated(ctx, user, true); err != nil {
+			logger.Error("failed to sync Prompt Repository for approved user=%s: %v", user.ID, err)
+			SendError(ctx, fasthttp.StatusInternalServerError, "User was approved, but Prompt Repository setup failed: "+err.Error())
+			return
+		}
 	}
 	emailSent, emailErr := trySendRegistrationDecisionEmail(h.configStore, ctx, user.Username, user.Email, "approved")
 	user.Password = ""
@@ -2810,12 +2907,20 @@ func (h *SessionHandler) rejectUser(ctx *fasthttp.RequestCtx) {
 	user.Status = tables.UserStatusRejected
 	user.ReviewedAt = &now
 	user.UpdatedAt = now
-	if err := h.configStore.UpdateUser(ctx, user); err != nil {
-		SendError(ctx, fasthttp.StatusInternalServerError, "Failed to reject user: "+err.Error())
+	if err := h.configStore.ExecuteTransaction(ctx, func(tx *gorm.DB) error {
+		if err := h.configStore.UpdateUser(ctx, user, tx); err != nil {
+			return fmt.Errorf("update rejected user: %w", err)
+		}
+		if err := h.configStore.DeleteSessionsByUsername(ctx, user.Username, tx); err != nil {
+			return fmt.Errorf("revoke rejected user's sessions: %w", err)
+		}
+		return nil
+	}); err != nil {
+		logger.Error("failed to reject user and revoke sessions id=%s: %v", user.ID, err)
+		SendError(ctx, fasthttp.StatusInternalServerError, "Failed to reject user and revoke sessions: "+err.Error())
 		return
 	}
-	// Terminate any live sessions for the rejected user
-	_ = h.configStore.DeleteSessionsByUsername(ctx, user.Username)
+	GetAuthCache().InvalidateUserSessions(user.Username)
 	emailSent, emailErr := trySendRegistrationDecisionEmail(h.configStore, ctx, user.Username, user.Email, "rejected")
 	SendJSON(ctx, map[string]any{
 		"message":     "Registration denied",
@@ -2869,11 +2974,19 @@ func (h *SessionHandler) blockUser(ctx *fasthttp.RequestCtx) {
 	now := time.Now()
 	user.Status = tables.UserStatusDisabled
 	user.UpdatedAt = now
-	if err := h.configStore.UpdateUser(ctx, user); err != nil {
-		SendError(ctx, fasthttp.StatusInternalServerError, "Failed to block user: "+err.Error())
+	if err := h.configStore.ExecuteTransaction(ctx, func(tx *gorm.DB) error {
+		if err := h.configStore.UpdateUser(ctx, user, tx); err != nil {
+			return fmt.Errorf("update blocked user: %w", err)
+		}
+		if err := h.configStore.DeleteSessionsByUsername(ctx, user.Username, tx); err != nil {
+			return fmt.Errorf("revoke blocked user's sessions: %w", err)
+		}
+		return nil
+	}); err != nil {
+		logger.Error("failed to block user and revoke sessions id=%s: %v", user.ID, err)
+		SendError(ctx, fasthttp.StatusInternalServerError, "Failed to block user and revoke sessions: "+err.Error())
 		return
 	}
-	_ = h.configStore.DeleteSessionsByUsername(ctx, user.Username)
 	GetAuthCache().InvalidateUserSessions(user.Username)
 	emailSent, emailErr := trySendAccountBlockStatusEmail(h.configStore, ctx, user.Username, user.Email, true)
 	SendJSON(ctx, map[string]any{
@@ -3003,16 +3116,27 @@ func (h *SessionHandler) changeTemporaryPassword(ctx *fasthttp.RequestCtx) {
 	dbUser.MustChangePassword = false
 	dbUser.UpdatedAt = time.Now()
 
-	if err := h.configStore.UpdateUser(ctx, dbUser); err != nil {
-		SendError(ctx, fasthttp.StatusInternalServerError, "Failed to update password: "+err.Error())
-		return
-	}
-
-	// Revoke other active sessions for this account; re-insert the current active session
-	_ = h.configStore.DeleteSessionsByUsername(ctx, sess.Username)
+	// Update the password, revoke old sessions, and preserve this session atomically.
+	// If any write fails, the password and all session rows roll back together.
 	sess.CreatedAt = time.Now()
 	sess.UpdatedAt = time.Now()
-	_ = h.configStore.CreateSession(ctx, sess)
+	if err := h.configStore.ExecuteTransaction(ctx, func(tx *gorm.DB) error {
+		if err := h.configStore.UpdateUser(ctx, dbUser, tx); err != nil {
+			return fmt.Errorf("update temporary password: %w", err)
+		}
+		if err := h.configStore.DeleteSessionsByUsername(ctx, sess.Username, tx); err != nil {
+			return fmt.Errorf("revoke previous sessions: %w", err)
+		}
+		if err := h.configStore.CreateSession(ctx, sess, tx); err != nil {
+			return fmt.Errorf("preserve current session: %w", err)
+		}
+		return nil
+	}); err != nil {
+		logger.Error("failed to change temporary password and refresh session for user=%s: %v", dbUser.Username, err)
+		SendError(ctx, fasthttp.StatusInternalServerError, "Failed to update password and refresh session: "+err.Error())
+		return
+	}
+	GetAuthCache().InvalidateUserSessions(sess.Username)
 
 	SendJSON(ctx, map[string]any{
 		"status":  "success",

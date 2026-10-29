@@ -80,10 +80,24 @@ if not _env_backend:
 		_env_backend = ""
 
 if not _env_backend:
-	raise RuntimeError(
-		"[Gateway Guard ERROR] Backend URL could not be resolved from .env! "
-		"Please set SERVER_DOMAIN or GATEWAY_BACKEND_URL or APP_PORT in your .env file."
-	)
+	for cand in (
+		os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "config", "gateway_guard_config.json"),
+		os.path.join(os.getcwd(), "gateway_guard_config.json"),
+		os.path.join(os.getcwd(), "config", "gateway_guard_config.json"),
+	):
+		if os.path.isfile(cand):
+			try:
+				import json
+				with open(cand, "r", encoding="utf-8") as f_cfg:
+					_cfg_data = json.load(f_cfg)
+					_env_backend = str(_cfg_data.get("backend_url") or "").strip().rstrip("/")
+					if _env_backend:
+						break
+			except Exception:
+				pass
+
+if not _env_backend:
+	_env_backend = "http://localhost:6000"
 
 GATEWAY_BACKEND_URL = _env_backend
 if GATEWAY_BACKEND_URL and not GATEWAY_BACKEND_URL.startswith("http://") and not GATEWAY_BACKEND_URL.startswith("https://"):

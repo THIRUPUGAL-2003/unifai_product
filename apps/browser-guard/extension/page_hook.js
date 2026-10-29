@@ -3021,24 +3021,35 @@
           if (sniffed && !checkFileUploadAllowed(file, sniffed)) {
             return;
           }
-          pushStagedFile({ name: name, size: size, type: type, text: fContent });
+          var stagedTextItem = { name: name, size: size, type: type, text: fContent };
+          pushStagedFile(stagedTextItem);
 
           // Immediate DLP scan of file contents
           var fileDecision = evaluateClientRules(null, [{ name: name, text: fContent }]);
           if (fileDecision && fileDecision.blocked) {
-            pushStagedFile({
-              name: name,
-              size: size,
-              type: type,
-              text: fContent,
-              is_blocked: true,
-              blocked_reason: fileDecision.rule_name || fileDecision.rule,
-              blocked_reason_detail: fileDecision.rule_reason || "",
-              blocked_message: fileDecision.message
-            });
+            stagedTextItem.is_blocked = true;
+            stagedTextItem.blocked_reason = fileDecision.rule_name || fileDecision.rule;
+            stagedTextItem.blocked_reason_detail = fileDecision.rule_reason || "";
+            stagedTextItem.blocked_message = fileDecision.message;
+            pushStagedFile(stagedTextItem);
             showBubble(fileDecision.message, fileDecision.rule_name || fileDecision.rule, "block");
+            removeFilePillFromDom(name);
             return;
           }
+
+          // ASYNC PREDICT & SCAN WITH DESKTOP AGENT EXE:
+          ask("", [stagedTextItem]).then(function (dec) {
+            if (dec && dec.blocked) {
+              stagedTextItem.is_blocked = true;
+              stagedTextItem.blocked_reason = dec.rule;
+              stagedTextItem.blocked_message = dec.message;
+              pushStagedFile(stagedTextItem);
+              showBubble(dec.message || "File upload blocked by DLP policy.", dec.rule || "File Security Rule", "block");
+              removeStagedFile(name);
+            } else if (dec && (dec.action === "Warned" || dec.action === "warn")) {
+              showBubble(dec.message || "File triggered a DLP warning.", dec.rule || "Security Warning", "warn");
+            }
+          }).catch(function () {});
         }
       };
       rText.readAsText(file.slice(0, 500000)); // Scan first 500KB of text fast
@@ -3059,27 +3070,37 @@
             return;
           }
           var extractedStr = extractStringsFromBase64(b64);
-          pushStagedFile({ name: name, size: size, type: type, base64: b64, text: extractedStr });
+          var stagedDocItem = { name: name, size: size, type: type, base64: b64, text: extractedStr };
+          pushStagedFile(stagedDocItem);
 
           // Immediate DLP scan of binary documents
           if (extractedStr) {
             var fileDecision = evaluateClientRules(null, [{ name: name, text: extractedStr }]);
             if (fileDecision && fileDecision.blocked) {
-              pushStagedFile({
-                name: name,
-                size: size,
-                type: type,
-                base64: b64,
-                text: extractedStr,
-                is_blocked: true,
-                blocked_reason: fileDecision.rule_name || fileDecision.rule,
-                blocked_reason_detail: fileDecision.rule_reason || "",
-                blocked_message: fileDecision.message
-              });
+              stagedDocItem.is_blocked = true;
+              stagedDocItem.blocked_reason = fileDecision.rule_name || fileDecision.rule;
+              stagedDocItem.blocked_reason_detail = fileDecision.rule_reason || "";
+              stagedDocItem.blocked_message = fileDecision.message;
+              pushStagedFile(stagedDocItem);
               showBubble(fileDecision.message, fileDecision.rule_name || fileDecision.rule, "block");
+              removeFilePillFromDom(name);
               return;
             }
           }
+
+          // ASYNC PREDICT & SCAN WITH DESKTOP AGENT EXE:
+          ask("", [stagedDocItem]).then(function (dec) {
+            if (dec && dec.blocked) {
+              stagedDocItem.is_blocked = true;
+              stagedDocItem.blocked_reason = dec.rule;
+              stagedDocItem.blocked_message = dec.message;
+              pushStagedFile(stagedDocItem);
+              showBubble(dec.message || "File upload blocked by DLP policy.", dec.rule || "File Security Rule", "block");
+              removeStagedFile(name);
+            } else if (dec && (dec.action === "Warned" || dec.action === "warn")) {
+              showBubble(dec.message || "File triggered a DLP warning.", dec.rule || "Security Warning", "warn");
+            }
+          }).catch(function () {});
         }
       };
       rDoc.readAsDataURL(file.slice(0, 1500000)); // Read first 1.5MB fast for deep client inspection
@@ -3094,26 +3115,36 @@
             return;
           }
           var extractedStr = extractStringsFromBase64(b64);
-          pushStagedFile({ name: name, size: size, type: type, base64: b64, text: extractedStr });
+          var stagedAnyItem = { name: name, size: size, type: type, base64: b64, text: extractedStr };
+          pushStagedFile(stagedAnyItem);
 
           if (extractedStr) {
             var fileDecision = evaluateClientRules(null, [{ name: name, text: extractedStr }]);
             if (fileDecision && fileDecision.blocked) {
-              pushStagedFile({
-                name: name,
-                size: size,
-                type: type,
-                base64: b64,
-                text: extractedStr,
-                is_blocked: true,
-                blocked_reason: fileDecision.rule_name || fileDecision.rule,
-                blocked_reason_detail: fileDecision.rule_reason || "",
-                blocked_message: fileDecision.message
-              });
+              stagedAnyItem.is_blocked = true;
+              stagedAnyItem.blocked_reason = fileDecision.rule_name || fileDecision.rule;
+              stagedAnyItem.blocked_reason_detail = fileDecision.rule_reason || "";
+              stagedAnyItem.blocked_message = fileDecision.message;
+              pushStagedFile(stagedAnyItem);
               showBubble(fileDecision.message, fileDecision.rule_name || fileDecision.rule, "block");
+              removeFilePillFromDom(name);
               return;
             }
           }
+
+          // ASYNC PREDICT & SCAN WITH DESKTOP AGENT EXE:
+          ask("", [stagedAnyItem]).then(function (dec) {
+            if (dec && dec.blocked) {
+              stagedAnyItem.is_blocked = true;
+              stagedAnyItem.blocked_reason = dec.rule;
+              stagedAnyItem.blocked_message = dec.message;
+              pushStagedFile(stagedAnyItem);
+              showBubble(dec.message || "File upload blocked by DLP policy.", dec.rule || "File Security Rule", "block");
+              removeStagedFile(name);
+            } else if (dec && (dec.action === "Warned" || dec.action === "warn")) {
+              showBubble(dec.message || "File triggered a DLP warning.", dec.rule || "Security Warning", "warn");
+            }
+          }).catch(function () {});
         }
       };
       rAny.readAsDataURL(file.slice(0, 1500000));

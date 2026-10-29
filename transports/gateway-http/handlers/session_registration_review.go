@@ -13,6 +13,7 @@ import (
 
 	"github.com/gateway/gateway/framework/configstore/tables"
 	"github.com/valyala/fasthttp"
+	"gorm.io/gorm"
 )
 
 const registrationReviewTokenTTL = 48 * time.Hour
@@ -235,9 +236,17 @@ func (h *SessionHandler) reviewRegistrationByToken(ctx *fasthttp.RequestCtx) {
 			h.writeReviewHTML(ctx, fasthttp.StatusInternalServerError, "Failed", "Could not approve this registration. Try again from Governance → Users.")
 			return
 		}
-		h.assignRequestedTeam(ctx, user)
+		if err := h.assignRequestedTeam(ctx, user); err != nil {
+			logger.Error("registration review could not assign user %s to requested team: %v", user.Username, err)
+			h.writeReviewHTML(ctx, fasthttp.StatusInternalServerError, "Team assignment failed", "The user was approved, but their requested team could not be assigned. Try again from Governance → Users.")
+			return
+		}
 		if h.promptLifecycle != nil {
-			_ = h.promptLifecycle.OnUserCreated(ctx, user, true)
+			if err := h.promptLifecycle.OnUserCreated(ctx, user, true); err != nil {
+				logger.Error("registration review could not sync Prompt Repository for user %s: %v", user.ID, err)
+				h.writeReviewHTML(ctx, fasthttp.StatusInternalServerError, "Prompt Repository setup failed", "The user was approved, but Prompt Repository setup failed. Try again from Governance → Users.")
+				return
+			}
 		}
 		_, _ = trySendRegistrationDecisionEmail(h.configStore, ctx, user.Username, user.Email, "approved")
 		h.writeReviewHTML(ctx, fasthttp.StatusOK, "Accepted", html.EscapeString(user.Username)+" is now active and can sign in. They also appear under Governance → Users.")
@@ -254,11 +263,20 @@ func (h *SessionHandler) reviewRegistrationByToken(ctx *fasthttp.RequestCtx) {
 		user.Status = tables.UserStatusRejected
 		user.ReviewedAt = &now
 		user.UpdatedAt = now
-		if err := h.configStore.UpdateUser(ctx, user); err != nil {
-			h.writeReviewHTML(ctx, fasthttp.StatusInternalServerError, "Failed", "Could not deny this registration. Try again from Governance → Users.")
+		if err := h.configStore.ExecuteTransaction(ctx, func(tx *gorm.DB) error {
+			if err := h.configStore.UpdateUser(ctx, user, tx); err != nil {
+				return fmt.Errorf("update rejected user: %w", err)
+			}
+			if err := h.configStore.DeleteSessionsByUsername(ctx, user.Username, tx); err != nil {
+				return fmt.Errorf("revoke rejected user's sessions: %w", err)
+			}
+			return nil
+		}); err != nil {
+			logger.Error("registration review failed to deny user and revoke sessions id=%s: %v", user.ID, err)
+			h.writeReviewHTML(ctx, fasthttp.StatusInternalServerError, "Failed", "Could not deny this registration and revoke sessions. Try again from Governance → Users.")
 			return
 		}
-		_ = h.configStore.DeleteSessionsByUsername(ctx, user.Username)
+		GetAuthCache().InvalidateUserSessions(user.Username)
 		_, _ = trySendRegistrationDecisionEmail(h.configStore, ctx, user.Username, user.Email, "rejected")
 		h.writeReviewHTML(ctx, fasthttp.StatusOK, "Denied", html.EscapeString(user.Username)+" cannot sign in. The request is removed from the Governance pending list.")
 	default:

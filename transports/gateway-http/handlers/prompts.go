@@ -18,6 +18,7 @@ import (
 	"github.com/gateway/gateway/transports/gateway-http/lib"
 	"github.com/google/uuid"
 	"github.com/valyala/fasthttp"
+	"gorm.io/gorm"
 )
 
 // PromptCacheReloader is implemented by the prompts plugin to allow the HTTP handler
@@ -71,6 +72,37 @@ func (h *PromptsHandler) reloadCache(ctx context.Context) {
 	if err := h.reloader.Reload(ctx); err != nil {
 		logger.Error("failed to reload prompt cache: %v", err)
 	}
+}
+
+// createTeamWithDefaultBudget keeps the governance team and its default budget
+// in the same transaction so a budget insert failure cannot leave a team without
+// the budget that Prompt Repository team creation promises.
+func (h *PromptsHandler) createTeamWithDefaultBudget(ctx context.Context, team *tables.TableTeam, folder *tables.TableFolder) error {
+	return h.store.ExecuteTransaction(ctx, func(tx *gorm.DB) error {
+		if err := h.store.CreateTeam(ctx, team, tx); err != nil {
+			return fmt.Errorf("create governance team: %w", err)
+		}
+
+		now := time.Now()
+		budget := &tables.TableBudget{
+			ID:            uuid.NewString(),
+			MaxLimit:      500,
+			ResetDuration: "1h",
+			TeamID:        &team.ID,
+			LastReset:     now,
+			CreatedAt:     now,
+			UpdatedAt:     now,
+		}
+		if err := h.store.CreateBudget(ctx, budget, tx); err != nil {
+			return fmt.Errorf("create default team budget: %w", err)
+		}
+		folder.Type = "team"
+		folder.EntityID = &team.ID
+		if err := tx.WithContext(ctx).Create(folder).Error; err != nil {
+			return fmt.Errorf("create team folder: %w", err)
+		}
+		return nil
+	})
 }
 
 // RegisterRoutes registers the routes for the PromptsHandler
@@ -284,6 +316,7 @@ func (h *PromptsHandler) createFolder(ctx *fasthttp.RequestCtx) {
 		Description: req.Description,
 		Type:        "custom",
 	}
+	folderPersisted := false
 
 	// Bidirectional Sync: If creating under Teams/Customers/Business Units, auto-create in Governance!
 	if req.ParentID != nil && *req.ParentID != "" {
@@ -302,20 +335,12 @@ func (h *PromptsHandler) createFolder(ctx *fasthttp.RequestCtx) {
 					CreatedAt: time.Now(),
 					UpdatedAt: time.Now(),
 				}
-				if err := h.store.CreateTeam(ctx, team); err == nil {
-					budget := &tables.TableBudget{
-						ID:            uuid.NewString(),
-						MaxLimit:      500,
-						ResetDuration: "1h",
-						TeamID:        &teamID,
-						LastReset:     time.Now(),
-						CreatedAt:     time.Now(),
-						UpdatedAt:     time.Now(),
-					}
-					_ = h.store.CreateBudget(ctx, budget)
-					folder.Type = "team"
-					folder.EntityID = &teamID
+				if err := h.createTeamWithDefaultBudget(ctx, team, folder); err != nil {
+					logger.Error("failed to create team and default budget: %v", err)
+					SendError(ctx, fasthttp.StatusInternalServerError, err.Error())
+					return
 				}
+				folderPersisted = true
 			} else if parent.Type == "customer" && parent.EntityID != nil {
 				// Team created under a Customer
 				teamID := uuid.NewString()
@@ -326,20 +351,12 @@ func (h *PromptsHandler) createFolder(ctx *fasthttp.RequestCtx) {
 					CreatedAt:  time.Now(),
 					UpdatedAt:  time.Now(),
 				}
-				if err := h.store.CreateTeam(ctx, team); err == nil {
-					budget := &tables.TableBudget{
-						ID:            uuid.NewString(),
-						MaxLimit:      500,
-						ResetDuration: "1h",
-						TeamID:        &teamID,
-						LastReset:     time.Now(),
-						CreatedAt:     time.Now(),
-						UpdatedAt:     time.Now(),
-					}
-					_ = h.store.CreateBudget(ctx, budget)
-					folder.Type = "team"
-					folder.EntityID = &teamID
+				if err := h.createTeamWithDefaultBudget(ctx, team, folder); err != nil {
+					logger.Error("failed to create team and default budget: %v", err)
+					SendError(ctx, fasthttp.StatusInternalServerError, err.Error())
+					return
 				}
+				folderPersisted = true
 			} else if parent.Type == "business_unit" && parent.EntityID != nil {
 				// Team created under a Business Unit
 				teamID := uuid.NewString()
@@ -350,20 +367,12 @@ func (h *PromptsHandler) createFolder(ctx *fasthttp.RequestCtx) {
 					CreatedAt:      time.Now(),
 					UpdatedAt:      time.Now(),
 				}
-				if err := h.store.CreateTeam(ctx, team); err == nil {
-					budget := &tables.TableBudget{
-						ID:            uuid.NewString(),
-						MaxLimit:      500,
-						ResetDuration: "1h",
-						TeamID:        &teamID,
-						LastReset:     time.Now(),
-						CreatedAt:     time.Now(),
-						UpdatedAt:     time.Now(),
-					}
-					_ = h.store.CreateBudget(ctx, budget)
-					folder.Type = "team"
-					folder.EntityID = &teamID
+				if err := h.createTeamWithDefaultBudget(ctx, team, folder); err != nil {
+					logger.Error("failed to create team and default budget: %v", err)
+					SendError(ctx, fasthttp.StatusInternalServerError, err.Error())
+					return
 				}
+				folderPersisted = true
 			} else if isCustomersRoot {
 				// Customer created under Customers/
 				custID := uuid.NewString()
@@ -396,10 +405,12 @@ func (h *PromptsHandler) createFolder(ctx *fasthttp.RequestCtx) {
 		}
 	}
 
-	if err := h.store.CreateFolder(ctx, folder); err != nil {
-		logger.Error("failed to create folder: %v", err)
-		SendError(ctx, fasthttp.StatusInternalServerError, err.Error())
-		return
+	if !folderPersisted {
+		if err := h.store.CreateFolder(ctx, folder); err != nil {
+			logger.Error("failed to create folder: %v", err)
+			SendError(ctx, fasthttp.StatusInternalServerError, err.Error())
+			return
+		}
 	}
 
 	SendJSON(ctx, map[string]any{
@@ -437,26 +448,60 @@ func (h *PromptsHandler) updateFolder(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
+	var renameEntity func(*gorm.DB) error
 	if req.Name != "" {
-		folder.Name = req.Name
 		if folder.EntityID != nil && *folder.EntityID != "" {
 			switch folder.Type {
 			case "team":
-				if team, err := h.store.GetTeam(ctx, *folder.EntityID); err == nil && team != nil {
-					team.Name = req.Name
-					_ = h.store.UpdateTeam(ctx, team)
+				team, err := h.store.GetTeam(ctx, *folder.EntityID)
+				if err != nil {
+					logger.Error("failed to get team for folder rename: %v", err)
+					SendError(ctx, fasthttp.StatusInternalServerError, err.Error())
+					return
+				}
+				if team == nil {
+					SendError(ctx, fasthttp.StatusInternalServerError, "team linked to folder was not found")
+					return
+				}
+				team.Name = req.Name
+				renameEntity = func(tx *gorm.DB) error {
+					if err := h.store.UpdateTeam(ctx, team, tx); err != nil {
+						return fmt.Errorf("update team name from folder rename: %w", err)
+					}
+					return nil
 				}
 			case "customer":
-				if customer, err := h.store.GetCustomer(ctx, *folder.EntityID); err == nil && customer != nil {
-					customer.Name = req.Name
-					_ = h.store.UpdateCustomer(ctx, customer)
+				customer, err := h.store.GetCustomer(ctx, *folder.EntityID)
+				if err != nil {
+					logger.Error("failed to get customer for folder rename: %v", err)
+					SendError(ctx, fasthttp.StatusInternalServerError, err.Error())
+					return
+				}
+				if customer == nil {
+					SendError(ctx, fasthttp.StatusInternalServerError, "customer linked to folder was not found")
+					return
+				}
+				customer.Name = req.Name
+				renameEntity = func(tx *gorm.DB) error {
+					if err := h.store.UpdateCustomer(ctx, customer, tx); err != nil {
+						return fmt.Errorf("update customer name from folder rename: %w", err)
+					}
+					return nil
 				}
 			case "business_unit":
-				if h.store.DB() != nil {
-					_ = h.store.DB().WithContext(ctx).Model(&tables.TableBusinessUnit{}).Where("id = ?", *folder.EntityID).Update("name", req.Name).Error
+				renameEntity = func(tx *gorm.DB) error {
+					result := tx.WithContext(ctx).Model(&tables.TableBusinessUnit{}).Where("id = ?", *folder.EntityID).Update("name", req.Name)
+					if result.Error != nil {
+						return fmt.Errorf("update business-unit name from folder rename: %w", result.Error)
+					}
+					if result.RowsAffected == 0 {
+						return configstore.ErrNotFound
+					}
+					return nil
 				}
 			}
 		}
+		folder.Name = req.Name
 	}
 	parentChanged := false
 	var oldAudience []string
@@ -567,9 +612,30 @@ func (h *PromptsHandler) updateFolder(ctx *fasthttp.RequestCtx) {
 		folder.Description = req.Description
 	}
 
-	if err := h.store.UpdateFolder(ctx, folder); err != nil {
-		logger.Error("failed to update folder: %v", err)
-		SendError(ctx, fasthttp.StatusInternalServerError, err.Error())
+	updateFolder := func(tx *gorm.DB) error {
+		if renameEntity != nil {
+			if err := renameEntity(tx); err != nil {
+				return err
+			}
+		}
+		result := tx.WithContext(ctx).Where("id = ?", folder.ID).Save(folder)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return configstore.ErrNotFound
+		}
+		return nil
+	}
+	var updateErr error
+	if renameEntity != nil {
+		updateErr = h.store.ExecuteTransaction(ctx, updateFolder)
+	} else {
+		updateErr = h.store.UpdateFolder(ctx, folder)
+	}
+	if updateErr != nil {
+		logger.Error("failed to update folder: %v", updateErr)
+		SendError(ctx, fasthttp.StatusInternalServerError, updateErr.Error())
 		return
 	}
 	if parentChanged && h.lifecycle != nil {
@@ -624,10 +690,10 @@ func (h *PromptsHandler) folderIsDescendant(ctx context.Context, folderID, ances
 }
 
 // folderSubtreeIDs returns rootID and every folder below it.
-func (h *PromptsHandler) folderSubtreeIDs(ctx context.Context, rootID string) []string {
+func (h *PromptsHandler) folderSubtreeIDs(ctx context.Context, rootID string) ([]string, error) {
 	ids := []string{rootID}
 	if h.store == nil || h.store.DB() == nil {
-		return ids
+		return nil, fmt.Errorf("database is unavailable while loading folder subtree")
 	}
 	db := h.store.DB().WithContext(ctx)
 	seen := map[string]bool{rootID: true}
@@ -635,7 +701,7 @@ func (h *PromptsHandler) folderSubtreeIDs(ctx context.Context, rootID string) []
 	for depth := 0; depth < maxFolderDepth && len(frontier) > 0; depth++ {
 		var children []tables.TableFolder
 		if err := db.Select("id").Where("parent_id IN ?", frontier).Find(&children).Error; err != nil {
-			break
+			return nil, fmt.Errorf("load child folders for %s: %w", rootID, err)
 		}
 		frontier = frontier[:0]
 		for _, c := range children {
@@ -646,7 +712,10 @@ func (h *PromptsHandler) folderSubtreeIDs(ctx context.Context, rootID string) []
 			}
 		}
 	}
-	return ids
+	if len(frontier) > 0 {
+		return nil, fmt.Errorf("folder subtree exceeds maximum supported depth of %d", maxFolderDepth)
+	}
+	return ids, nil
 }
 
 // deleteFolder handles DELETE /api/prompt-repo/folders/{id}
@@ -676,9 +745,13 @@ func (h *PromptsHandler) deleteFolder(ctx *fasthttp.RequestCtx) {
 	if (folder.ParentID == nil || *folder.ParentID == "") && strings.HasPrefix(folder.Type, "system_") {
 		if h.store != nil && h.store.DB() != nil {
 			var count int64
-			_ = h.store.DB().WithContext(ctx).Model(&tables.TableFolder{}).
+			if err := h.store.DB().WithContext(ctx).Model(&tables.TableFolder{}).
 				Where("type = ? AND (parent_id IS NULL OR parent_id = '')", folder.Type).
-				Count(&count).Error
+				Count(&count).Error; err != nil {
+				logger.Error("failed to count system root folders: %v", err)
+				SendError(ctx, fasthttp.StatusInternalServerError, "Could not verify whether this system folder can be deleted")
+				return
+			}
 			if count <= 1 {
 				SendError(ctx, fasthttp.StatusBadRequest, "Primary system root folder cannot be deleted")
 				return
@@ -690,12 +763,23 @@ func (h *PromptsHandler) deleteFolder(ctx *fasthttp.RequestCtx) {
 	}
 
 	// Unassign every prompt in this folder and its subfolders from all users immediately
-	if h.store != nil && h.store.DB() != nil {
-		var childPrompts []tables.TablePrompt
-		if err := h.store.DB().WithContext(ctx).Select("id").Where("folder_id IN ?", h.folderSubtreeIDs(ctx, folder.ID)).Find(&childPrompts).Error; err == nil {
-			for _, cp := range childPrompts {
-				h.unassignPromptFromAllUsers(ctx, cp.ID)
-			}
+	subtreeIDs, err := h.folderSubtreeIDs(ctx, folder.ID)
+	if err != nil {
+		logger.Error("failed to load folder subtree before deletion: %v", err)
+		SendError(ctx, fasthttp.StatusInternalServerError, "Could not check folder contents")
+		return
+	}
+	var childPrompts []tables.TablePrompt
+	if err := h.store.DB().WithContext(ctx).Select("id").Where("folder_id IN ?", subtreeIDs).Find(&childPrompts).Error; err != nil {
+		logger.Error("failed to load prompts in folder subtree: %v", err)
+		SendError(ctx, fasthttp.StatusInternalServerError, "Could not check folder contents")
+		return
+	}
+	for _, cp := range childPrompts {
+		if err := h.unassignPromptFromAllUsers(ctx, cp.ID); err != nil {
+			logger.Error("failed to revoke prompt %s access before folder deletion: %v", cp.ID, err)
+			SendError(ctx, fasthttp.StatusInternalServerError, "Could not revoke prompt access")
+			return
 		}
 	}
 
@@ -727,7 +811,12 @@ func (h *PromptsHandler) deleteFolder(ctx *fasthttp.RequestCtx) {
 		}
 
 		removedRoot, err := h.lifecycle.EnsureSystemFolder(ctx, targetRootName, targetRootType, nil)
-		if err == nil && removedRoot != nil {
+		if err != nil {
+			logger.Error("failed to resolve archive folder %s: %v", targetRootName, err)
+			SendError(ctx, fasthttp.StatusInternalServerError, "Could not prepare the archive folder")
+			return
+		}
+		if removedRoot != nil {
 			archivedName := folder.Name
 			if !strings.HasSuffix(archivedName, " (Archived)") {
 				archivedName += " (Archived)"
@@ -737,7 +826,11 @@ func (h *PromptsHandler) deleteFolder(ctx *fasthttp.RequestCtx) {
 			if folder.Type != "" {
 				folder.Type = "archived_" + folder.Type
 			}
-			_ = h.store.UpdateFolder(ctx, folder)
+			if err := h.store.UpdateFolder(ctx, folder); err != nil {
+				logger.Error("failed to archive folder %s: %v", folder.ID, err)
+				SendError(ctx, fasthttp.StatusInternalServerError, "Could not move folder to the archive")
+				return
+			}
 			h.reloadCache(ctx)
 			SendJSON(ctx, map[string]any{
 				"message": "folder safely moved to " + targetRootName,
@@ -1091,13 +1184,26 @@ func (h *PromptsHandler) deletePrompt(ctx *fasthttp.RequestCtx) {
 	}
 
 	// Always unassign prompt from all users immediately so they cannot see or access it
-	h.unassignPromptFromAllUsers(ctx, prompt.ID)
+	if err := h.unassignPromptFromAllUsers(ctx, prompt.ID); err != nil {
+		logger.Error("failed to revoke prompt %s access before deletion: %v", prompt.ID, err)
+		SendError(ctx, fasthttp.StatusInternalServerError, "Could not revoke prompt access")
+		return
+	}
 
 	if !isAlreadyInTrash && h.lifecycle != nil {
 		removedUsersRoot, rErr := h.lifecycle.EnsureSystemFolder(ctx, "Removed Users", "system_removed_users_root", nil)
-		if rErr == nil && removedUsersRoot != nil {
+		if rErr != nil {
+			logger.Error("failed to resolve Removed Users folder: %v", rErr)
+			SendError(ctx, fasthttp.StatusInternalServerError, "Could not prepare the archive folder")
+			return
+		}
+		if removedUsersRoot != nil {
 			prompt.FolderID = &removedUsersRoot.ID
-			_ = h.store.UpdatePrompt(ctx, prompt)
+			if err := h.store.UpdatePrompt(ctx, prompt); err != nil {
+				logger.Error("failed to archive prompt %s: %v", prompt.ID, err)
+				SendError(ctx, fasthttp.StatusInternalServerError, "Could not move prompt to the archive")
+				return
+			}
 			h.reloadCache(ctx)
 			SendJSON(ctx, map[string]any{
 				"message": "prompt moved to Removed Users",
@@ -1620,26 +1726,38 @@ func (h *PromptsHandler) updatePromptAccess(ctx *fasthttp.RequestCtx) {
 }
 
 // unassignPromptFromAllUsers removes promptID from allowed_prompt_repos across all users in the DB.
-func (h *PromptsHandler) unassignPromptFromAllUsers(ctx context.Context, promptID string) {
+func (h *PromptsHandler) unassignPromptFromAllUsers(ctx context.Context, promptID string) error {
 	if h == nil || h.store == nil || h.store.DB() == nil || strings.TrimSpace(promptID) == "" {
-		return
+		return fmt.Errorf("prompt access store or prompt ID is unavailable")
 	}
 	db := h.store.DB().WithContext(ctx)
-	var users []tables.TableUser
-	if err := db.Where("allowed_prompt_repos LIKE ?", "%"+promptID+"%").Find(&users).Error; err == nil {
+	return db.Transaction(func(tx *gorm.DB) error {
+		var users []tables.TableUser
+		if err := tx.WithContext(ctx).Where("allowed_prompt_repos LIKE ?", "%"+promptID+"%").Find(&users).Error; err != nil {
+			return fmt.Errorf("list users assigned to prompt %s: %w", promptID, err)
+		}
 		for _, u := range users {
-			repos := strings.Split(u.AllowedPromptRepos, ",")
+			repos := splitNonEmpty(u.AllowedPromptRepos, ",")
 			var updated []string
+			changed := false
 			for _, r := range repos {
 				trimmed := strings.TrimSpace(r)
 				if trimmed != "" && trimmed != promptID {
 					updated = append(updated, trimmed)
+				} else if trimmed == promptID {
+					changed = true
 				}
 			}
+			if !changed {
+				continue
+			}
 			newAllowed := strings.Join(updated, ",")
-			_ = db.Model(&tables.TableUser{}).Where("id = ?", u.ID).Update("allowed_prompt_repos", newAllowed).Error
+			if err := tx.WithContext(ctx).Model(&tables.TableUser{}).Where("id = ?", u.ID).Update("allowed_prompt_repos", newAllowed).Error; err != nil {
+				return fmt.Errorf("remove prompt %s from user %s: %w", promptID, u.ID, err)
+			}
 		}
-	}
+		return nil
+	})
 }
 
 // promptCallerIdentity returns a stable owner id + role for prompt session history.

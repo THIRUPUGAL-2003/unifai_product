@@ -419,17 +419,21 @@ func (s *RDBConfigStore) UpdateBusinessUnit(ctx context.Context, row *tables.Tab
 }
 
 func (s *RDBConfigStore) DeleteBusinessUnit(ctx context.Context, id string) error {
-	if s.DB().Migrator().HasTable(&tables.TableTeam{}) {
-		_ = s.DB().WithContext(ctx).Model(&tables.TableTeam{}).Where("business_unit_id = ?", id).Update("business_unit_id", nil).Error
-	}
-	res := s.DB().WithContext(ctx).Where("id = ?", id).Delete(&tables.TableBusinessUnit{})
-	if res.Error != nil {
-		return res.Error
-	}
-	if res.RowsAffected == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return s.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if tx.Migrator().HasTable(&tables.TableTeam{}) {
+			if err := tx.Model(&tables.TableTeam{}).Where("business_unit_id = ?", id).Update("business_unit_id", nil).Error; err != nil {
+				return fmt.Errorf("unlink teams from business unit: %w", err)
+			}
+		}
+		res := tx.Where("id = ?", id).Delete(&tables.TableBusinessUnit{})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return ErrNotFound
+		}
+		return nil
+	})
 }
 
 func (s *RDBConfigStore) ListAlertChannels(ctx context.Context) ([]tables.TableAlertChannel, error) {
@@ -539,37 +543,50 @@ func (s *RDBConfigStore) DeletePromptDeployment(ctx context.Context, id uint) er
 	return deleteByID[tables.TablePromptDeployment](s.DB().WithContext(ctx), id)
 }
 
-func (s *RDBConfigStore) ensureVirtualKeyUsersTable(ctx context.Context) {
-	s.ensureTableOnce("vk_users", func() {
+func (s *RDBConfigStore) ensureVirtualKeyUsersTable(ctx context.Context) error {
+	return s.ensureTableOnce("vk_users", func() error {
 		db := s.DB().WithContext(ctx)
 		if !db.Migrator().HasTable(&tables.TableVirtualKeyUser{}) {
-			_ = db.AutoMigrate(&tables.TableVirtualKeyUser{})
-			return
+			return db.AutoMigrate(&tables.TableVirtualKeyUser{}).Error
 		}
 		// Drop old unique index on virtual_key_id alone if it exists so multiple users can share the same virtual key.
-		_ = db.Migrator().DropIndex(&tables.TableVirtualKeyUser{}, "virtual_key_id")
-		_ = db.Migrator().DropIndex(&tables.TableVirtualKeyUser{}, "idx_governance_virtual_key_users_virtual_key_id")
-		_ = db.Migrator().DropIndex(&tables.TableVirtualKeyUser{}, "uix_governance_virtual_key_users_virtual_key_id")
-		_ = db.AutoMigrate(&tables.TableVirtualKeyUser{})
+		for _, index := range []string{
+			"virtual_key_id",
+			"idx_governance_virtual_key_users_virtual_key_id",
+			"uix_governance_virtual_key_users_virtual_key_id",
+		} {
+			if db.Migrator().HasIndex(&tables.TableVirtualKeyUser{}, index) {
+				if err := db.Migrator().DropIndex(&tables.TableVirtualKeyUser{}, index); err != nil {
+					return fmt.Errorf("drop obsolete virtual-key user index %s: %w", index, err)
+				}
+			}
+		}
+		return db.AutoMigrate(&tables.TableVirtualKeyUser{}).Error
 	})
 }
 
 func (s *RDBConfigStore) ListVirtualKeyUsers(ctx context.Context, virtualKeyID string) ([]tables.TableVirtualKeyUser, error) {
-	s.ensureVirtualKeyUsersTable(ctx)
+	if err := s.ensureVirtualKeyUsersTable(ctx); err != nil {
+		return nil, err
+	}
 	var rows []tables.TableVirtualKeyUser
 	err := s.DB().WithContext(ctx).Where("virtual_key_id = ?", virtualKeyID).Find(&rows).Error
 	return rows, err
 }
 
 func (s *RDBConfigStore) ListVirtualKeysForUser(ctx context.Context, userID string) ([]tables.TableVirtualKeyUser, error) {
-	s.ensureVirtualKeyUsersTable(ctx)
+	if err := s.ensureVirtualKeyUsersTable(ctx); err != nil {
+		return nil, err
+	}
 	var rows []tables.TableVirtualKeyUser
 	err := s.DB().WithContext(ctx).Where("user_id = ?", userID).Find(&rows).Error
 	return rows, err
 }
 
 func (s *RDBConfigStore) SetVirtualKeyUser(ctx context.Context, virtualKeyID, userID string) error {
-	s.ensureVirtualKeyUsersTable(ctx)
+	if err := s.ensureVirtualKeyUsersTable(ctx); err != nil {
+		return err
+	}
 	now := time.Now().UTC()
 
 	var existing tables.TableVirtualKeyUser
@@ -577,6 +594,9 @@ func (s *RDBConfigStore) SetVirtualKeyUser(ctx context.Context, virtualKeyID, us
 	if err == nil {
 		existing.UpdatedAt = now
 		return s.DB().WithContext(ctx).Save(&existing).Error
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return fmt.Errorf("look up virtual-key user assignment: %w", err)
 	}
 	return s.DB().WithContext(ctx).Create(&tables.TableVirtualKeyUser{
 		VirtualKeyID: virtualKeyID,
@@ -587,18 +607,24 @@ func (s *RDBConfigStore) SetVirtualKeyUser(ctx context.Context, virtualKeyID, us
 }
 
 func (s *RDBConfigStore) DeleteVirtualKeyUser(ctx context.Context, virtualKeyID string) error {
-	s.ensureVirtualKeyUsersTable(ctx)
+	if err := s.ensureVirtualKeyUsersTable(ctx); err != nil {
+		return err
+	}
 	return s.DB().WithContext(ctx).Where("virtual_key_id = ?", virtualKeyID).Delete(&tables.TableVirtualKeyUser{}).Error
 }
 
 func (s *RDBConfigStore) RemoveVirtualKeyUser(ctx context.Context, virtualKeyID, userID string) error {
-	s.ensureVirtualKeyUsersTable(ctx)
+	if err := s.ensureVirtualKeyUsersTable(ctx); err != nil {
+		return err
+	}
 	return s.DB().WithContext(ctx).Where("virtual_key_id = ? AND user_id = ?", virtualKeyID, userID).Delete(&tables.TableVirtualKeyUser{}).Error
 }
 
 // SetVirtualKeyUsers replaces the VK's user links. See SetVirtualKeyTeams for tx.
 func (s *RDBConfigStore) SetVirtualKeyUsers(ctx context.Context, virtualKeyID string, userIDs []string, tx ...*gorm.DB) error {
-	s.ensureVirtualKeyUsersTable(ctx)
+	if err := s.ensureVirtualKeyUsersTable(ctx); err != nil {
+		return err
+	}
 	db := s.linkDB(ctx, tx)
 	userIDs = uniqueNonEmpty(userIDs)
 
@@ -618,24 +644,29 @@ func (s *RDBConfigStore) SetVirtualKeyUsers(ctx context.Context, virtualKeyID st
 	return nil
 }
 
-func (s *RDBConfigStore) ensureVirtualKeyTeamsTable(ctx context.Context) {
-	s.ensureTableOnce("vk_teams", func() {
+func (s *RDBConfigStore) ensureVirtualKeyTeamsTable(ctx context.Context) error {
+	return s.ensureTableOnce("vk_teams", func() error {
 		db := s.DB().WithContext(ctx)
 		if !db.Migrator().HasTable(&tables.TableVirtualKeyTeam{}) {
-			_ = db.AutoMigrate(&tables.TableVirtualKeyTeam{})
+			return db.AutoMigrate(&tables.TableVirtualKeyTeam{}).Error
 		}
+		return nil
 	})
 }
 
 func (s *RDBConfigStore) ListVirtualKeyTeams(ctx context.Context, virtualKeyID string) ([]tables.TableVirtualKeyTeam, error) {
-	s.ensureVirtualKeyTeamsTable(ctx)
+	if err := s.ensureVirtualKeyTeamsTable(ctx); err != nil {
+		return nil, err
+	}
 	var rows []tables.TableVirtualKeyTeam
 	err := s.DB().WithContext(ctx).Where("virtual_key_id = ?", virtualKeyID).Find(&rows).Error
 	return rows, err
 }
 
 func (s *RDBConfigStore) ListVirtualKeysForTeam(ctx context.Context, teamID string) ([]tables.TableVirtualKeyTeam, error) {
-	s.ensureVirtualKeyTeamsTable(ctx)
+	if err := s.ensureVirtualKeyTeamsTable(ctx); err != nil {
+		return nil, err
+	}
 	var rows []tables.TableVirtualKeyTeam
 	err := s.DB().WithContext(ctx).Where("team_id = ?", teamID).Find(&rows).Error
 	return rows, err
@@ -645,7 +676,9 @@ func (s *RDBConfigStore) ListVirtualKeysForTeam(ctx context.Context, teamID stri
 // row is created/locked in that transaction: a separate connection cannot see (or would block
 // on) the uncommitted VK row referenced by the join table's foreign key.
 func (s *RDBConfigStore) SetVirtualKeyTeams(ctx context.Context, virtualKeyID string, teamIDs []string, tx ...*gorm.DB) error {
-	s.ensureVirtualKeyTeamsTable(ctx)
+	if err := s.ensureVirtualKeyTeamsTable(ctx); err != nil {
+		return err
+	}
 	db := s.linkDB(ctx, tx)
 	teamIDs = uniqueNonEmpty(teamIDs)
 
@@ -665,36 +698,44 @@ func (s *RDBConfigStore) SetVirtualKeyTeams(ctx context.Context, virtualKeyID st
 	return nil
 }
 
-func (s *RDBConfigStore) ensureVirtualKeyBusinessUnitsTable(ctx context.Context) {
-	s.ensureTableOnce("vk_business_units", func() {
+func (s *RDBConfigStore) ensureVirtualKeyBusinessUnitsTable(ctx context.Context) error {
+	return s.ensureTableOnce("vk_business_units", func() error {
 		db := s.DB().WithContext(ctx)
 		if !db.Migrator().HasTable(&tables.TableVirtualKeyBusinessUnit{}) {
-			_ = db.AutoMigrate(&tables.TableVirtualKeyBusinessUnit{})
+			return db.AutoMigrate(&tables.TableVirtualKeyBusinessUnit{}).Error
 		}
+		return nil
 	})
 }
 
 // EnsureWorkspaceTables ensures all workspace and governance join tables exist in the database.
-func (s *RDBConfigStore) EnsureWorkspaceTables(ctx context.Context) {
-	s.ensureTableOnce("all_workspace_models", func() {
+func (s *RDBConfigStore) EnsureWorkspaceTables(ctx context.Context) error {
+	return s.ensureTableOnce("all_workspace_models", func() error {
 		db := s.DB().WithContext(ctx)
 		for _, model := range tables.WorkspaceModels() {
 			if !db.Migrator().HasTable(model) {
-				_ = db.AutoMigrate(model)
+				if err := db.AutoMigrate(model).Error; err != nil {
+					return fmt.Errorf("ensure workspace table for %T: %w", model, err)
+				}
 			}
 		}
+		return nil
 	})
 }
 
 func (s *RDBConfigStore) ListVirtualKeyBusinessUnits(ctx context.Context, virtualKeyID string) ([]tables.TableVirtualKeyBusinessUnit, error) {
-	s.ensureVirtualKeyBusinessUnitsTable(ctx)
+	if err := s.ensureVirtualKeyBusinessUnitsTable(ctx); err != nil {
+		return nil, err
+	}
 	var rows []tables.TableVirtualKeyBusinessUnit
 	err := s.DB().WithContext(ctx).Where("virtual_key_id = ?", virtualKeyID).Find(&rows).Error
 	return rows, err
 }
 
 func (s *RDBConfigStore) ListVirtualKeysForBusinessUnit(ctx context.Context, businessUnitID string) ([]tables.TableVirtualKeyBusinessUnit, error) {
-	s.ensureVirtualKeyBusinessUnitsTable(ctx)
+	if err := s.ensureVirtualKeyBusinessUnitsTable(ctx); err != nil {
+		return nil, err
+	}
 	var rows []tables.TableVirtualKeyBusinessUnit
 	err := s.DB().WithContext(ctx).Where("business_unit_id = ?", businessUnitID).Find(&rows).Error
 	return rows, err
@@ -702,7 +743,9 @@ func (s *RDBConfigStore) ListVirtualKeysForBusinessUnit(ctx context.Context, bus
 
 // SetVirtualKeyBusinessUnits replaces the VK's business-unit links. See SetVirtualKeyTeams for tx.
 func (s *RDBConfigStore) SetVirtualKeyBusinessUnits(ctx context.Context, virtualKeyID string, businessUnitIDs []string, tx ...*gorm.DB) error {
-	s.ensureVirtualKeyBusinessUnitsTable(ctx)
+	if err := s.ensureVirtualKeyBusinessUnitsTable(ctx); err != nil {
+		return err
+	}
 	db := s.linkDB(ctx, tx)
 	businessUnitIDs = uniqueNonEmpty(businessUnitIDs)
 	if len(businessUnitIDs) == 0 {
@@ -745,30 +788,50 @@ func uniqueNonEmpty(ids []string) []string {
 // migrations, so this only guards older databases without paying DDL cost per request.
 var tableEnsured sync.Map
 
-func (s *RDBConfigStore) ensureTableOnce(name string, fn func()) {
-	key := fmt.Sprintf("%p/%s", s, name)
-	once, _ := tableEnsured.LoadOrStore(key, &sync.Once{})
-	once.(*sync.Once).Do(fn)
+type tableEnsureState struct {
+	mu    sync.Mutex
+	ready bool
 }
 
-func (s *RDBConfigStore) ensureVirtualKeyCustomersTable(ctx context.Context) {
-	s.ensureTableOnce("vk_customers", func() {
+func (s *RDBConfigStore) ensureTableOnce(name string, fn func() error) error {
+	key := fmt.Sprintf("%p/%s", s, name)
+	stateValue, _ := tableEnsured.LoadOrStore(key, &tableEnsureState{})
+	state := stateValue.(*tableEnsureState)
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if state.ready {
+		return nil
+	}
+	if err := fn(); err != nil {
+		return err
+	}
+	state.ready = true
+	return nil
+}
+
+func (s *RDBConfigStore) ensureVirtualKeyCustomersTable(ctx context.Context) error {
+	return s.ensureTableOnce("vk_customers", func() error {
 		db := s.DB().WithContext(ctx)
 		if !db.Migrator().HasTable(&tables.TableVirtualKeyCustomer{}) {
-			_ = db.AutoMigrate(&tables.TableVirtualKeyCustomer{})
+			return db.AutoMigrate(&tables.TableVirtualKeyCustomer{}).Error
 		}
+		return nil
 	})
 }
 
 func (s *RDBConfigStore) ListVirtualKeyCustomers(ctx context.Context, virtualKeyID string) ([]tables.TableVirtualKeyCustomer, error) {
-	s.ensureVirtualKeyCustomersTable(ctx)
+	if err := s.ensureVirtualKeyCustomersTable(ctx); err != nil {
+		return nil, err
+	}
 	var rows []tables.TableVirtualKeyCustomer
 	err := s.DB().WithContext(ctx).Where("virtual_key_id = ?", virtualKeyID).Find(&rows).Error
 	return rows, err
 }
 
 func (s *RDBConfigStore) ListVirtualKeysForCustomer(ctx context.Context, customerID string) ([]tables.TableVirtualKeyCustomer, error) {
-	s.ensureVirtualKeyCustomersTable(ctx)
+	if err := s.ensureVirtualKeyCustomersTable(ctx); err != nil {
+		return nil, err
+	}
 	var rows []tables.TableVirtualKeyCustomer
 	err := s.DB().WithContext(ctx).Where("customer_id = ?", customerID).Find(&rows).Error
 	return rows, err
@@ -776,7 +839,9 @@ func (s *RDBConfigStore) ListVirtualKeysForCustomer(ctx context.Context, custome
 
 // SetVirtualKeyCustomers replaces the VK's customer links. See SetVirtualKeyTeams for tx.
 func (s *RDBConfigStore) SetVirtualKeyCustomers(ctx context.Context, virtualKeyID string, customerIDs []string, tx ...*gorm.DB) error {
-	s.ensureVirtualKeyCustomersTable(ctx)
+	if err := s.ensureVirtualKeyCustomersTable(ctx); err != nil {
+		return err
+	}
 	db := s.linkDB(ctx, tx)
 	customerIDs = uniqueNonEmpty(customerIDs)
 

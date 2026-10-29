@@ -400,7 +400,7 @@ type ConfigStore interface {
 
 	// Auth config CRUD
 	GetAuthConfig(ctx context.Context) (*AuthConfig, error)
-	UpdateAuthConfig(ctx context.Context, config *AuthConfig) error
+	UpdateAuthConfig(ctx context.Context, config *AuthConfig, tx ...*gorm.DB) error
 
 	// SMTP + login security
 	GetSMTPConfig(ctx context.Context) (*tables.TableSMTPConfig, error)
@@ -416,10 +416,10 @@ type ConfigStore interface {
 	UpsertLoginDevice(ctx context.Context, row *tables.TableLoginDevice) error
 	CreatePasswordResetOTP(ctx context.Context, row *tables.TablePasswordResetOTP) error
 	GetLatestPasswordResetOTP(ctx context.Context, username string) (*tables.TablePasswordResetOTP, error)
-	MarkPasswordResetOTPUsed(ctx context.Context, id uint) error
+	MarkPasswordResetOTPUsed(ctx context.Context, id uint, tx ...*gorm.DB) error
 	IncrementPasswordResetOTPFailures(ctx context.Context, id uint) (int, error)
 	GetPasswordResetOTPByID(ctx context.Context, id uint) (*tables.TablePasswordResetOTP, error)
-	BurnPasswordResetOTPCode(ctx context.Context, id uint) error
+	BurnPasswordResetOTPCode(ctx context.Context, id uint, tx ...*gorm.DB) error
 	GetUserByEmail(ctx context.Context, email string) (*tables.TableUser, error)
 
 	// Proxy config CRUD
@@ -433,14 +433,14 @@ type ConfigStore interface {
 
 	// Session CRUD
 	GetSession(ctx context.Context, token string) (*tables.SessionsTable, error)
-	CreateSession(ctx context.Context, session *tables.SessionsTable) error
+	CreateSession(ctx context.Context, session *tables.SessionsTable, tx ...*gorm.DB) error
 	DeleteSession(ctx context.Context, token string) error
 	FlushSessions(ctx context.Context) error
 	// UpdateSessionsRoleByUsername updates Role on all live sessions for a username
 	// so RBAC changes apply without forcing a full re-login.
-	UpdateSessionsRoleByUsername(ctx context.Context, username, role string) error
+	UpdateSessionsRoleByUsername(ctx context.Context, username, role string, tx ...*gorm.DB) error
 	// DeleteSessionsByUsername terminates all active sessions for a user (on deletion, status change, or password reset).
-	DeleteSessionsByUsername(ctx context.Context, username string) error
+	DeleteSessionsByUsername(ctx context.Context, username string, tx ...*gorm.DB) error
 
 	// Temp token CRUD
 	CreateTempToken(ctx context.Context, token *tables.TempToken, tx ...*gorm.DB) error
