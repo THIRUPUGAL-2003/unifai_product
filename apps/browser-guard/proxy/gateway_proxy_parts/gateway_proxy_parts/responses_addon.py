@@ -1608,6 +1608,8 @@ class BrowserAIInterceptor:
                 inject_websocket_reply(flow, host, (reply_text or "").strip())
             elif action in ("Warned", "Redacted") and redacted_prompt and redacted_prompt != ws_prompt:
                 new_content = inject_warned_prompt(content, ws_prompt, redacted_prompt)
+                if not new_content and ws_prompt and ws_prompt.strip() in content:
+                    new_content = content.replace(ws_prompt.strip(), redacted_prompt.strip())
                 if new_content:
                     msg.text = new_content
             return

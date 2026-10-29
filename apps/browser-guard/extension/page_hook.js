@@ -2596,16 +2596,35 @@
   function setComposerText(text) {
     if (typeof text !== "string") return false;
     var composer = getDeepActiveElement() || document.activeElement;
-    var candidates = [
-      composer,
-      document.querySelector("div#prompt-textarea"),
-      document.querySelector("div.ProseMirror"),
-      document.querySelector("rich-textarea div[contenteditable]"),
-      document.querySelector("div[contenteditable='true']"),
-      document.querySelector("textarea#prompt-textarea"),
-      document.querySelector("textarea[data-id]"),
-      document.querySelector("textarea")
-    ];
+    var candidates = [];
+    if (composer && (composer.tagName === "TEXTAREA" || composer.tagName === "INPUT" || composer.isContentEditable || composer.getAttribute("contenteditable") === "true")) {
+      candidates.push(composer);
+    }
+    // Deep search across light DOM and ALL open shadow roots (Microsoft Copilot cib-serp/cib-text-input, ChatGPT, Claude, Gemini)
+    var deepElements = querySelectorAllDeep(
+      "textarea#searchbox, " +
+      "textarea#userInput, " +
+      "cib-text-input textarea, " +
+      "copilot-text-input textarea, " +
+      "copilot-composer textarea, " +
+      "cib-serp textarea, " +
+      "textarea[placeholder*='Copilot' i], " +
+      "textarea[placeholder*='Ask me anything' i], " +
+      "textarea[placeholder*='Message' i], " +
+      "textarea[aria-label*='Copilot' i], " +
+      "textarea[aria-label*='Message' i], " +
+      "div#prompt-textarea, " +
+      "div.ProseMirror, " +
+      "rich-textarea div[contenteditable], " +
+      "[contenteditable='true'][role='textbox'], " +
+      "div[contenteditable='true'], " +
+      "textarea#prompt-textarea, " +
+      "textarea[data-id], " +
+      "textarea"
+    );
+    for (var d = 0; d < deepElements.length; d++) {
+      candidates.push(deepElements[d]);
+    }
 
     var target = null;
     for (var i = 0; i < candidates.length; i++) {
@@ -2619,7 +2638,7 @@
 
     try { target.focus(); } catch (e) {}
 
-    // 1. Textarea and Input elements (support React synthetic event system via native setter)
+    // 1. Textarea and Input elements (support React synthetic event system & LitElement web components)
     if (target.tagName === "TEXTAREA" || target.tagName === "INPUT") {
       try {
         var proto = target.tagName === "TEXTAREA" ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
@@ -2632,8 +2651,25 @@
       } catch (ex) {
         target.value = text;
       }
-      target.dispatchEvent(new Event("input", { bubbles: true }));
-      target.dispatchEvent(new Event("change", { bubbles: true }));
+      // CRITICAL FOR SHADOW DOM: Must set composed: true so events cross shadow boundaries!
+      try {
+        target.dispatchEvent(new InputEvent("input", { bubbles: true, composed: true, inputType: "insertText", data: text }));
+      } catch (eInp) {
+        target.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+      }
+      target.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+      target.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+
+      // Also directly update Web Component host properties if inside Copilot custom elements (cib-text-input, copilot-text-input)
+      try {
+        var nodeHost = target.getRootNode && target.getRootNode().host;
+        for (var hCount = 0; nodeHost && hCount < 5; hCount++) {
+          if ("text" in nodeHost) try { nodeHost.text = text; } catch (_) {}
+          if ("value" in nodeHost) try { nodeHost.value = text; } catch (_) {}
+          try { nodeHost.dispatchEvent(new Event("input", { bubbles: true, composed: true })); } catch (_) {}
+          nodeHost = nodeHost.getRootNode && nodeHost.getRootNode().host;
+        }
+      } catch (_) {}
       return true;
     }
 
@@ -2906,8 +2942,10 @@
     try {
       var parsed = JSON.parse(body);
       var changed = false;
+      var origTrim = (origText || "").trim();
+      var nextTrim = (nextText || "").trim();
 
-      // Recursive walker to redact string properties matching origText or known prompt fields
+      // Recursive walker to redact string properties matching origText, trimmed origText, or known prompt fields
       function walk(obj) {
         if (!obj || typeof obj !== "object") return;
         for (var k in obj) {
@@ -2917,9 +2955,14 @@
             if (origText && v.indexOf(origText) >= 0) {
               obj[k] = v.split(origText).join(nextText);
               changed = true;
-            } else if (k === "prompt" || k === "query" || k === "query_str" || k === "text" || k === "input" || k === "inputs" || k === "message") {
-              obj[k] = nextText;
+            } else if (origTrim && v.indexOf(origTrim) >= 0) {
+              obj[k] = v.split(origTrim).join(nextTrim);
               changed = true;
+            } else if (k === "prompt" || k === "query" || k === "query_str" || k === "rawUserQuery" || k === "rawText" || k === "hiddenText" || k === "spokenText" || k === "text" || k === "input" || k === "inputs" || k === "userMessage" || k === "utterance") {
+              if (!origTrim || v === origText || v.trim() === origTrim || v.indexOf(origTrim) >= 0) {
+                obj[k] = (origTrim && v.indexOf(origTrim) >= 0 && v !== origText && v.trim() !== origTrim) ? v.split(origTrim).join(nextTrim) : nextText;
+                changed = true;
+              }
             }
           } else if (typeof v === "object" && v !== null) {
             walk(v);
@@ -2969,13 +3012,25 @@
         }
       }
 
-      // 3. Copilot / SignalR style: arguments array
-      if (parsed && Array.isArray(parsed.arguments) && parsed.arguments[0]) {
-        var arg0 = parsed.arguments[0];
-        if (arg0.message && typeof arg0.message.text === "string") { arg0.message.text = nextText; changed = true; }
-        else if (arg0.message && typeof arg0.message.content === "string") { arg0.message.content = nextText; changed = true; }
-        else if (typeof arg0.text === "string") { arg0.text = nextText; changed = true; }
-        else if (typeof arg0.input === "string") { arg0.input = nextText; changed = true; }
+      // 3. Copilot / SignalR style: arguments array (MUST rewrite text, rawText, hiddenText, spokenText, rawUserQuery, userMessage)
+      if (parsed && Array.isArray(parsed.arguments) && parsed.arguments.length > 0) {
+        for (var aIdx = 0; aIdx < parsed.arguments.length; aIdx++) {
+          var aItem = parsed.arguments[aIdx];
+          if (!aItem || typeof aItem !== "object") continue;
+          if (aItem.message && typeof aItem.message === "object") {
+            var aMsg = aItem.message;
+            if (typeof aMsg.text === "string") { aMsg.text = nextText; changed = true; }
+            if (typeof aMsg.rawText === "string") { aMsg.rawText = nextText; changed = true; }
+            if (typeof aMsg.hiddenText === "string") { aMsg.hiddenText = nextText; changed = true; }
+            if (typeof aMsg.spokenText === "string") { aMsg.spokenText = nextText; changed = true; }
+            if (typeof aMsg.content === "string") { aMsg.content = nextText; changed = true; }
+          }
+          if (typeof aItem.rawUserQuery === "string") { aItem.rawUserQuery = nextText; changed = true; }
+          if (typeof aItem.userMessage === "string") { aItem.userMessage = nextText; changed = true; }
+          if (typeof aItem.text === "string") { aItem.text = nextText; changed = true; }
+          if (typeof aItem.query === "string") { aItem.query = nextText; changed = true; }
+          if (typeof aItem.input === "string") { aItem.input = nextText; changed = true; }
+        }
       }
 
       // 4. Standard root prompt/query fields
@@ -2985,18 +3040,24 @@
       if (parsed && typeof parsed.text === "string") { parsed.text = nextText; changed = true; }
       if (parsed && typeof parsed.input === "string") { parsed.input = nextText; changed = true; }
 
-      if (!changed) {
-        walk(parsed);
-      }
+      // ALWAYS run recursive walk across the entire JSON tree to replace any nested sensitive prompt occurrences
+      walk(parsed);
 
       if (!changed && origText && typeof body === "string" && body.indexOf(origText) >= 0) {
         return body.split(origText).join(nextText);
+      }
+      if (!changed && origTrim && typeof body === "string" && body.indexOf(origTrim) >= 0) {
+        return body.split(origTrim).join(nextTrim);
       }
 
       return changed ? JSON.stringify(parsed) : null;
     } catch (err) {
       if (origText && body.indexOf(origText) >= 0) {
         return body.split(origText).join(nextText);
+      }
+      var oTrim = (origText || "").trim();
+      if (oTrim && body.indexOf(oTrim) >= 0) {
+        return body.split(oTrim).join((nextText || "").trim());
       }
       return null;
     }
@@ -4307,7 +4368,7 @@
         passKey = true;
         try {
           var sendBtns = querySelectorAllDeep(
-            "button[aria-label*='Send' i], button[aria-label*='Submit' i], button[aria-label*='Ask' i], button.send-button, [data-testid*='send-button' i], [data-testid*='submit' i], cib-serp button, button[title*='Send' i], button[title*='Submit' i], button[type='submit']"
+            "cib-action-bar button[aria-label*='Submit' i], cib-action-bar button.submit, cib-serp button[aria-label*='Submit' i], copilot-composer button[aria-label*='Send' i], button[aria-label*='Submit message' i], button[aria-label*='Submit' i], button[aria-label*='Send' i], button[aria-label*='Ask' i], button.send-button, [data-testid*='send-button' i], [data-testid*='submit' i], button[title*='Send' i], button[title*='Submit' i], button[type='submit']"
           );
           var sendBtn = sendBtns.length ? sendBtns[sendBtns.length - 1] : null;
           if (sendBtn) {
@@ -4357,7 +4418,7 @@
           _lastHandledPromptText = text;
           try {
             var sendBtns = querySelectorAllDeep(
-              "button[aria-label*='Send' i], button[aria-label*='Submit' i], button[aria-label*='Ask' i], button.send-button, [data-testid*='send-button' i], [data-testid*='submit' i], cib-serp button, button[title*='Send' i], button[title*='Submit' i], button[type='submit']"
+              "cib-action-bar button[aria-label*='Submit' i], cib-action-bar button.submit, cib-serp button[aria-label*='Submit' i], copilot-composer button[aria-label*='Send' i], button[aria-label*='Submit message' i], button[aria-label*='Submit' i], button[aria-label*='Send' i], button[aria-label*='Ask' i], button.send-button, [data-testid*='send-button' i], [data-testid*='submit' i], button[title*='Send' i], button[title*='Submit' i], button[type='submit']"
             );
             var sendBtn = sendBtns.length ? sendBtns[sendBtns.length - 1] : null;
             if (sendBtn) {
@@ -5228,6 +5289,12 @@
 
         var rInit = init ? Object.assign({}, init) : {};
         var rRewritten = rewriteBody(rInit.body, fetchDecision.redacted_prompt, promptText);
+        if (!rRewritten && promptText && typeof rInit.body === "string" && rInit.body.indexOf(promptText) >= 0) {
+          rRewritten = rInit.body.split(promptText).join(fetchDecision.redacted_prompt);
+        }
+        if (!rRewritten && promptText && typeof rInit.body === "string" && promptText.trim() && rInit.body.indexOf(promptText.trim()) >= 0) {
+          rRewritten = rInit.body.split(promptText.trim()).join(fetchDecision.redacted_prompt.trim());
+        }
         if (rRewritten) {
           rInit.body = rRewritten;
           var rModified = Array.prototype.slice.call(arguments);
@@ -5534,9 +5601,29 @@
           var wsAct = String((wsDecision && wsDecision.action) || "").toLowerCase();
           if ((wsAct === "redacted" || wsAct === "redact") && wsDecision.redacted_prompt) {
             showBubble(wsDecision.message || "Sensitive text was redacted before sending.", wsDecision.rule, "redact");
+            window.postMessage({
+              source: "gateway-guard-page",
+              nonce: guardNonce,
+              id: "ws_redact_" + Date.now().toString(36),
+              prompt: wsDecision.redacted_prompt,
+              original_prompt: promptText,
+              host: location.hostname,
+              url: location.href,
+              is_blocked: false,
+              action: "Redacted",
+              rule: wsDecision.rule || ""
+            }, "*");
+
             var rewrittenWs = rewriteBody(cleanStr, wsDecision.redacted_prompt, promptText);
+            if (!rewrittenWs && promptText && cleanStr.indexOf(promptText) >= 0) {
+              rewrittenWs = cleanStr.split(promptText).join(wsDecision.redacted_prompt);
+            }
+            if (!rewrittenWs && promptText && data.indexOf(promptText) >= 0) {
+              return origWSSend.call(this, data.split(promptText).join(wsDecision.redacted_prompt));
+            }
             if (rewrittenWs) {
-              var finalWsData = data.endsWith("\x1e") ? (rewrittenWs + "\x1e") : rewrittenWs;
+              var hasSep = data.indexOf("\x1e") >= 0 || data.indexOf("\u001e") >= 0 || data.endsWith("\x1e");
+              var finalWsData = hasSep ? (rewrittenWs + "\x1e") : rewrittenWs;
               return origWSSend.call(this, finalWsData);
             }
           }

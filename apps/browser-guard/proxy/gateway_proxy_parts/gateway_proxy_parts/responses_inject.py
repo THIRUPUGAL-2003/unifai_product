@@ -1262,6 +1262,20 @@ def _replace_prompt_in_json_tree(node, original: str, warned: str):
                     return json.dumps(inner, ensure_ascii=False, separators=(",", ":")), True
         if original in node:
             return node.replace(original, warned), True
+        orig_s = original.strip()
+        warn_s = warned.strip()
+        if orig_s and orig_s in node:
+            return node.replace(orig_s, warn_s), True
+        if orig_s and " ".join(orig_s.split()) in " ".join(node.split()):
+            orig_words = orig_s.split()
+            if orig_words:
+                pat = r"\s+".join(re.escape(w) for w in orig_words)
+                try:
+                    subbed, count = re.subn(pat, warn_s, node)
+                    if count > 0:
+                        return subbed, True
+                except Exception:
+                    pass
         return node, False
     if isinstance(node, list):
         changed = False
@@ -1292,9 +1306,28 @@ def _inject_warned_json(raw_text: str, original: str, warned: str) -> str | None
             obj = json.loads(rec)
         except ValueError:
             return None
+        # Specific Copilot SignalR inspection (text, rawText, hiddenText, spokenText, rawUserQuery)
+        rec_changed = False
+        if isinstance(obj, dict) and isinstance(obj.get("arguments"), list):
+            for arg in obj["arguments"]:
+                if isinstance(arg, dict):
+                    msg = arg.get("message")
+                    if isinstance(msg, dict):
+                        for mk in ("text", "rawText", "hiddenText", "spokenText"):
+                            if isinstance(msg.get(mk), str):
+                                val = msg[mk]
+                                if original in val or original.strip() in val or val.strip() == original.strip():
+                                    msg[mk] = warned
+                                    rec_changed = True
+                    for rk in ("rawUserQuery", "text", "query", "userMessage"):
+                        if isinstance(arg.get(rk), str):
+                            val = arg[rk]
+                            if original in val or original.strip() in val or val.strip() == original.strip():
+                                arg[rk] = warned
+                                rec_changed = True
         obj, changed = _replace_prompt_in_json_tree(obj, original, warned)
-        changed_any = changed_any or changed
-        out.append(json.dumps(obj, ensure_ascii=False, separators=(",", ":")) if changed else rec)
+        changed_any = changed_any or changed or rec_changed
+        out.append(json.dumps(obj, ensure_ascii=False, separators=(",", ":")) if (changed or rec_changed) else rec)
     return sep.join(out) if changed_any else None
 
 
