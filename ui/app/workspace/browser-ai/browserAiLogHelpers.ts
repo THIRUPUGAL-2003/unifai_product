@@ -11,13 +11,18 @@ export function isSiteBlockLog(log: SiteBlockLogFields): boolean {
 
 export function predictReasonLabel(log: BrowserAILogEntry): string {
 	const status = (log.status || "").trim();
+	const isRedacted =
+		log.action === "Redacted" ||
+		(typeof log.user_prompt_preview === "string" && log.user_prompt_preview.toUpperCase().includes("[REDACTED]")) ||
+		(typeof log.user_prompt_full === "string" && log.user_prompt_full.toUpperCase().includes("[REDACTED]"));
+	if (isRedacted) {
+		if (status && (status.toLowerCase().includes("redacted") || !status.toLowerCase().startsWith("allowed"))) return status;
+		return log.rule_triggered ? `Redacted (${log.rule_triggered})` : "Redacted (Confidential Data Pre-Redacted)";
+	}
 	if (status) return status;
 	if (log.action === "Blocked" && log.rule_triggered) return `Blocked (${log.rule_triggered})`;
 	if (log.action === "Warned" && log.rule_triggered) {
 		return `Warned (${log.rule_triggered})`;
-	}
-	if (log.action === "Redacted" && log.rule_triggered) {
-		return `Redacted (${log.rule_triggered})`;
 	}
 	if (log.action === "Allowed") return "Allowed (no guard rule matched)";
 	return log.action || "—";
@@ -298,10 +303,14 @@ export function securityVerdictFromLog(log: BrowserAILogEntry): SecurityVerdict 
 			tone: "bad",
 		};
 	}
-	if (action === "redacted") {
+	const isRedacted =
+		action === "redacted" ||
+		(typeof log.user_prompt_preview === "string" && log.user_prompt_preview.toUpperCase().includes("[REDACTED]")) ||
+		(typeof log.user_prompt_full === "string" && log.user_prompt_full.toUpperCase().includes("[REDACTED]"));
+	if (isRedacted) {
 		return {
 			title: "Security redaction",
-			detail: log.rule_triggered ? `Redacted by rule: ${log.rule_triggered}` : (log.status || "Redacted by Guard policy."),
+			detail: log.rule_triggered ? `Redacted by rule: ${log.rule_triggered}` : (log.status && !log.status.toLowerCase().startsWith("allowed") ? log.status : "Confidential sensitive data was redacted before transmission."),
 			tone: "warn",
 		};
 	}

@@ -1973,6 +1973,10 @@ def check_prompt(
     if file_extracted_texts:
         meta["extracted_text"] = "\n\n".join(file_extracted_texts)[:100000]
 
+    if "[REDACTED]" in text.upper() or str(action or "").lower() in ("redacted", "redact"):
+        meta["action"] = "Redacted"
+        meta["is_redacted"] = True
+
     payload = {
         "platform": platform,
         "prompt": text[:40000],

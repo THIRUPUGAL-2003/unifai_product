@@ -25,7 +25,11 @@ export function logActionBadge(log: LogActionBadgeFields) {
 	if (log.action === "Warned") {
 		return chip("bg-amber-950/80 text-amber-300 border-amber-700/60", <AlertTriangle className="h-3 w-3 shrink-0" />, "Warned");
 	}
-	if (log.action === "Redacted") {
+	const isRedacted =
+		log.action === "Redacted" ||
+		(typeof log.user_prompt_preview === "string" && log.user_prompt_preview.toUpperCase().includes("[REDACTED]")) ||
+		(typeof log.user_prompt_full === "string" && log.user_prompt_full.toUpperCase().includes("[REDACTED]"));
+	if (isRedacted) {
 		return chip("bg-purple-950/80 text-purple-300 border-purple-700/60", <EyeOff className="h-3 w-3 shrink-0" />, "Redacted");
 	}
 	return chip("bg-emerald-950/80 text-emerald-400 border-emerald-700/60", <CheckCircle2 className="h-3 w-3 shrink-0" />, "Allowed");

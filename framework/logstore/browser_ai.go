@@ -994,7 +994,7 @@ func (m *BrowserAIManager) GetLogs(ctx context.Context, platform, status, action
 		}
 	}
 	if action != "" && strings.ToLower(action) != "all" {
-		switch strings.ToLower(strings.TrimSpace(action)) {
+switch strings.ToLower(strings.TrimSpace(action)) {
 		case "siteblocked", "site_blocked", "site blocked":
 			// Full-site lock logs (Target Websites → Block entire website), not DLP prompt blocks.
 			query = query.Where(
@@ -1003,6 +1003,14 @@ func (m *BrowserAIManager) GetLogs(ctx context.Context, platform, status, action
 				"%[site blocked]%",
 				"block entire website",
 				"site_block",
+			)
+		case "redacted", "redact":
+			query = query.Where(
+				"LOWER(action) IN ('redacted', 'redact') OR UPPER(user_prompt_full) LIKE '%[REDACTED]%' OR UPPER(user_prompt_preview) LIKE '%[REDACTED]%'",
+			)
+		case "allowed":
+			query = query.Where(
+				"LOWER(action) = 'allowed' AND UPPER(user_prompt_full) NOT LIKE '%[REDACTED]%' AND UPPER(user_prompt_preview) NOT LIKE '%[REDACTED]%'",
 			)
 		default:
 			query = query.Where("LOWER(action) = ?", strings.ToLower(action))
@@ -1032,6 +1040,14 @@ func (m *BrowserAIManager) GetLogs(ctx context.Context, platform, status, action
 			}
 			if logs[i].Cost == 0 && (logs[i].TotalTokens > 0 || logs[i].AudioDurationSec > 0) {
 				logs[i].Cost = CalculateBrowserAICost(logs[i].Platform, logs[i].Domain, logs[i].PromptTokens, logs[i].CompletionTokens, logs[i].AudioDurationSec)
+			}
+			if !strings.EqualFold(logs[i].Action, "blocked") &&
+				(strings.Contains(strings.ToUpper(logs[i].UserPromptFull), "[REDACTED]") ||
+					strings.Contains(strings.ToUpper(logs[i].UserPromptPreview), "[REDACTED]")) {
+				logs[i].Action = "Redacted"
+				if strings.HasPrefix(logs[i].Status, "Allowed") || logs[i].Status == "" {
+					logs[i].Status = "Redacted (Confidential Data Pre-Redacted)"
+				}
 			}
 		}
 	}
@@ -1064,7 +1080,7 @@ func (m *BrowserAIManager) GetLogStats(ctx context.Context) (BrowserAILogStats, 
 	err := db.WithContext(ctx).Model(&BrowserAILog{}).Select(`
 		COUNT(*) AS total,
 		COALESCE(SUM(CASE WHEN LOWER(action) = 'blocked' THEN 1 ELSE 0 END), 0) AS blocked,
-		COALESCE(SUM(CASE WHEN LOWER(action) IN ('redacted', 'warned') THEN 1 ELSE 0 END), 0) AS warned,
+		COALESCE(SUM(CASE WHEN LOWER(action) IN ('redacted', 'warned') OR (LOWER(action) = 'allowed' AND (UPPER(user_prompt_full) LIKE '%[REDACTED]%' OR UPPER(user_prompt_preview) LIKE '%[REDACTED]%')) THEN 1 ELSE 0 END), 0) AS warned,
 		COALESCE(SUM(CASE WHEN risk_score >= 70 OR UPPER(predictive_risk) IN ('HIGH', 'CRITICAL') THEN 1 ELSE 0 END), 0) AS high_risk,
 		AVG(CASE WHEN risk_score > 0 THEN risk_score ELSE 10 END) AS avg_risk`).Scan(&row).Error
 	if err != nil {
@@ -2689,6 +2705,45 @@ func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, prompt
 			predictedCategory = "SUSPICIOUS_CONTENT"
 			break
 		}
+	}
+
+	// Redaction detection: pre-redacted by extension/proxy or marked as redacted
+	isClientRedacted := false
+	if actVal, ok := metadata["action"].(string); ok && (strings.EqualFold(actVal, "redacted") || strings.EqualFold(actVal, "redact")) {
+		isClientRedacted = true
+	}
+	if bVal, ok := metadata["is_redacted"].(bool); ok && bVal {
+		isClientRedacted = true
+	}
+	if strings.Contains(strings.ToUpper(promptFull), "[REDACTED]") || strings.Contains(strings.ToUpper(preview), "[REDACTED]") {
+		isClientRedacted = true
+	}
+
+	if !alreadyBlocked && action != "Blocked" && isClientRedacted {
+		action = "Redacted"
+		ruleName := ""
+		if r, ok := metadata["rule"].(string); ok && strings.TrimSpace(r) != "" {
+			ruleName = strings.TrimSpace(r)
+		} else if r, ok := metadata["rule_name"].(string); ok && strings.TrimSpace(r) != "" {
+			ruleName = strings.TrimSpace(r)
+		} else if r, ok := metadata["scan_rule_triggered"].(string); ok && strings.TrimSpace(r) != "" {
+			ruleName = strings.TrimSpace(r)
+		} else if r, ok := metadata["blocked_reason"].(string); ok && strings.TrimSpace(r) != "" {
+			ruleName = strings.TrimSpace(r)
+		}
+		if ruleName != "" {
+			ruleTriggered = ruleName
+			status = fmt.Sprintf("Redacted (%s)", ruleName)
+		} else if ruleTriggered != "" {
+			status = fmt.Sprintf("Redacted (%s)", ruleTriggered)
+		} else {
+			status = "Redacted (Confidential Data Pre-Redacted)"
+		}
+		if riskScore < 45 {
+			riskScore = 50
+		}
+		predictiveRisk = "MEDIUM"
+		predictedCategory = "CONFIDENTIAL_DATA_REDACTED"
 	}
 
 	// No built-in / hardcoded DLP patterns — only admin-added regex/bot rules above.

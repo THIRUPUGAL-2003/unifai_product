@@ -2057,6 +2057,9 @@ def send_to_backend(platform: str, domain: str, prompt: str, client_ip: str, url
             **_agent_metadata_fields(),
             "evaluation_only": bool(evaluation_only),
         }
+        if "[REDACTED]" in prompt.upper() or (extracted_text and "[REDACTED]" in str(extracted_text).upper()):
+            metadata["action"] = "Redacted"
+            metadata["is_redacted"] = True
         ext = (extracted_text or "").strip()
         if ext:
             metadata["extracted_text"] = ext[:50_000]
