@@ -1493,6 +1493,8 @@
       host: msg.host || location.hostname,
       url: msg.url || location.href,
       prompt: msg.prompt || "",
+      original_prompt: msg.original_prompt || "",
+      action: msg.action || "",
       files: msg.files || [],
       upload_images: msg.upload_images || [],
       is_blocked: Boolean(msg.is_blocked),

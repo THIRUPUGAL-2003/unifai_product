@@ -2801,6 +2801,18 @@ func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, prompt
 
 	cleanPromptFull := SanitizeDBString(promptFull)
 	cleanPreview := SafePromptPreview(preview, 100)
+	if action == "Redacted" {
+		redactedText := promptFull
+		for _, r := range rules {
+			if NormalizeGuardRuleAction(r.Action) == "REDACT" && r.Pattern != "" {
+				if re, err := CompileGuardRegex(r.Pattern); err == nil {
+					redactedText = re.ReplaceAllString(redactedText, "[REDACTED]")
+				}
+			}
+		}
+		cleanPromptFull = SanitizeDBString(redactedText)
+		cleanPreview = SafePromptPreview(redactedText, 100)
+	}
 	cleanPlatform := SanitizeDBString(canonicalPlatform)
 	cleanDomain := SanitizeDBString(domain)
 	cleanClientIP := SanitizeDBString(clientIP)

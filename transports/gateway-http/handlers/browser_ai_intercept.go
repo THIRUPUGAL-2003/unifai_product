@@ -349,8 +349,20 @@ func (h *BrowserAIHandler) intercept(ctx *fasthttp.RequestCtx) {
 	if evalOnly {
 		allowed, action, ruleTriggered, ruleWarning, evalError, securityVerdict := h.evaluateGuardOnly(ctx, payload.Prompt, payload.UploadImages)
 		forwardPrompt := payload.Prompt
-		if action == "Redacted" || action == "Warned" {
-			forwardPrompt = logstore.FormatWarnedForwardPrompt(payload.Prompt, ruleWarning)
+		if action == "Redacted" {
+			var activeRules []logstore.BrowserGuardRule
+			_ = h.manager.GetDB().WithContext(ctx).Where("active = ?", true).Find(&activeRules).Error
+			redactedPrompt := payload.Prompt
+			for _, r := range activeRules {
+				if logstore.NormalizeGuardRuleAction(r.Action) == "REDACT" && r.Pattern != "" {
+					if re, err := logstore.CompileGuardRegex(r.Pattern); err == nil {
+						redactedPrompt = re.ReplaceAllString(redactedPrompt, "[REDACTED]")
+					}
+				}
+			}
+			forwardPrompt = redactedPrompt
+		} else if action == "Warned" {
+			forwardPrompt = logstore.FormatWarningForwardPrompt(payload.Prompt, ruleWarning)
 		}
 		SendJSON(ctx, map[string]any{
 			"status":             "success",
@@ -629,7 +641,17 @@ func (h *BrowserAIHandler) intercept(ctx *fasthttp.RequestCtx) {
 	// What the browser AI receives: REDACT → [GATEWAY REDACTED]; WARN → [GATEWAY WARNING]. Logs keep original only.
 	forwardPrompt := payload.Prompt
 	if logEntry.Action == "Redacted" {
-		forwardPrompt = logstore.FormatWarnedForwardPrompt(payload.Prompt, ruleWarning)
+		redactedPrompt := payload.Prompt
+		var activeRules []logstore.BrowserGuardRule
+		_ = h.manager.GetDB().WithContext(ctx).Where("active = ?", true).Find(&activeRules).Error
+		for _, r := range activeRules {
+			if logstore.NormalizeGuardRuleAction(r.Action) == "REDACT" && r.Pattern != "" {
+				if re, err := logstore.CompileGuardRegex(r.Pattern); err == nil {
+					redactedPrompt = re.ReplaceAllString(redactedPrompt, "[REDACTED]")
+				}
+			}
+		}
+		forwardPrompt = redactedPrompt
 	} else if logEntry.Action == "Warned" {
 		forwardPrompt = logstore.FormatWarningForwardPrompt(payload.Prompt, ruleWarning)
 	}

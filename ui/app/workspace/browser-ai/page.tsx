@@ -3525,7 +3525,7 @@ export default function BrowserAiPage() {
 										<SelectItem value="all">All Status</SelectItem>
 										<SelectItem value="Allowed">Allowed</SelectItem>
 										<SelectItem value="Redacted">Redacted</SelectItem>
-										<SelectItem value="Warned">Warned (legacy)</SelectItem>
+										<SelectItem value="Warned">Warned</SelectItem>
 										<SelectItem value="Blocked">Blocked (DLP / rules)</SelectItem>
 										<SelectItem value="SiteBlocked">Site Blocked (full website)</SelectItem>
 										<SelectItem value="Bot Answered">Bot Answered</SelectItem>

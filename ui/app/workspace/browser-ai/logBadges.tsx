@@ -1,5 +1,5 @@
 import React from "react";
-import { Globe, AlertTriangle, Bot, AlertCircle, CheckCircle2 } from "lucide-react";
+import { Globe, AlertTriangle, Bot, AlertCircle, CheckCircle2, EyeOff } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { isSiteBlockLog } from "./browserAiLogHelpers";
 import { platformBadgeLabel } from "./browserAiFormat";
@@ -22,8 +22,11 @@ export function logActionBadge(log: LogActionBadgeFields) {
 	if (log.action === "Bot Answered") {
 		return chip("bg-sky-950/80 text-sky-300 border-sky-700/60", <Bot className="h-3 w-3 shrink-0" />, "Bot");
 	}
-	if (log.action === "Redacted" || log.action === "Warned") {
-		return chip("bg-amber-950/80 text-amber-300 border-amber-700/60", <AlertCircle className="h-3 w-3 shrink-0" />, "Redacted");
+	if (log.action === "Warned") {
+		return chip("bg-amber-950/80 text-amber-300 border-amber-700/60", <AlertTriangle className="h-3 w-3 shrink-0" />, "Warned");
+	}
+	if (log.action === "Redacted") {
+		return chip("bg-purple-950/80 text-purple-300 border-purple-700/60", <EyeOff className="h-3 w-3 shrink-0" />, "Redacted");
 	}
 	return chip("bg-emerald-950/80 text-emerald-400 border-emerald-700/60", <CheckCircle2 className="h-3 w-3 shrink-0" />, "Allowed");
 }

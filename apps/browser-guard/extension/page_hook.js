@@ -2954,6 +2954,10 @@
         walk(parsed);
       }
 
+      if (!changed && origText && typeof body === "string" && body.indexOf(origText) >= 0) {
+        return body.split(origText).join(nextText);
+      }
+
       return changed ? JSON.stringify(parsed) : null;
     } catch (err) {
       if (origText && body.indexOf(origText) >= 0) {
@@ -5120,6 +5124,59 @@
         _lastAskDecision = fetchDecision;
         showBubble(fetchDecision.message, fetchDecision.rule, "block");
         return createBlockedFetchResponse(fetchDecision, url);
+      }
+
+      if (fetchDecision && (fetchDecision.action === "Redacted" || fetchDecision.action === "redact") && fetchDecision.redacted_prompt) {
+        _lastAskDecision = fetchDecision;
+        _lastHandledPromptTime = Date.now();
+        _lastHandledPromptText = fetchDecision.redacted_prompt;
+        showBubble(fetchDecision.message || "Sensitive text was redacted before sending.", fetchDecision.rule, "redact");
+
+        // Post redact log to gateway
+        window.postMessage({
+          source: "gateway-guard-page",
+          nonce: guardNonce,
+          id: "redact_fetch_" + Date.now().toString(36),
+          prompt: fetchDecision.redacted_prompt,
+          original_prompt: promptText,
+          files: netFiles || [],
+          upload_images: stagedImages || [],
+          host: location.hostname,
+          url: location.href,
+          is_blocked: false,
+          action: "Redacted",
+          rule: fetchDecision.rule || ""
+        }, "*");
+
+        var rInit = init ? Object.assign({}, init) : {};
+        var rRewritten = rewriteBody(rInit.body, fetchDecision.redacted_prompt, promptText);
+        if (rRewritten) {
+          rInit.body = rRewritten;
+          var rModified = Array.prototype.slice.call(arguments);
+          if (rModified.length >= 2) {
+            rModified[1] = rInit;
+            return origFetch.apply(window, rModified);
+          }
+          return origFetch.call(window, url, rInit);
+        }
+      }
+
+      if (fetchDecision && (fetchDecision.action === "Warned" || fetchDecision.action === "warn")) {
+        _lastAskDecision = fetchDecision;
+        showBubble(fetchDecision.message || "This request triggered a security warning.", fetchDecision.rule, "warn");
+        window.postMessage({
+          source: "gateway-guard-page",
+          nonce: guardNonce,
+          id: "warn_fetch_" + Date.now().toString(36),
+          prompt: promptText,
+          files: netFiles || [],
+          upload_images: stagedImages || [],
+          host: location.hostname,
+          url: location.href,
+          is_blocked: false,
+          action: "Warned",
+          rule: fetchDecision.rule || ""
+        }, "*");
       }
 
       // 2. Check if prompt was recently blocked by button click, Enter key, or earlier fetch

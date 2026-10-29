@@ -13,7 +13,10 @@ export function predictReasonLabel(log: BrowserAILogEntry): string {
 	const status = (log.status || "").trim();
 	if (status) return status;
 	if (log.action === "Blocked" && log.rule_triggered) return `Blocked (${log.rule_triggered})`;
-	if ((log.action === "Redacted" || log.action === "Warned") && log.rule_triggered) {
+	if (log.action === "Warned" && log.rule_triggered) {
+		return `Warned (${log.rule_triggered})`;
+	}
+	if (log.action === "Redacted" && log.rule_triggered) {
 		return `Redacted (${log.rule_triggered})`;
 	}
 	if (log.action === "Allowed") return "Allowed (no guard rule matched)";

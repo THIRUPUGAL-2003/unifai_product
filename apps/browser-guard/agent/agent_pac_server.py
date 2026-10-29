@@ -168,6 +168,7 @@ class _PACRequestHandler(http.server.BaseHTTPRequestHandler):
             is_blocked=bool(data.get("is_blocked")),
             rule=str(data.get("rule") or data.get("blocked_reason") or ""),
             eval_id=str(data.get("eval_id") or data.get("id") or ""),
+            action=str(data.get("action") or ""),
         )
         self._json(200, result)
 
