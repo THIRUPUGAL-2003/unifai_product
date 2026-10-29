@@ -938,12 +938,8 @@
     if (curtain) curtain.remove();
   }
 
-  window.addEventListener("blur", applyScreenshotBlur, true);
-  window.addEventListener("focus", removeScreenshotBlur, true);
-  document.addEventListener("visibilitychange", function () {
-    if (document.hidden) applyScreenshotBlur();
-    else removeScreenshotBlur();
-  }, true);
+  // Screen capture protection is triggered on capture keys (PrintScreen, Win+Shift+S, Mac capture shortcuts)
+  // or screen recording API calls, NEVER on normal window blur, focus, or tab switching.
 
   // Intercept Screen Recording & Screen Sharing API (navigator.mediaDevices.getDisplayMedia)
   try {
@@ -1326,7 +1322,7 @@
     detectedWorkspace = ws;
 
     // Fast client-side check if corporate domain enforcement is active
-    if (!govEnforceCorporateDomains || !isControlActiveForSite(govCorporateTargetWebsites || govTargetWebsites)) {
+    if (!govEnforceCorporateDomains || !govCorporateEmailDomains || !isControlActiveForSite(govCorporateTargetWebsites || govTargetWebsites)) {
       handleSessionAuthDecision({ decision: "allow" });
       return;
     }
@@ -1896,6 +1892,13 @@
   // Scan DOM for visible user email across ChatGPT, Claude, Gemini, DeepSeek, Perplexity, Mistral, Lovable
   function scanDOMForSession() {
     try {
+      if (!govEnforceCorporateDomains || !govCorporateEmailDomains || !isControlActiveForSite(govCorporateTargetWebsites || govTargetWebsites)) {
+        return;
+      }
+      var p = (location.pathname || "").toLowerCase();
+      if (p.includes("/login") || p.includes("/signin") || p.includes("/auth") || p.includes("/sign-in") || p.includes("/sign-up") || p.includes("/signup")) {
+        return;
+      }
       // 1. Dedicated Proactive Platform Scanners
       detectClaudeSession();
       detectGeminiSession();
@@ -2051,24 +2054,27 @@
         if (pMatch || matchedFiles.length > 0) {
           var act = String(r.action || "BLOCK").toUpperCase();
           var rName = r.name || "Restricted Content";
-          var rReason = (r.reason || r.warning_message || r.description || "").trim();
-          var reasonDisp = (rReason && rReason.toLowerCase() !== rName.toLowerCase()) ? (" (Reason: " + rReason + ")") : (rReason ? (" (" + rReason + ")") : "");
+          var rReason = (r.warning_message || r.reason || r.description || "").trim();
 
-          // Construct precise, informative message naming offending file(s) and the exact reason
+          // If the user configured a custom warning/blocked message in the guard rule, use it DIRECTLY!
           var blockMsg = "";
-          if (matchedFiles.length > 0 && pMatch) {
-            blockMsg = "Prompt and file(s) '" + matchedFiles.join("', '") + "' contain restricted data: " + rName + reasonDisp + ". Request blocked by security policy.";
-          } else if (matchedFiles.length > 0) {
-            if (matchedFiles.length === 1) {
-              blockMsg = "File '" + matchedFiles[0] + "' contains restricted data: " + rName + reasonDisp + ". Upload blocked by corporate DLP policy.";
+          if (rReason) {
+            if (matchedFiles.length > 0) {
+              blockMsg = rReason + " (File: '" + matchedFiles.join("', '") + "')";
             } else {
-              blockMsg = "Files '" + matchedFiles.join("', '") + "' contain restricted data: " + rName + reasonDisp + ". Upload blocked by corporate DLP policy.";
+              blockMsg = rReason;
             }
           } else {
-            blockMsg = "Prompt contains restricted data: " + rName + reasonDisp + ". Request blocked by security policy.";
+            if (matchedFiles.length > 0 && pMatch) {
+              blockMsg = "Prompt and file(s) '" + matchedFiles.join("', '") + "' contain restricted data: " + rName + ". Request blocked by security policy.";
+            } else if (matchedFiles.length > 0) {
+              blockMsg = "File '" + matchedFiles.join("', '") + "' contains restricted data: " + rName + ". Upload blocked by corporate DLP policy.";
+            } else {
+              blockMsg = "Request blocked by corporate security policy: " + rName + ".";
+            }
           }
 
-          var ruleLabel = (rReason && rReason.toLowerCase() !== rName.toLowerCase()) ? (rName + ": " + rReason) : (rReason || rName);
+          var ruleLabel = rName;
 
           if (act === "BLOCK" || act === "BLOCKED") {
             for (var mIdx = 0; mIdx < matchedFiles.length; mIdx++) {
@@ -2081,10 +2087,14 @@
                 stagedObj.blocked_message = blockMsg;
               }
             }
+            var finalMsg = blockMsg;
+            if (matchedFiles.length > 0) {
+              finalMsg += " Please remove " + (matchedFiles.length > 1 ? "these files" : "this file") + " before sending.";
+            }
             return {
               blocked: true,
               action: "Blocked",
-              message: blockMsg + " Please remove " + (matchedFiles.length > 1 ? "these files" : "this file") + " before sending.",
+              message: finalMsg,
               rule: ruleLabel,
               rule_name: rName,
               rule_reason: rReason,
@@ -3452,7 +3462,7 @@
           ev.preventDefault();
           ev.stopPropagation();
           ev.stopImmediatePropagation();
-          showBubble("Pasting confidential data is blocked by company security policy: " + pasteDecision.message, pasteDecision.rule, "block");
+          showBubble(pasteDecision.message, pasteDecision.rule, "block");
           window.postMessage({
             source: "gateway-guard-page",
             nonce: guardNonce,
