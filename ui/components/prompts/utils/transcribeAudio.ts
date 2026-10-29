@@ -37,6 +37,15 @@ function parseTranscriptionText(data: unknown): string {
 	return "";
 }
 
+function isAbortError(error: unknown): boolean {
+	return Boolean(error && typeof error === "object" && "name" in error && error.name === "AbortError");
+}
+
+function shouldTryNextModel(status: number, message: string): boolean {
+	if (status === 408 || status === 429 || status >= 500) return true;
+	return (status === 400 || status === 404) && /model/i.test(message);
+}
+
 /**
  * Transcribe audio via gateway `/v1/audio/transcriptions` (Whisper-compatible).
  * Tries a few common model ids until one succeeds.
@@ -90,11 +99,12 @@ export async function transcribeAudioFile(
 				) {
 					break;
 				}
+				if (!shouldTryNextModel(response.status, msg)) break;
 				continue;
 			}
 
 			const contentType = response.headers.get("content-type") || "";
-			if (contentType.includes("application/json")) {
+			if (/json/i.test(contentType)) {
 				const data = await response.json();
 				const text = parseTranscriptionText(data);
 				if (text) return { text, model };
@@ -106,7 +116,7 @@ export async function transcribeAudioFile(
 			if (text) return { text, model };
 			lastError = `${model}: empty transcript`;
 		} catch (err) {
-			if (err instanceof DOMException && err.name === "AbortError") throw err;
+			if (isAbortError(err)) throw err;
 			lastError = err instanceof Error ? err.message : String(err);
 			if (err instanceof TypeError) break;
 		}

@@ -892,6 +892,7 @@ export function fileToBase64(file: File, mimeType?: string): Promise<string> {
 			resolve(comma >= 0 ? `data:${mimeType};base64,${dataUrl.slice(comma + 1)}` : dataUrl);
 		};
 		reader.onerror = reject;
+		reader.onabort = () => reject(new DOMException(`Reading "${file.name}" was aborted`, "AbortError"));
 		reader.readAsDataURL(file);
 	});
 }
@@ -1174,18 +1175,22 @@ function textAttachmentFromExtract(fileName: string, extracted: string): Message
 
 async function tryPdfOcr(file: File, opts?: AttachmentImportOptions): Promise<{ text: string; model: string } | null> {
 	if (!opts?.silent) toast.message(`Running OCR on scanned PDF ${file.name}…`);
-	const dataUrl = await fileToBase64(file, "application/pdf");
-	const ocr = await ocrPdfFile(dataUrl, { apiKeyId: opts?.apiKeyId, virtualKeyId: opts?.virtualKeyId });
-	if (ocr?.text) {
-		if (!opts?.silent && ocr.text.includes("[Truncated:")) {
-			toast.warning(`OCR read only part of ${file.name}`, {
-				description:
-					"The OCR page range is marked in the attachment. Text-layer content may cover other pages; scanned-only text outside that range may be missing.",
-			});
-		} else if (!opts?.silent) {
-			toast.success(`OCR extracted text from ${file.name} (${ocr.model})`);
+	try {
+		const dataUrl = await fileToBase64(file, "application/pdf");
+		const ocr = await ocrPdfFile(dataUrl, { apiKeyId: opts?.apiKeyId, virtualKeyId: opts?.virtualKeyId });
+		if (ocr?.text) {
+			if (!opts?.silent && ocr.text.includes("[Truncated:")) {
+				toast.warning(`OCR read only part of ${file.name}`, {
+					description:
+						"The OCR page range is marked in the attachment. Text-layer content may cover other pages; scanned-only text outside that range may be missing.",
+				});
+			} else if (!opts?.silent) {
+				toast.success(`OCR extracted text from ${file.name} (${ocr.model})`);
+			}
+			return ocr;
 		}
-		return ocr;
+	} catch (error) {
+		console.warn(`PDF OCR failed for "${file.name}":`, error);
 	}
 	return null;
 }
@@ -1572,9 +1577,11 @@ export async function fileToAttachment(
 			}
 			return textAttachmentFromExtract(file.name, extractedText);
 		}
-		toast.error(`Could not extract text from scanned PDF "${file.name}"`, {
-			description: "Configure a Mistral OCR key/model, or use a text-based PDF.",
-		});
+		if (!opts?.silent) {
+			toast.error(`Could not extract text from scanned PDF "${file.name}"`, {
+				description: "Configure a Mistral OCR key/model, or use a text-based PDF.",
+			});
+		}
 		return null;
 	}
 

@@ -25,6 +25,26 @@ func (s *accessTestStore) DB() *gorm.DB {
 	return s.db
 }
 
+func (s *accessTestStore) ExecuteTransaction(ctx context.Context, fn func(tx *gorm.DB) error) error {
+	return s.db.WithContext(ctx).Transaction(fn)
+}
+
+func (s *accessTestStore) GetTeam(ctx context.Context, id string) (*tables.TableTeam, error) {
+	var team tables.TableTeam
+	if err := s.db.Where("id = ?", id).First(&team).Error; err != nil {
+		return nil, err
+	}
+	return &team, nil
+}
+
+func (s *accessTestStore) GetCustomer(ctx context.Context, id string) (*tables.TableCustomer, error) {
+	var customer tables.TableCustomer
+	if err := s.db.Where("id = ?", id).First(&customer).Error; err != nil {
+		return nil, err
+	}
+	return &customer, nil
+}
+
 func (s *accessTestStore) GetPromptByID(ctx context.Context, id string) (*tables.TablePrompt, error) {
 	var p tables.TablePrompt
 	if err := s.db.Where("id = ?", id).First(&p).Error; err != nil {

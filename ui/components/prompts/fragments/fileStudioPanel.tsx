@@ -104,7 +104,13 @@ export function FileStudioPanel() {
 
 	useEffect(() => {
 		const revokePdfPreview = () => {
-			if (pdfPreviewUrlRef.current) URL.revokeObjectURL(pdfPreviewUrlRef.current);
+			if (pdfPreviewUrlRef.current) {
+				try {
+					URL.revokeObjectURL(pdfPreviewUrlRef.current);
+				} catch {
+					// Ignore stale URL cleanup errors.
+				}
+			}
 			pdfPreviewUrlRef.current = null;
 		};
 		const onStudio = (ev: Event) => {
@@ -125,7 +131,20 @@ export function FileStudioPanel() {
 			const detail = (ev as CustomEvent<{ blob?: Blob; filename?: string }>).detail;
 			if (!detail?.blob) return;
 			revokePdfPreview();
-			const previewUrl = URL.createObjectURL(detail.blob);
+			let previewUrl: string;
+			try {
+				previewUrl = URL.createObjectURL(detail.blob);
+			} catch (error) {
+				setEvent((prev) => ({
+					...prev,
+					phase: "done",
+					kind: "pdf",
+					title: detail.filename || "Generated PDF",
+					previewUrl: undefined,
+					log: `PDF is ready; inline preview failed: ${error instanceof Error ? error.message : String(error)}`,
+				}));
+				return;
+			}
 			pdfPreviewUrlRef.current = previewUrl;
 			setView("preview");
 			setEvent((prev) => ({
@@ -161,7 +180,13 @@ export function FileStudioPanel() {
 					type="button"
 					className="rounded p-1 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
 					onClick={() => {
-						if (pdfPreviewUrlRef.current) URL.revokeObjectURL(pdfPreviewUrlRef.current);
+						if (pdfPreviewUrlRef.current) {
+							try {
+								URL.revokeObjectURL(pdfPreviewUrlRef.current);
+							} catch {
+								// Ignore stale URL cleanup errors.
+							}
+						}
 						pdfPreviewUrlRef.current = null;
 						setEvent(null);
 					}}

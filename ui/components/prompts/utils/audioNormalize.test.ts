@@ -45,4 +45,31 @@ describe("audio normalization", () => {
 		expect(wav.getInt16(44, true)).toBe(32_767);
 		expect(wav.getInt16(46, true)).toBe(0);
 	});
+
+	it("rejects decoded audio that would exceed the transcription file limit before allocating WAV samples", async () => {
+		const getChannelData = vi.fn();
+		const decodedAudio = {
+			numberOfChannels: 1,
+			sampleRate: 48_000,
+			length: 50_000_000,
+			getChannelData,
+		} as unknown as AudioBuffer;
+		const closeMock = vi.fn().mockRejectedValue(new Error("context already closed"));
+		class MockAudioContext {
+			async decodeAudioData() {
+				return decodedAudio;
+			}
+
+			async close() {
+				return closeMock();
+			}
+		}
+		vi.stubGlobal("window", { AudioContext: MockAudioContext });
+
+		const normalized = await normalizeAudioToWavFile(new File(["audio"], "long.webm", { type: "audio/webm" }));
+
+		expect(normalized).toBeNull();
+		expect(getChannelData).not.toHaveBeenCalled();
+		expect(closeMock).toHaveBeenCalledOnce();
+	});
 });

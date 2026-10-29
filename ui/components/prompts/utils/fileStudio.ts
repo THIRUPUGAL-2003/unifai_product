@@ -108,6 +108,10 @@ function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function isAbortError(error: unknown): boolean {
+	return Boolean(error && typeof error === "object" && "name" in error && error.name === "AbortError");
+}
+
 function fromJsonObject(raw: string): { title: string; body: string; csv: string; svg: string } | null {
 	const start = raw.indexOf("{");
 	const end = raw.lastIndexOf("}");
@@ -158,8 +162,10 @@ function contentFromModelCode(code: string): { title: string; body: string; csv:
 
 function safeSvg(svg: string): string | null {
 	const trimmed = svg.trim();
-	if (!trimmed.startsWith("<svg") || !trimmed.endsWith("</svg>")) return null;
-	if (/<script|onload=|javascript:/i.test(trimmed)) return null;
+	if (!/^<svg\b[\s\S]*<\/svg>$/i.test(trimmed)) return null;
+	if (/<script\b|<foreignObject\b|<(?:iframe|object|embed|audio|video)\b|\bon[a-z][\w:-]*\s*=|javascript:|vbscript:|data:text\/html/i.test(trimmed)) {
+		return null;
+	}
 	return trimmed;
 }
 
@@ -235,6 +241,7 @@ export async function runDocumentStudio(opts: {
 
 	let code = "";
 	let pulled = { title: "", body: "", csv: "", svg: "" };
+	let generationError: unknown;
 	try {
 		code = (await opts.askModel(system, user)).trim();
 		pulled = documentFromModel(code);
@@ -242,13 +249,19 @@ export async function runDocumentStudio(opts: {
 			code = (await opts.askModel("Return only the JSON object with title and content. content is the full document.", user)).trim();
 			pulled = documentFromModel(code);
 		}
-	} catch {
+	} catch (error) {
+		if (isAbortError(error)) throw error;
+		generationError = error;
 		code = "";
 	}
 	if (!pulled.body && !pulled.csv && !pulled.svg && revising && opts.previous) {
 		pulled = { title: opts.previous.title, body: opts.previous.markdown, csv: opts.previous.csv, svg: "" };
 	}
 	if (!pulled.body && !pulled.csv && !pulled.svg) {
+		if (generationError) {
+			const reason = generationError instanceof Error ? generationError.message : String(generationError);
+			throw new Error(`The file content could not be generated: ${reason}`);
+		}
 		throw new Error("The model did not return usable file content. Please try again or make the request more specific.");
 	}
 	if (!code) code = JSON.stringify({ title: pulled.title || titleGuess, content: pulled.body, csv: pulled.csv, svg: pulled.svg }, null, 2);

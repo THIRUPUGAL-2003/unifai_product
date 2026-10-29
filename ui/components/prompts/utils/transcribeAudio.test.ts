@@ -78,8 +78,24 @@ describe("transcribeAudioFile", () => {
 		expect(fetchMock).toHaveBeenCalledTimes(1);
 	});
 
+	it("does not repeat requests when credentials are rejected", async () => {
+		const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+			new Response(JSON.stringify({ error: { message: "Invalid API credentials" } }), {
+				status: 401,
+				headers: { "content-type": "application/json" },
+			}),
+		);
+
+		const result = await transcribeAudioFile(new File(["audio"], "speech.wav"), {
+			models: ["first-model", "second-model"],
+		});
+
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		expect(result).toMatchObject({ text: "", error: expect.stringContaining("Invalid API credentials") });
+	});
+
 	it("preserves cancellation instead of converting it into a transcription error", async () => {
-		vi.spyOn(globalThis, "fetch").mockRejectedValue(new DOMException("Aborted", "AbortError"));
+		vi.spyOn(globalThis, "fetch").mockRejectedValue(Object.assign(new Error("Aborted"), { name: "AbortError" }));
 
 		await expect(transcribeAudioFile(new File(["audio"], "speech.wav"), { models: ["first-model"] })).rejects.toMatchObject({
 			name: "AbortError",

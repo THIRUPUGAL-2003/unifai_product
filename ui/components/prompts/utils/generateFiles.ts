@@ -64,13 +64,27 @@ const EXT_MAP: Record<string, string> = {
 /** Trigger browser file download from a Blob */
 export function triggerBlobDownload(blob: Blob, filename: string): void {
 	const url = URL.createObjectURL(blob);
-	const a = document.createElement("a");
-	a.href = url;
-	a.download = filename;
-	document.body.appendChild(a);
-	a.click();
-	document.body.removeChild(a);
-	setTimeout(() => URL.revokeObjectURL(url), 1000);
+	let anchor: HTMLAnchorElement | null = null;
+	try {
+		anchor = document.createElement("a");
+		anchor.href = url;
+		anchor.download = filename;
+		document.body.appendChild(anchor);
+		anchor.click();
+	} finally {
+		try {
+			if (anchor?.parentNode) anchor.parentNode.removeChild(anchor);
+		} catch {
+			// Cleanup must not hide the original download error.
+		}
+		setTimeout(() => {
+			try {
+				URL.revokeObjectURL(url);
+			} catch {
+				// The browser may have already released the temporary URL.
+			}
+		}, 1000);
+	}
 }
 
 /** Sanitize file base name */

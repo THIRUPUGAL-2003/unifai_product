@@ -184,6 +184,15 @@ function parseErrorPayload(data: unknown, fallback: string): string {
 	return fallback;
 }
 
+function isAbortError(error: unknown): boolean {
+	return Boolean(error && typeof error === "object" && "name" in error && error.name === "AbortError");
+}
+
+function shouldTryNextGenerationModel(status: number, message: string): boolean {
+	if (status === 408 || status === 429 || status >= 500) return true;
+	return (status === 400 || status === 404) && /(model|provider|unsupported)/i.test(message);
+}
+
 export interface ExecutionCallbacks {
 	onStreamingStart: (allMessages: Message[], placeholder: Message) => void;
 	onStreamChunk: (content: string) => void;
@@ -604,6 +613,8 @@ export async function executePrompt(
 							usedModel = candidateModel;
 							break;
 						}
+						lastError = `${candidateModel}: provider returned no image data`;
+						continue;
 					} else {
 						let errText = `HTTP ${imgRes.status}`;
 						try {
@@ -612,12 +623,13 @@ export async function executePrompt(
 						} catch {}
 						lastError = `${candidateModel}: ${errText}`;
 						console.warn(`Image generation with ${candidateModel} failed:`, errText);
-						if (imageTarget.candidates.length === 1) break;
+						if (!shouldTryNextGenerationModel(imgRes.status, errText)) break;
 					}
-				} catch (err: any) {
-					lastError = `${candidateModel}: ${err?.message || "Network error"}`;
+				} catch (err) {
+					if (isAbortError(err)) throw err;
+					lastError = `${candidateModel}: ${err instanceof Error ? err.message : String(err) || "Network error"}`;
 					console.warn(`Image generation attempt error:`, err);
-					if (imageTarget.candidates.length === 1) break;
+					if (err instanceof TypeError) break;
 				}
 			}
 
@@ -627,7 +639,6 @@ export async function executePrompt(
 						`![${imageTarget.cleanPrompt}](${generatedImageUrl})\n\n` +
 						`*(Generated via **${usedModel}**)*`,
 				);
-				callbacks.onFinally();
 				return;
 			}
 
@@ -644,7 +655,6 @@ export async function executePrompt(
 					`• **Runway / Runware / Fireworks / Together**\n\n` +
 					`👉 **Fix:** Add an API Key for any of the above image providers under **Workspace > Providers**!`,
 			);
-			callbacks.onFinally();
 			return;
 		}
 
@@ -684,6 +694,8 @@ export async function executePrompt(
 							usedVidModel = candidateModel;
 							break;
 						}
+						lastVidError = `${candidateModel}: provider returned no video data`;
+						continue;
 					} else {
 						let errText = `HTTP ${vidRes.status}`;
 						try {
@@ -692,12 +704,13 @@ export async function executePrompt(
 						} catch {}
 						lastVidError = `${candidateModel}: ${errText}`;
 						console.warn(`Video generation with ${candidateModel} failed:`, errText);
-						if (videoTarget.candidates.length === 1) break;
+						if (!shouldTryNextGenerationModel(vidRes.status, errText)) break;
 					}
-				} catch (err: any) {
-					lastVidError = `${candidateModel}: ${err?.message || "Network error"}`;
+				} catch (err) {
+					if (isAbortError(err)) throw err;
+					lastVidError = `${candidateModel}: ${err instanceof Error ? err.message : String(err) || "Network error"}`;
 					console.warn(`Video generation attempt error:`, err);
-					if (videoTarget.candidates.length === 1) break;
+					if (err instanceof TypeError) break;
 				}
 			}
 
@@ -707,7 +720,6 @@ export async function executePrompt(
 						`<video controls playsinline src="${generatedVideoUrl}" style="max-width: 100%; border-radius: 8px; margin-top: 8px;"></video>\n\n` +
 						`*(Generated via **${usedVidModel}**)*`,
 				);
-				callbacks.onFinally();
 				return;
 			} else if (generatedVideoId) {
 				callbacks.onComplete(
@@ -717,7 +729,6 @@ export async function executePrompt(
 						`**Prompt:** *"${videoTarget.cleanPrompt}"*\n\n` +
 						`The video is being rendered. You can view the live progress and watch the generated video in **Workspace > Logs**!`,
 				);
-				callbacks.onFinally();
 				return;
 			}
 
@@ -734,7 +745,6 @@ export async function executePrompt(
 					`• **Replicate:** \`replicate/lucataco/animate-diff\`\n\n` +
 					`👉 **Fix:** Add an API Key for any of the above video providers under **Workspace > Providers**!`,
 			);
-			callbacks.onFinally();
 			return;
 		}
 
@@ -781,11 +791,14 @@ export async function executePrompt(
 				});
 				callbacks.onComplete(`**${filename}** is ready. The download has started, and you can review its preview in the side panel.`);
 			} catch (err) {
+				if (isAbortError(err)) {
+					emitStudio({ phase: "close" });
+					throw err;
+				}
 				const message = err instanceof Error ? err.message : String(err);
 				emitStudio({ phase: "error", log: message });
 				callbacks.onComplete(`The file could not be built.\n\n${message}`);
 			}
-			callbacks.onFinally();
 			return;
 		}
 
@@ -987,13 +1000,12 @@ export async function executePrompt(
 			}
 		}
 	} catch (err) {
-		if (err instanceof DOMException && err.name === "AbortError") {
+		if (isAbortError(err)) {
 			// User cancelled — no error to display
 		} else {
 			callbacks.onError(formatPlaygroundError(getErrorMessage(err)));
 		}
 	} finally {
-		callbacks.onFinally();
 	}
 }
 

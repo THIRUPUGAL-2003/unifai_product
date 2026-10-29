@@ -1625,62 +1625,68 @@ func (h *PromptsHandler) getPromptAccess(ctx *fasthttp.RequestCtx) {
 	}
 
 	// 2. Users from Teams
-	ws, _ := configstore.AsWorkspaceStore(h.store)
-	if ws == nil && (len(teamIDs) > 0 || len(customerIDs) > 0) {
-		SendError(ctx, fasthttp.StatusServiceUnavailable, "Workspace access data is unavailable")
-		return
+	getTeamMembers := func(tid string) ([]tables.TableTeamMember, error) {
+		ws, _ := configstore.AsWorkspaceStore(h.store)
+		if ws != nil {
+			return ws.ListTeamMembers(ctx, tid)
+		}
+		if h.store != nil && h.store.DB() != nil {
+			var rows []tables.TableTeamMember
+			err := h.store.DB().WithContext(ctx).Where("team_id = ?", tid).Find(&rows).Error
+			return rows, err
+		}
+		return nil, errors.New("workspace access data is unavailable")
 	}
-	if ws != nil {
-		for _, tid := range teamIDs {
-			team, err := h.store.GetTeam(ctx, tid)
-			teamName := "Team"
-			if err != nil && !errors.Is(err, configstore.ErrNotFound) {
-				SendError(ctx, fasthttp.StatusInternalServerError, "Failed to load team access: "+err.Error())
+
+	for _, tid := range teamIDs {
+		team, err := h.store.GetTeam(ctx, tid)
+		teamName := "Team"
+		if err != nil && !errors.Is(err, configstore.ErrNotFound) {
+			SendError(ctx, fasthttp.StatusInternalServerError, "Failed to load team access: "+err.Error())
+			return
+		}
+		if team != nil {
+			teamName = team.Name
+		}
+		members, err := getTeamMembers(tid)
+		if err != nil {
+			SendError(ctx, fasthttp.StatusInternalServerError, "Failed to load team members: "+err.Error())
+			return
+		}
+		for _, m := range members {
+			if err := appendUser(m.UserID, "team", teamName); err != nil {
+				SendError(ctx, fasthttp.StatusInternalServerError, "Failed to load prompt access: "+err.Error())
 				return
 			}
-			if team != nil {
-				teamName = team.Name
-			}
-			members, err := ws.ListTeamMembers(ctx, tid)
+		}
+	}
+
+	// 3. Users from Customers
+	for _, cid := range customerIDs {
+		cust, err := h.store.GetCustomer(ctx, cid)
+		custName := "Customer"
+		if err != nil && !errors.Is(err, configstore.ErrNotFound) {
+			SendError(ctx, fasthttp.StatusInternalServerError, "Failed to load customer access: "+err.Error())
+			return
+		}
+		if cust != nil {
+			custName = cust.Name
+		}
+		var custTeams []tables.TableTeam
+		if err := h.store.DB().WithContext(ctx).Where("customer_id = ?", cid).Find(&custTeams).Error; err != nil {
+			SendError(ctx, fasthttp.StatusInternalServerError, "Failed to load customer teams: "+err.Error())
+			return
+		}
+		for _, ct := range custTeams {
+			members, err := getTeamMembers(ct.ID)
 			if err != nil {
-				SendError(ctx, fasthttp.StatusInternalServerError, "Failed to load team members: "+err.Error())
+				SendError(ctx, fasthttp.StatusInternalServerError, "Failed to load customer team members: "+err.Error())
 				return
 			}
 			for _, m := range members {
-				if err := appendUser(m.UserID, "team", teamName); err != nil {
+				if err := appendUser(m.UserID, "customer", custName+" / "+ct.Name); err != nil {
 					SendError(ctx, fasthttp.StatusInternalServerError, "Failed to load prompt access: "+err.Error())
 					return
-				}
-			}
-		}
-
-		// 3. Users from Customers
-		for _, cid := range customerIDs {
-			cust, err := h.store.GetCustomer(ctx, cid)
-			custName := "Customer"
-			if err != nil && !errors.Is(err, configstore.ErrNotFound) {
-				SendError(ctx, fasthttp.StatusInternalServerError, "Failed to load customer access: "+err.Error())
-				return
-			}
-			if cust != nil {
-				custName = cust.Name
-			}
-			var custTeams []tables.TableTeam
-			if err := h.store.DB().WithContext(ctx).Where("customer_id = ?", cid).Find(&custTeams).Error; err != nil {
-				SendError(ctx, fasthttp.StatusInternalServerError, "Failed to load customer teams: "+err.Error())
-				return
-			}
-			for _, ct := range custTeams {
-				members, err := ws.ListTeamMembers(ctx, ct.ID)
-				if err != nil {
-					SendError(ctx, fasthttp.StatusInternalServerError, "Failed to load customer team members: "+err.Error())
-					return
-				}
-				for _, m := range members {
-					if err := appendUser(m.UserID, "customer", custName+" / "+ct.Name); err != nil {
-						SendError(ctx, fasthttp.StatusInternalServerError, "Failed to load prompt access: "+err.Error())
-						return
-					}
 				}
 			}
 		}

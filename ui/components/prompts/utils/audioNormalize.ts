@@ -89,12 +89,19 @@ export async function normalizeAudioToWavFile(file: File): Promise<File | null> 
 		try {
 			const arrayBuffer = await file.arrayBuffer();
 			const audioBuffer = await ctx.decodeAudioData(arrayBuffer.slice(0));
+			if (!Number.isFinite(audioBuffer.sampleRate) || audioBuffer.sampleRate <= 0 || audioBuffer.length <= 0) return null;
+			const normalizedSamples = Math.floor((audioBuffer.length * 16_000) / audioBuffer.sampleRate);
+			if (normalizedSamples <= 0 || normalizedSamples * 2 + 44 > MAX_AUDIO_NORMALIZATION_BYTES) return null;
 			const mono = downsampleToMono(audioBuffer, 16000);
 			const wavBlob = encodeWav(mono, 16000);
 			const base = file.name.replace(/\.[^.]+$/, "") || "voice";
 			return new File([wavBlob], `${base}.wav`, { type: "audio/wav" });
 		} finally {
-			void ctx.close();
+			try {
+				await ctx.close();
+			} catch {
+				// Context cleanup should not turn a successful conversion into a failed import.
+			}
 		}
 	} catch (error) {
 		console.warn("Audio normalize failed:", file.name, error);

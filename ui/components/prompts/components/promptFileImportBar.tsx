@@ -55,6 +55,10 @@ function getMicrophoneErrorMessage(error: unknown): string {
 	return "Microphone access denied or unavailable.";
 }
 
+function isAbortError(error: unknown): boolean {
+	return Boolean(error && typeof error === "object" && "name" in error && error.name === "AbortError");
+}
+
 function formatDuration(seconds: number): string {
 	const mins = Math.floor(seconds / 60);
 	const secs = seconds % 60;
@@ -117,14 +121,19 @@ export function PromptFileImportBar({
 
 	const addFiles = useCallback(
 		async (files: FileList | File[]) => {
-			const arr = Array.from(files);
-			if (onFilesSelected) {
-				onFilesSelected(arr);
-				return;
-			}
-			const attachments = await filesToAttachments(arr, { apiKeyId, virtualKeyId });
-			if (attachments.length > 0) {
-				onAttachmentsAdded(attachments);
+			try {
+				const arr = Array.from(files);
+				if (onFilesSelected) {
+					onFilesSelected(arr);
+					return;
+				}
+				const attachments = await filesToAttachments(arr, { apiKeyId, virtualKeyId });
+				if (attachments.length > 0) onAttachmentsAdded(attachments);
+			} catch (error) {
+				if (isAbortError(error)) return;
+				toast.error("Could not import the selected files", {
+					description: error instanceof Error ? error.message : String(error),
+				});
 			}
 		},
 		[apiKeyId, virtualKeyId, onAttachmentsAdded, onFilesSelected],
@@ -141,7 +150,11 @@ export function PromptFileImportBar({
 			animFrameRef.current = null;
 		}
 		if (audioCtxRef.current && audioCtxRef.current.state !== "closed") {
-			void audioCtxRef.current.close().catch(() => {});
+			try {
+				void audioCtxRef.current.close().catch(() => {});
+			} catch {
+				// The context may close between the state check and the close call.
+			}
 			audioCtxRef.current = null;
 		}
 		analyserRef.current = null;
@@ -397,7 +410,7 @@ export function PromptFileImportBar({
 						signal: transcriptionAbort.signal,
 					});
 				} catch (error) {
-					if (error instanceof DOMException && error.name === "AbortError") return;
+					if (isAbortError(error)) return;
 					toast.warning("Cloud transcription unavailable — attaching voice audio recording");
 				} finally {
 					if (transcriptionAbortRef.current === transcriptionAbort) transcriptionAbortRef.current = null;
