@@ -2050,7 +2050,16 @@
     }
     if (stagedBlockedFiles.length > 0) {
       var rTitle = stagedBlockedReasons.join(", ") || "Restricted Content";
-      var stagedMsg = stagedDetailMsgs.join("; ") + ". Upload blocked by corporate DLP policy. Please remove " + (stagedBlockedFiles.length === 1 ? "this file" : "these files") + " before sending.";
+      var customMsgs = [];
+      for (var cm = 0; cm < fileItems.length; cm++) {
+        if (fileItems[cm] && fileItems[cm].is_blocked) {
+          var cMsg = (fileItems[cm].blocked_message || fileItems[cm].blocked_reason_detail || "").trim();
+          if (cMsg && customMsgs.indexOf(cMsg) === -1) {
+            customMsgs.push(cMsg);
+          }
+        }
+      }
+      var stagedMsg = customMsgs.length > 0 ? customMsgs.join(" | ") : (stagedDetailMsgs.join("; ") + ". Upload blocked by corporate DLP policy. Please remove " + (stagedBlockedFiles.length === 1 ? "this file" : "these files") + " before sending.");
       return {
         blocked: true,
         action: "Blocked",
