@@ -169,7 +169,10 @@ def schedule_install_removal() -> None:
                     dirs.add(d)
             if local:
                 dirs.add(os.path.join(local, "Programs", "YP Raksha"))
+                dirs.add(os.path.join(local, "Programs", "YP", "Raksha"))
+                dirs.add(os.path.join(local, "YP", "Raksha"))
                 dirs.add(os.path.join(local, "Programs", "Gateway", "Guard"))
+                dirs.add(os.path.join(local, "Gateway", "Guard"))
 
             for d in dirs:
                 parts.append(f'del /f /q "{d}\\*.*" >nul 2>&1')
@@ -182,6 +185,9 @@ def schedule_install_removal() -> None:
                 parts.append(f'del /f /q "{os.path.join(local, "Gateway", "Guard")}\\*.*" >nul 2>&1')
                 parts.append(f'rmdir /s /q "{os.path.join(local, "Gateway", "Guard")}" >nul 2>&1')
                 parts.append(f'rmdir "{os.path.join(local, "Gateway")}" >nul 2>&1')
+                parts.append(f'del /f /q "{os.path.join(local, "YP", "Raksha")}\\*.*" >nul 2>&1')
+                parts.append(f'rmdir /s /q "{os.path.join(local, "YP", "Raksha")}" >nul 2>&1')
+                parts.append(f'rmdir "{os.path.join(local, "YP")}" >nul 2>&1')
 
             cmd = " & ".join(parts)
             si = subprocess.STARTUPINFO()

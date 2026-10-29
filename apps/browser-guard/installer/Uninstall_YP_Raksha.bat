@@ -7,6 +7,8 @@ echo.
 set "GUARD_EXE="
 for %%F in (
     "%LOCALAPPDATA%\Programs\YP Raksha\YP_Raksha.exe"
+    "%LOCALAPPDATA%\Programs\YP\Raksha\YP_Raksha.exe"
+    "%LOCALAPPDATA%\YP\Raksha\YP_Raksha.exe"
     "%LOCALAPPDATA%\Programs\Gateway\Guard\YP_Raksha.exe"
     "%LOCALAPPDATA%\Programs\Gateway\Guard\Gateway_Guard.exe"
     "%~dp0YP_Raksha.exe"
