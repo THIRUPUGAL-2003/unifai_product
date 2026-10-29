@@ -24,17 +24,18 @@ function buildAuthHeaders(apiKeyId?: string, virtualKeyId?: string): Record<stri
 	return headers;
 }
 
-function parseOcrMarkdown(data: unknown): string {
+function parseOcrMarkdown(data: unknown, pageNumbers?: number[]): string {
 	if (!data || typeof data !== "object") return "";
 	const root = data as Record<string, unknown>;
 	const pages = root.pages;
 	if (!Array.isArray(pages) || pages.length === 0) return "";
 	const parts: string[] = [];
-	for (const page of pages) {
+	for (const [index, page] of pages.entries()) {
 		if (!page || typeof page !== "object") continue;
 		const markdown = (page as Record<string, unknown>).markdown;
 		if (typeof markdown === "string" && markdown.trim()) {
-			parts.push(markdown.trim());
+			const pageNumber = pageNumbers?.[index] ?? index + 1;
+			parts.push(pageNumbers ? `[Page ${pageNumber}]\n${markdown.trim()}` : markdown.trim());
 		}
 	}
 	return parts.join("\n\n").trim();
@@ -101,7 +102,7 @@ export async function ocrDocument(
 			}
 
 			const data = await response.json();
-			const text = parseOcrMarkdown(data);
+			const text = parseOcrMarkdown(data, document.type === "document_url" ? (opts?.pages || []) : undefined);
 			if (text) return { text, model };
 			lastError = `${model}: empty OCR text`;
 		} catch (err) {
@@ -182,11 +183,12 @@ export async function ocrPdfFile(
 			pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
 			const doc = await pdfjs.getDocument({ data: bytes }).promise;
-			const pagesToScan = Math.min(doc.numPages, 5);
+			const requestedPages = [...new Set((opts?.pages || []).filter((page) => Number.isInteger(page) && page > 0 && page <= doc.numPages))];
+			const pagesToScan = requestedPages.length > 0 ? requestedPages.slice(0, 5) : Array.from({ length: Math.min(doc.numPages, 5) }, (_v, i) => i + 1);
 			const Tesseract = await getTesseract();
 			const pageTexts: string[] = [];
 
-			for (let p = 1; p <= pagesToScan; p++) {
+			for (const p of pagesToScan) {
 				const page = await doc.getPage(p);
 				const viewport = page.getViewport({ scale: 1.5 });
 				const canvas = document.createElement("canvas");
@@ -199,13 +201,15 @@ export async function ocrPdfFile(
 					const res = await Tesseract.recognize(canvas, "eng");
 					const txt = res?.data?.text?.trim();
 					if (txt) {
-						pageTexts.push(pagesToScan > 1 ? `[Page ${p}]\n${txt}` : txt);
+						pageTexts.push(`[Page ${p} of ${doc.numPages}]\n${txt}`);
 					}
 				}
 			}
 
 			if (pageTexts.length > 0) {
-				return { text: pageTexts.join("\n\n").trim(), model: "tesseract-ocr" };
+				const omittedPages = doc.numPages - pagesToScan.length;
+				const truncationNotice = omittedPages > 0 ? `\n\n[Truncated: local OCR processed ${pagesToScan.length} of ${doc.numPages} pages; ${omittedPages} pages were not read.]` : "";
+				return { text: `${pageTexts.join("\n\n").trim()}${truncationNotice}`, model: "tesseract-ocr (English)" };
 			}
 		}
 	} catch (pdfOcrErr) {

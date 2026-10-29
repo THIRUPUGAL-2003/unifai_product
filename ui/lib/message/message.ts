@@ -40,6 +40,7 @@ interface ExtractedFileInfo {
 
 function getExtractionStatus(content: string): string | null {
 	const lower = content.toLowerCase();
+	if (lower.includes("image pixels could not be decoded") || lower.includes("no visual content available")) return "UNREADABLE: image pixels were not available to the model";
 	if (lower.includes("no readable text content found")) return "UNREADABLE: no file text could be extracted";
 	if (lower.includes("extraction error:")) return "INCOMPLETE: file extraction failed";
 	if (lower.includes("--- extracted strings & metadata ---")) return "PARTIAL: only printable text fragments were extracted from a binary file";
@@ -308,7 +309,8 @@ function parseAttachmentPart(part: MessageContent): ExtractedFileInfo | null {
 function formatUnifiedMultiFileContent(
 	userQuery: string,
 	files: ExtractedFileInfo[],
-	images: { filename?: string }[]
+	images: { filename?: string; extractedText?: string }[],
+	imageContentAvailable: boolean
 ): string {
 	const sections: string[] = [];
 	const totalItems = files.length + images.length;
@@ -343,7 +345,9 @@ function formatUnifiedMultiFileContent(
 		}
 		for (const img of images) {
 			const imgLabel = img.filename ? `"${img.filename}"` : "";
-			manifestLines.push(`• Item ${idx}: ${imgLabel} (Image - visual content attached below)`);
+			manifestLines.push(
+				`• Item ${idx}: ${imgLabel} (${imageContentAvailable ? "Image - visual content attached below" : "Image - OCR text only; visual content unavailable to the selected model"})`
+			);
 			idx++;
 		}
 		sections.push(manifestLines.join("\n"));
@@ -372,11 +376,19 @@ ${fence}${f.content}${closeFence}
 	if (images.length > 0) {
 		const imgLines: string[] = [];
 		imgLines.push(`[ATTACHED IMAGES FOR VISUAL ANALYSIS]`);
-		imgLines.push(`The following ${images.length} visual image(s) are attached in order:`);
+		imgLines.push(
+			imageContentAvailable
+				? `The following ${images.length} visual image(s) are attached in order:`
+				: "The selected model cannot inspect image pixels in this request. Use any OCR text included above; do not infer unseen image details."
+		);
 		images.forEach((img, i) => {
-			imgLines.push(`  - Image ${i + 1}: ${img.filename ? `"${img.filename}"` : ""}`);
+			const imageTextAvailable = Boolean(img.extractedText?.trim() || files.some((file) => file.kind === "ocr" && file.filename === img.filename));
+			const status = imageContentAvailable ? "" : imageTextAvailable ? " (OCR text available above)" : " (no OCR text available; visual content cannot be analyzed)";
+			imgLines.push(`  - Image ${i + 1}: ${img.filename ? `"${img.filename}"` : ""}${status}`);
 		});
-		imgLines.push(`Please analyze these images in combination with the prompt and any text files above.`);
+		if (imageContentAvailable) {
+			imgLines.push(`Please analyze these images in combination with the prompt and any text files above.`);
+		}
 		sections.push(imgLines.join("\n"));
 	}
 
@@ -968,8 +980,11 @@ export class Message {
 			m.includes("vision") ||
 			m.includes("vl") ||
 			m.includes("4o") ||
+			m.includes("gpt-4.1") ||
+			m.includes("gpt-4.5") ||
 			m.includes("gpt-4-turbo") ||
 			m.includes("claude-3") ||
+			m.includes("claude-4") ||
 			m.includes("gemini") ||
 			m.includes("llava") ||
 			m.includes("cogvlm") ||
@@ -1126,7 +1141,7 @@ export class Message {
 					const userTextParts: string[] = [];
 					const extractedFiles: ExtractedFileInfo[] = [];
 					const cleanedImageParts: MessageContent[] = [];
-					const imageInfos: { filename?: string }[] = [];
+					const imageInfos: { filename?: string; extractedText?: string }[] = [];
 					const otherParts: MessageContent[] = [];
 
 					for (const part of rawContent) {
@@ -1144,7 +1159,14 @@ export class Message {
 							}
 						} else if (part.type === "image_url" && part.image_url) {
 							const filename = part.image_url.filename || "";
-							imageInfos.push({ filename });
+							const extractedText = part.image_url.extracted_text?.trim() || "";
+							imageInfos.push({ filename, extractedText });
+							if (
+								extractedText &&
+								!extractedFiles.some((file) => file.kind === "ocr" && file.filename.toLowerCase() === filename.toLowerCase())
+							) {
+								extractedFiles.push({ filename: filename || "Image", category: "Image OCR", content: extractedText, kind: "ocr" });
+							}
 							cleanedImageParts.push({
 								type: "image_url" as const,
 								image_url: {
@@ -1179,7 +1201,7 @@ export class Message {
 
 					// If attachments are present (files or images)
 					if (extractedFiles.length > 0 || imageInfos.length > 0) {
-						const formattedUnifiedText = formatUnifiedMultiFileContent(userQuery, extractedFiles, imageInfos);
+						const formattedUnifiedText = formatUnifiedMultiFileContent(userQuery, extractedFiles, imageInfos, shouldSendImages);
 						if (!shouldSendImages && otherParts.length === 0) {
 							// Text-only with file extractions / OCR: return single clean string for maximum model accuracy
 							const msg: APIMessage = { role: m.role ?? MessageRole.USER, content: formattedUnifiedText };

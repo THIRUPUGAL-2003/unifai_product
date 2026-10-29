@@ -815,10 +815,18 @@ export function validatePromptAttachmentFile(file: File): string | null {
 	return null;
 }
 
-export function fileToBase64(file: File): Promise<string> {
+export function fileToBase64(file: File, mimeType?: string): Promise<string> {
 	return new Promise((resolve, reject) => {
 		const reader = new FileReader();
-		reader.onload = () => resolve(reader.result as string);
+		reader.onload = () => {
+			const dataUrl = String(reader.result || "");
+			if (!mimeType || !dataUrl.startsWith("data:")) {
+				resolve(dataUrl);
+				return;
+			}
+			const comma = dataUrl.indexOf(",");
+			resolve(comma >= 0 ? `data:${mimeType};base64,${dataUrl.slice(comma + 1)}` : dataUrl);
+		};
 		reader.onerror = reject;
 		reader.readAsDataURL(file);
 	});
@@ -1076,11 +1084,17 @@ function textAttachmentFromExtract(fileName: string, extracted: string): Message
 }
 
 async function tryPdfOcr(file: File, opts?: AttachmentImportOptions): Promise<MessageContent | null> {
-	toast.message(`Running OCR on scanned PDF ${file.name}…`);
-	const dataUrl = await fileToBase64(file);
+	if (!opts?.silent) toast.message(`Running OCR on scanned PDF ${file.name}…`);
+	const dataUrl = await fileToBase64(file, "application/pdf");
 	const ocr = await ocrPdfFile(dataUrl, { apiKeyId: opts?.apiKeyId, virtualKeyId: opts?.virtualKeyId });
 	if (ocr?.text) {
-		toast.success(`OCR extracted text from ${file.name} (${ocr.model})`);
+		if (!opts?.silent && ocr.text.includes("[Truncated:")) {
+			toast.warning(`OCR read only part of ${file.name}`, {
+				description: "The extracted page range is marked in the attached text; questions about other pages cannot be answered from it.",
+			});
+		} else if (!opts?.silent) {
+			toast.success(`OCR extracted text from ${file.name} (${ocr.model})`);
+		}
 		return ocrTextAttachment(file.name, ocr.text);
 	}
 	return null;
@@ -1126,7 +1140,7 @@ async function imageFileAttachments(file: File, mimeType: string, opts?: Attachm
 		out.push(
 			textAttachmentFromExtract(
 				file.name,
-				`[Image: ${file.name} (${mimeType || "image"}, ${(file.size / 1024).toFixed(1)} KB) — visual content attached]`,
+				`[Image: ${file.name} (${mimeType || "image"}, ${(file.size / 1024).toFixed(1)} KB) — image pixels could not be decoded and no readable text was extracted]`,
 			),
 		);
 	}
