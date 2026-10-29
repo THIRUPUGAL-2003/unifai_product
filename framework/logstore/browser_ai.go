@@ -769,9 +769,10 @@ func cleanDomainInput(raw string) string {
 			domain = domain[:i]
 		}
 	}
-	domain = strings.TrimLeft(strings.TrimSpace(domain), "*.")
-	domain = strings.TrimRight(domain, ".")
+	domain = strings.TrimLeft(strings.TrimSpace(domain), "*@.")
 	domain = strings.TrimPrefix(domain, "www.")
+	domain = strings.TrimLeft(domain, "*@.")
+	domain = strings.TrimRight(domain, ".")
 	return strings.TrimSpace(domain)
 }
 
@@ -1689,7 +1690,21 @@ func (m *BrowserAIManager) UpdateControls(ctx context.Context, updates map[strin
 
 func normalizeCorporateEmailDomain(raw string) string {
 	domain := strings.TrimSpace(strings.ToLower(raw))
-	domain = strings.TrimLeft(domain, "@.")
+	if i := strings.Index(domain, "://"); i >= 0 {
+		domain = domain[i+3:]
+	}
+	domain = strings.Split(domain, "/")[0]
+	domain = strings.Split(domain, "?")[0]
+	domain = strings.Split(domain, "#")[0]
+	if i := strings.LastIndex(domain, ":"); i > 0 {
+		maybePort := domain[i+1:]
+		if maybePort != "" && strings.Trim(maybePort, "0123456789") == "" {
+			domain = domain[:i]
+		}
+	}
+	domain = strings.TrimLeft(domain, "*@.")
+	domain = strings.TrimPrefix(domain, "www.")
+	domain = strings.TrimLeft(domain, "*@.")
 	domain = strings.TrimRight(domain, ".")
 	if domain == "" || strings.ContainsAny(domain, "*/:@\\ \t\r\n") {
 		return ""
@@ -2019,7 +2034,7 @@ func searchEnginePACRule(proxyAddr string) string {
         host === "bing.com" || host === "www.bing.com" ||
         host === "duckduckgo.com" || host === "html.duckduckgo.com" ||
         dnsDomainIs(host, "search.yahoo.com") || host === "search.brave.com") {
-        return "PROXY ` + proxyAddr + `";
+        return "PROXY ` + proxyAddr + `; DIRECT";
     }
 
 `
@@ -2086,10 +2101,10 @@ func buildDomainPAC(hosts []string, proxyAddr string) string {
 	b.WriteString("    for (var i = 0; i < aiHosts.length; i++) {\n")
 	b.WriteString("        var d = aiHosts[i];\n")
 	b.WriteString("        if (host === d || dnsDomainIs(host, \".\" + d) || shExpMatch(host, \"*.\" + d)) {\n")
-	b.WriteString("            // Strict: monitored hosts use Guard only. Agent fail-opens to all-DIRECT if proxy is down.\n")
+	b.WriteString("            // Fail-open: monitored hosts use Guard proxy, with instant DIRECT fallback if connection cuts.\n")
 	b.WriteString("            return \"PROXY ")
 	b.WriteString(proxyAddr)
-	b.WriteString("\";\n")
+	b.WriteString("; DIRECT\";\n")
 	b.WriteString("        }\n")
 	b.WriteString("    }\n\n")
 	b.WriteString("    return \"DIRECT\";\n")

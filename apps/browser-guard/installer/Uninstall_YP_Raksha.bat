@@ -25,11 +25,28 @@ if not defined GUARD_EXE (
     exit /b 1
 )
 
-echo A secure prompt will ask for the uninstall key.
-"%GUARD_EXE%" --uninstall-prompt
+if "%~1"=="" (
+    echo A secure prompt will ask for the uninstall key.
+    "%GUARD_EXE%" --uninstall-prompt
+) else (
+    "%GUARD_EXE%" --uninstall "%~1"
+)
 set EXIT_CODE=%ERRORLEVEL%
 
 if "%EXIT_CODE%"=="0" (
+    echo.
+    echo [INFO] Removing browser policies and proxy configuration...
+    reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings" /v AutoConfigURL /t REG_SZ /d "" /f >nul 2>&1
+    reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings" /v ProxyEnable /t REG_DWORD /d 0 /f >nul 2>&1
+    reg delete "HKCU\Software\Policies\Google\Chrome\ExtensionInstallForcelist" /f >nul 2>&1
+    reg delete "HKCU\Software\Policies\Google\Chrome\ExtensionSettings" /f >nul 2>&1
+    reg delete "HKCU\Software\Policies\Google\Chrome\ExtensionInstallSources" /f >nul 2>&1
+    reg delete "HKCU\Software\Policies\Microsoft\Edge\ExtensionInstallForcelist" /f >nul 2>&1
+    reg delete "HKCU\Software\Policies\Microsoft\Edge\ExtensionSettings" /f >nul 2>&1
+    reg delete "HKCU\Software\Policies\Microsoft\Edge\ExtensionInstallSources" /f >nul 2>&1
+    reg delete "HKCU\Software\Policies\BraveSoftware\Brave\ExtensionInstallForcelist" /f >nul 2>&1
+    reg delete "HKCU\Software\Policies\BraveSoftware\Brave\ExtensionSettings" /f >nul 2>&1
+    reg delete "HKCU\Software\Policies\Mozilla\Firefox\ExtensionSettings" /f >nul 2>&1
     echo.
     echo [SUCCESS] YP Raksha has been uninstalled successfully.
 ) else (

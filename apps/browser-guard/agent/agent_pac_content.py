@@ -53,9 +53,8 @@ def _normalize_domain(raw: str) -> str:
         host, port = domain.rsplit(":", 1)
         if port.isdigit():
             domain = host
-    domain = domain.lstrip("*.").strip(".")
-    if domain.startswith("www."):
-        domain = domain[4:]
+    domain = re.sub(r"^[*@.]+", "", domain).replace("www.", "")
+    domain = re.sub(r"^[*@.]+", "", domain).rstrip(".")
     return domain
 
 
@@ -65,7 +64,7 @@ SEARCH_ENGINE_PAC_RULE = [
     '        host === "bing.com" || host === "www.bing.com" ||',
     '        host === "duckduckgo.com" || host === "html.duckduckgo.com" ||',
     '        dnsDomainIs(host, "search.yahoo.com") || host === "search.brave.com") {',
-    '        return "PROXY {proxy}";',
+    '        return "PROXY {proxy}; DIRECT";',
     "    }",
     "",
 ]
@@ -181,11 +180,11 @@ def build_pac_from_targets(proxy_addr: str) -> str | None:
         lines.append(f'        "{d}": 1,')
     lines += [
         "    };",
-        f'    if (aiMap[host]) return "PROXY {proxy_addr}";',
+        f'    if (aiMap[host]) return "PROXY {proxy_addr}; DIRECT";',
         '    var dot = host.indexOf(".");',
         '    while (dot !== -1) {',
         '        var parent = host.substring(dot + 1);',
-        f'        if (aiMap[parent]) return "PROXY {proxy_addr}";',
+        f'        if (aiMap[parent]) return "PROXY {proxy_addr}; DIRECT";',
         '        dot = host.indexOf(".", dot + 1);',
         '    }',
         '    return "DIRECT";',
@@ -196,16 +195,12 @@ def build_pac_from_targets(proxy_addr: str) -> str | None:
 
 
 def ensure_pac_strict_proxy(pac: str) -> str:
-    """Monitored hosts use PROXY only while Guard is healthy.
-
-    Search engines retain ; DIRECT fallback so web searches never hard fail with ERR_PROXY_CONNECTION_FAILED.
-    """
+    """Monitored hosts use PROXY with DIRECT fallback so browsers never fail with proxy network error."""
     if not pac or "FindProxyForURL" not in pac:
         return pac
 
     proxy_target = (agent_config.PAC_ADVERTISE_ADDR or PROXY_ADDR or "127.0.0.1:18103").strip()
 
-    # Ensure search engine routing (Google, Bing, DDG, Yahoo) is present and always has ; DIRECT fallback
     search_rule = "\n".join(line.replace("{proxy}", proxy_target) for line in SEARCH_ENGINE_PAC_RULE)
     if "google.*" in pac or "bing.com" in pac:
         pac = re.sub(
@@ -223,6 +218,8 @@ def ensure_pac_strict_proxy(pac: str) -> str:
             count=1,
             flags=re.IGNORECASE,
         )
+    # Ensure every PROXY return has ; DIRECT fallback so cutting connection doesn't block websites
+    pac = re.sub(r'return\s*"PROXY\s+([^";]+)(?:;\s*DIRECT)?\s*";', r'return "PROXY \1; DIRECT";', pac)
     return pac
 
 
@@ -248,7 +245,7 @@ def fetch_proxy_pac() -> str | None:
 def write_local_pac(content: str) -> None:
     path = local_pac_path()
     try:
-        # Never persist PROXY;DIRECT except intentional all-DIRECT fail-open from health_loop.
+        # Persist PAC with safe fail-open DIRECT fallback.
         if content and "PROXY " in content.upper():
             content = ensure_pac_strict_proxy(content)
         with open(path, "w", encoding="utf-8", newline="\n") as f:

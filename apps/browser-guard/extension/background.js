@@ -19,7 +19,7 @@ try {
   }
 } catch (_) {}
 
-function updateBadge(active) {
+function updateBadge(_active) {
   if (chrome.action && chrome.action.setBadgeText) {
     // Keep badge text clear so no "ON" or warning overlays on pinned icon
     chrome.action.setBadgeText({ text: "" });
@@ -138,7 +138,7 @@ function fetchJson(url) {
 
 function isLoopbackHost(host) {
   return host === "localhost" || host === "127.0.0.1" || host === "0.0.0.0" || host === "::1" ||
-    /^127\./.test(host) || /\.localhost$/.test(host);
+    host.startsWith("127.") || host.endsWith(".localhost");
 }
 
 // Gateway domain only: the agent may report its own loopback address as
@@ -229,26 +229,112 @@ function normalizeDomainHost(value) {
   var host = String(value || "").toLowerCase().trim();
   if (!host) return "";
   if (host.indexOf("://") >= 0) {
-    try { host = new URL(host).hostname; } catch (_) { return ""; }
-  } else {
-    host = host.split("/", 1)[0].split("?", 1)[0].split("#", 1)[0];
-    if ((host.match(/:/g) || []).length === 1 && /:\d+$/.test(host)) host = host.replace(/:\d+$/, "");
+    try {
+      host = new URL(host).hostname;
+    } catch (_) {
+      host = host.split("://", 2)[1] || host;
+    }
   }
-  if (host.charAt(0) === "[" && host.indexOf("]") >= 0) host = host.slice(1, host.indexOf("]"));
-  return host.replace(/^www\./, "").replace(/\.$/, "");
+  host = host.split("/", 1)[0].split("?", 1)[0].split("#", 1)[0];
+  if ((host.match(/:/g) || []).length === 1 && /:\d+$/.test(host)) {
+    host = host.replace(/:\d+$/, "");
+  }
+  if (host.charAt(0) === "[" && host.indexOf("]") >= 0) {
+    host = host.slice(1, host.indexOf("]"));
+  }
+  return host.replace(/^[*@.]+/g, "").replace(/^www\./, "").replace(/^[*@.]+/g, "").replace(/\.+$/, "");
 }
 
 function domainFromUrl(value) {
   return normalizeDomainHost(value);
 }
 
+function getRootDomain(host) {
+  if (!host) return "";
+  var clean = normalizeDomainHost(host).toLowerCase();
+  var parts = clean.split(".");
+  if (parts.length <= 2) return clean;
+  var twoPartTlds = ["co.uk", "org.uk", "com.au", "net.au", "co.in", "co.jp", "com.br", "gov.in"];
+  var lastTwo = parts.slice(-2).join(".");
+  if (twoPartTlds.indexOf(lastTwo) !== -1 && parts.length > 2) {
+    return parts.slice(-3).join(".");
+  }
+  return parts.slice(-2).join(".");
+}
+
+function areRelatedAIHosts(h1, h2) {
+  if (!h1 || !h2) return false;
+  h1 = normalizeDomainHost(h1);
+  h2 = normalizeDomainHost(h2);
+  if (h1 === h2) return true;
+  var r1 = getRootDomain(h1);
+  var r2 = getRootDomain(h2);
+  if (r1 && r2 && r1 === r2) return true;
+
+  var pairs = [
+    ["chatgpt.com", "openai.com"],
+    ["chat.openai.com", "chatgpt.com"],
+    ["ab.chatgpt.com", "chatgpt.com"],
+    ["claude.ai", "anthropic.com"],
+    ["gemini.google.com", "aistudio.google.com"],
+    ["gemini.google.com", "bard.google.com"],
+    ["gemini.google.com", "google.com"],
+    ["copilot.microsoft.com", "copilot.com"],
+    ["copilot.microsoft.com", "copilot.cloud.microsoft"],
+    ["copilot.microsoft.com", "bing.com"],
+    ["copilot.microsoft.com", "githubcopilot.com"],
+    ["deepseek.com", "chat.deepseek.com"],
+    ["mistral.ai", "chat.mistral.ai"],
+    ["perplexity.ai", "www.perplexity.ai"],
+    ["grok.com", "x.ai"],
+    ["lovable.dev", "lovable.app"],
+    ["lovable.dev", "app.lovable.dev"],
+    ["poe.com", "quora.com"]
+  ];
+  for (var i = 0; i < pairs.length; i++) {
+    var p0 = pairs[i][0];
+    var p1 = pairs[i][1];
+    if ((h1 === p0 || h1.endsWith("." + p0)) && (h2 === p1 || h2.endsWith("." + p1))) return true;
+    if ((h1 === p1 || h1.endsWith("." + p1)) && (h2 === p0 || h2.endsWith("." + p0))) return true;
+  }
+  return false;
+}
+
+function detectProviderKeyword(host) {
+  var h = (host || "").toLowerCase();
+  if (h.includes("chatgpt") || h.includes("openai")) return "chatgpt";
+  if (h.includes("claude") || h.includes("anthropic")) return "claude";
+  if (h.includes("copilot") || h.includes("bing.com")) return "copilot";
+  if (h.includes("gemini") || h.includes("bard") || h.includes("aistudio")) return "gemini";
+  if (h.includes("deepseek")) return "deepseek";
+  if (h.includes("mistral")) return "mistral";
+  if (h.includes("perplexity")) return "perplexity";
+  if (h.includes("grok") || h.includes("x.ai")) return "grok";
+  if (h.includes("lovable")) return "lovable";
+  if (h.includes("poe.com")) return "poe";
+  return "";
+}
+
 function matchesDomain(host, domain) {
   var h = normalizeDomainHost(host);
-  var d = String(domain || "").toLowerCase().trim().replace(/^\*\./, "").replace(/^\./, "");
-  if (!h || !d) return false;
-  if (d.indexOf("://") < 0) d = d.indexOf(":") >= 0 && (d.match(/:/g) || []).length > 1 ? "https://[" + d + "]" : "https://" + d;
-  d = normalizeDomainHost(d);
-  return h === d || h.endsWith("." + d);
+  var rawD = String(domain || "").toLowerCase().trim().replace(/^[*@.]+/g, "");
+  if (!h || !rawD) return false;
+  var prov = detectProviderKeyword(h);
+  if (prov && rawD === prov) return true;
+  if (rawD.indexOf("://") < 0) {
+    rawD = rawD.indexOf(":") >= 0 && (rawD.match(/:/g) || []).length > 1 ? "https://[" + rawD + "]" : "https://" + rawD;
+  }
+  var d = normalizeDomainHost(rawD);
+  if (!d) {
+    return prov ? rawD === prov : false;
+  }
+  if (h === d || h.endsWith("." + d) || d.endsWith("." + h)) return true;
+  if (!d.includes(".") && (h === d || h.startsWith(d + ".") || h.endsWith("." + d) || h.includes("." + d + "."))) return true;
+  var r1 = getRootDomain(h);
+  var r2 = getRootDomain(d);
+  if (r1 && r2 && r1 === r2) return true;
+  if (areRelatedAIHosts(h, d)) return true;
+  return false;
 }
 
 function matchesDomainList(host, raw, monitoredSites) {
@@ -357,11 +443,13 @@ if (chrome.runtime && chrome.runtime.onMessage) {
             for (var ci = 0; ci < allCookies.length; ci++) {
               var c = allCookies[ci];
               var cDomain = (c.domain || "").toLowerCase().replace(/^\./, "");
-              if (
-                cDomain.includes("claude.ai") ||
-                cDomain.includes("anthropic.com") ||
-                (dom && (cDomain === dom || cDomain.endsWith("." + dom) || dom.endsWith("." + cDomain)))
-              ) {
+              var matchesTarget = false;
+              if (dom) {
+                matchesTarget = (cDomain === dom || cDomain.endsWith("." + dom) || dom.endsWith("." + cDomain) || areRelatedAIHosts(cDomain, dom));
+              } else {
+                matchesTarget = cDomain.includes("claude.ai") || cDomain.includes("anthropic.com");
+              }
+              if (matchesTarget) {
                 var protocol = c.secure ? "https:" : "http:";
                 var url = protocol + "//" + c.domain.replace(/^\./, "") + c.path;
                 try {

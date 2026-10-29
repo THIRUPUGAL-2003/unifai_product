@@ -176,9 +176,8 @@ def _normalize_host_domain(value: str) -> str:
             host, port = raw.rsplit(":", 1)
             if port.isdigit():
                 raw = host
-    raw = raw.strip().strip(".")
-    if raw.startswith("www."):
-        raw = raw[4:]
+    raw = re.sub(r"^[*@.]+", "", raw).replace("www.", "")
+    raw = re.sub(r"^[*@.]+", "", raw).rstrip(".")
     return raw
 
 
@@ -845,11 +844,12 @@ def interpret_guard_decision(data: dict, text: str, rule: str = "") -> dict:
     rule_name = rule or str(data.get("rule_triggered") or "")
     warning = str(data.get("warning_message") or "").strip()
     reply = str(data.get("reply_text") or data.get("security_message") or "").strip()
+    effective_msg = warning or reply or "This request was blocked by corporate security policy."
     if (not allowed) or act in ("blocked", "block", "bot answered", "replied"):
         return {
             "blocked": True,
             "action": "Blocked" if act not in ("bot answered", "replied") else action,
-            "message": reply or warning or "This request was blocked by YP-Raksha.",
+            "message": effective_msg,
             "rule": rule_name,
             "redacted_prompt": "",
         }
@@ -1479,23 +1479,27 @@ def check_prompt(
         rule_reason = ""
         if matched_rule_dict:
             rule_reason = str(matched_rule_dict.get("warning_message") or matched_rule_dict.get("description") or "").strip()
-        reason_display = f" (Reason: {rule_reason})" if (rule_reason and rule_reason.lower() != r_name.lower()) else (f" ({rule_reason})" if rule_reason else "")
 
-        if violating_files and prompt_violated:
-            f_str = ", ".join(f"'{fn}'" for fn in violating_files)
-            block_message = f"Prompt and file(s) {f_str} contain restricted data: {r_name}{reason_display}. Request blocked by security policy. Please remove the file(s) before sending."
-        elif violating_files:
-            if len(violating_files) == 1:
-                block_message = f"File '{violating_files[0]}' contains restricted data: {r_name}{reason_display}. Upload blocked by corporate DLP policy. Please remove this file before sending."
-            else:
+        # If user configured a custom blocked/warning message on the rule, use it directly!
+        if rule_reason:
+            if violating_files:
                 f_str = ", ".join(f"'{fn}'" for fn in violating_files)
-                block_message = f"Files {f_str} contain restricted data: {r_name}{reason_display}. Upload blocked by corporate DLP policy. Please remove these files before sending."
-        elif prompt_violated:
-            block_message = f"Prompt contains restricted data: {r_name}{reason_display}. Request blocked by security policy."
+                block_message = f"{rule_reason} (File: {f_str}). Please remove before sending."
+            else:
+                block_message = rule_reason
         else:
-            block_message = f"Blocked by corporate DLP policy: {r_name}{reason_display}."
+            if violating_files and prompt_violated:
+                f_str = ", ".join(f"'{fn}'" for fn in violating_files)
+                block_message = f"Prompt and file(s) {f_str} contain restricted data: {r_name}. Request blocked by security policy. Please remove the file(s) before sending."
+            elif violating_files:
+                f_str = ", ".join(f"'{fn}'" for fn in violating_files)
+                block_message = f"File(s) {f_str} contain restricted data: {r_name}. Upload blocked by corporate DLP policy. Please remove before sending."
+            elif prompt_violated:
+                block_message = f"Prompt contains restricted data: {r_name}. Request blocked by security policy."
+            else:
+                block_message = f"Blocked by corporate DLP policy: {r_name}."
         if rule_reason and rule_reason.lower() != r_name.lower():
-            rule = f"{r_name}: {rule_reason}"
+            rule = r_name
 
     if not text and not images_list and not files_list:
         return {"blocked": False, "message": "", "rule": ""}
@@ -2923,7 +2927,7 @@ def authorize_ai_session(payload: dict) -> dict:
     raw_domains = str(gov.get("corporate_email_domains") or "")
     allowed_domains = set()
     for d in raw_domains.replace(";", ",").replace("\n", ",").split(","):
-        cl = d.strip().lower().lstrip("@")
+        cl = re.sub(r"^[*@.]+", "", d.strip().lower()).replace("www.", "").rstrip(".")
         if cl:
             allowed_domains.add(cl)
 
@@ -2936,9 +2940,10 @@ def authorize_ai_session(payload: dict) -> dict:
         }
 
     email = str(payload.get("user_email") or "").strip().lower()
-    email_domain = str(payload.get("email_domain") or "").strip().lower().lstrip("@")
+    email_domain = str(payload.get("email_domain") or "").strip().lower()
+    email_domain = re.sub(r"^[*@.]+", "", email_domain).replace("www.", "").rstrip(".")
     if not email_domain and "@" in email:
-        email_domain = email.split("@")[-1].strip()
+        email_domain = re.sub(r"^[*@.]+", "", email.split("@")[-1].strip().lower()).replace("www.", "").rstrip(".")
 
     if not email_domain:
         return {

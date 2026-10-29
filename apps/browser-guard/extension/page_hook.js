@@ -23,6 +23,14 @@
   var armed = false; // Armed only when confirmed by extension for monitored AI domains
   var curScript = document.currentScript;
   var guardNonce = (curScript && curScript.dataset && curScript.dataset.guardNonce) || "";
+  if (!guardNonce && typeof document !== "undefined" && document.querySelector) {
+    try {
+      var ns = document.querySelector("script[data-guard-nonce]");
+      if (ns && ns.dataset && ns.dataset.guardNonce) {
+        guardNonce = ns.dataset.guardNonce;
+      }
+    } catch (_) {}
+  }
   var passKey = false;
   var passClick = false;
   var _passUntil = 0;
@@ -430,19 +438,26 @@
     var host = String(value || "").toLowerCase().trim();
     if (!host) return "";
     if (host.indexOf("://") >= 0) {
-      try { host = new URL(host).hostname; } catch (e) { return ""; }
-    } else {
-      host = host.split("/", 1)[0].split("?", 1)[0].split("#", 1)[0];
-      if ((host.match(/:/g) || []).length === 1 && /:\d+$/.test(host)) host = host.replace(/:\d+$/, "");
+      try {
+        host = new URL(host).hostname;
+      } catch (_) {
+        host = host.split("://", 2)[1] || host;
+      }
     }
-    if (host.charAt(0) === "[" && host.indexOf("]") >= 0) host = host.slice(1, host.indexOf("]"));
-    return host.replace(/^www\./, "").replace(/\.$/, "");
+    host = host.split("/", 1)[0].split("?", 1)[0].split("#", 1)[0];
+    if ((host.match(/:/g) || []).length === 1 && /:\d+$/.test(host)) {
+      host = host.replace(/:\d+$/, "");
+    }
+    if (host.charAt(0) === "[" && host.indexOf("]") >= 0) {
+      host = host.slice(1, host.indexOf("]"));
+    }
+    return host.replace(/^[*@.]+/g, "").replace(/^www\./, "").replace(/^[*@.]+/g, "").replace(/\.+$/, "");
   }
 
   function isProductOrServerHost(host) {
     if (!host) return false;
     var h = normalizeDomainHost(host);
-    if (h === "localhost" || h === "127.0.0.1" || h === "0.0.0.0" || h === "::1") return true;
+    if (h === "localhost" || h === "127.0.0.1" || h === "0.0.0.0" || h === "::1" || h.startsWith("127.") || h.endsWith(".localhost")) return true;
     var targetServer = (typeof GATEWAY_SERVER_HOST === "string" && GATEWAY_SERVER_HOST.trim())
       ? normalizeDomainHost(GATEWAY_SERVER_HOST)
       : "";
@@ -487,6 +502,7 @@
       ["deepseek.com", "chat.deepseek.com"],
       ["mistral.ai", "chat.mistral.ai"],
       ["perplexity.ai", "www.perplexity.ai"],
+      ["grok.com", "x.ai"],
       ["lovable.dev", "lovable.app"],
       ["lovable.dev", "app.lovable.dev"],
       ["poe.com", "quora.com"]
@@ -503,8 +519,8 @@
   function isControlActiveForSite(configuredSites) {
     if (isProductOrServerHost(location.hostname)) return false;
     var raw = (configuredSites && typeof configuredSites === "string") ? configuredSites.trim() : "";
-    if (!raw || raw.toLowerCase() === "none") return false;
-    if (raw.toUpperCase() === "ALL" || raw === "*") {
+    if (raw.toLowerCase() === "none") return false;
+    if (!raw || raw.toUpperCase() === "ALL" || raw === "*") {
       return true;
     }
     var currentHost = normalizeDomainHost(location.hostname);
@@ -545,7 +561,7 @@
     return false;
   }
 
-  function isGovernanceActiveForSite() {
+  function _isGovernanceActiveForSite() {
     return isControlActiveForSite(govTargetWebsites);
   }
 
@@ -614,7 +630,7 @@
     if (typeof FormData !== "undefined" && body instanceof FormData) {
       try {
         var hasRealFile = false;
-        body.forEach(function (val, key) {
+        body.forEach(function (val, _key) {
           if (typeof File !== "undefined" && val instanceof File && val.name) {
             hasRealFile = true;
           } else if (val && typeof val === "object" && typeof val.name === "string" && val.name && val.size > 0) {
@@ -671,7 +687,7 @@
       if (govFileExtensionMode === "allow_listed") {
         var isAllowed = hasAllowed && govAllowedExtensions.some(function (a) {
           var ext = String(a).replace(/^\./, "").toLowerCase().trim();
-          return ext && (lowerFileName.endsWith("." + ext) || mimeExt === ext || sniffedType === ext);
+          return ext && (lowerFileName.endsWith("." + ext) || effectiveType === ext || mimeExt === ext || sniffedType === ext);
         });
         if (!isAllowed) {
           var msg = govFileExtensionBlockMessage || (hasAllowed
@@ -683,7 +699,7 @@
       } else {
         var blockedExtension = govRestrictedExtensions && govRestrictedExtensions.find(function (b) {
           var ext = String(b).replace(/^\./, "").toLowerCase().trim();
-          return ext && (lowerFileName.endsWith("." + ext) || mimeExt === ext || sniffedType === ext);
+          return ext && (lowerFileName.endsWith("." + ext) || effectiveType === ext || mimeExt === ext || sniffedType === ext);
         });
         if (blockedExtension) {
           var cleanBlockedExtension = String(blockedExtension).replace(/^\./, "").toLowerCase().trim();
@@ -820,7 +836,7 @@
     if (nowSs - _lastScreenshotAlertLoggedAt > 2500) {
       _lastScreenshotAlertLoggedAt = nowSs;
       var siteHost = location.hostname || location.host || "website";
-      var promptLogText = "--screenshot [SCREEN CAPTURE RESTRICTED] -- " + siteHost;
+      var promptLogText = "--screenshot [SCREEN CAPTURE RESTRICTED] -- " + siteHost + (detail ? (" (" + detail + ")") : "");
       window.postMessage({
         source: "gateway-guard-page",
         nonce: guardNonce,
@@ -989,11 +1005,16 @@
     em = em.toLowerCase().trim();
     if (em.length < 5 || em.length > 120 || !em.includes("@")) return false;
     if (!/^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(em)) return false;
-    if (em.endsWith(".png") || em.endsWith(".jpg") || em.endsWith(".jpeg") || em.endsWith(".gif") || em.endsWith(".svg") || em.endsWith(".webp")) return false;
+    var dom = em.split("@")[1];
+    if (!dom || dom.indexOf(".") <= 0 || dom.includes("..") || dom.startsWith("-") || dom.endsWith("-")) return false;
+    if (em.endsWith(".png") || em.endsWith(".jpg") || em.endsWith(".jpeg") || em.endsWith(".gif") || em.endsWith(".svg") || em.endsWith(".webp") || em.endsWith(".css") || em.endsWith(".js") || em.endsWith(".map") || em.endsWith(".woff") || em.endsWith(".woff2")) return false;
     var noisePatterns = [
       "sentry", "datadog", "w3.org", "schema.org", "example.com", "placeholder", "test.com", "domain.com",
+      "noreply@", "no-reply@", "donotreply@", "notifications@", "mailer-daemon@", "postmaster@", "system@",
       "support@anthropic.com", "privacy@anthropic.com", "security@anthropic.com", "press@anthropic.com", "sales@anthropic.com", "billing@anthropic.com",
-      "support@google.com", "privacy@google.com", "security@google.com", "cloud-support@google.com", "workspace@google.com", "gserviceaccount.com"
+      "support@openai.com", "privacy@openai.com", "security@openai.com", "help@openai.com", "noreply@tm.openai.com",
+      "support@google.com", "privacy@google.com", "security@google.com", "cloud-support@google.com", "workspace@google.com", "gserviceaccount.com",
+      "support@microsoft.com", "privacy@microsoft.com", "google-analytics.com", "doubleclick.net", "intercom.io", "segment.io"
     ];
     for (var ni = 0; ni < noisePatterns.length; ni++) {
       if (em.includes(noisePatterns[ni])) return false;
@@ -1004,6 +1025,12 @@
   function handleSessionAuthDecision(authRes) {
     if (!authRes) return;
     if (_corpLogoutInitiated) return;
+    if (!govEnforceCorporateDomains || !isControlActiveForSite(govCorporateTargetWebsites || govTargetWebsites)) {
+      sessionBlocked = false;
+      sessionBlockedReason = "";
+      renderCorporateBanner(false);
+      return;
+    }
     if (authRes.decision === "block") {
       sessionBlocked = true;
       sessionBlockedReason = authRes.message || "Personal accounts are blocked by corporate security policy.";
@@ -1284,8 +1311,10 @@
   var lastCheckedAt = 0;
   function triggerSessionAuth(email, workspaceId, force) {
     if (!email) return;
-    email = String(email).trim().toLowerCase();
+    email = String(email).trim().toLowerCase().replace(/^["'<]+|[>"',;]+$/g, "");
     var domain = email.indexOf("@") >= 0 ? email.split("@")[1].trim() : email;
+    domain = normalizeDomainHost(domain);
+    if (!domain) return;
     var ws = workspaceId ? String(workspaceId).trim() : "";
     var key = email + "::" + ws;
     var now = Date.now();
@@ -1297,35 +1326,48 @@
     detectedWorkspace = ws;
 
     // Fast client-side check if corporate domain enforcement is active
-    if (govEnforceCorporateDomains && isControlActiveForSite(govCorporateTargetWebsites || govTargetWebsites)) {
-      var rawAllowed = (govCorporateEmailDomains || "").toLowerCase().split(/[,\s;]+/);
-      var allowedList = [];
-      for (var ai = 0; ai < rawAllowed.length; ai++) {
-        var cleanDom = rawAllowed[ai].replace(/^@/, "").trim();
-        if (cleanDom) allowedList.push(cleanDom);
+    if (!govEnforceCorporateDomains || !isControlActiveForSite(govCorporateTargetWebsites || govTargetWebsites)) {
+      handleSessionAuthDecision({ decision: "allow" });
+      return;
+    }
+
+    var rawAllowed = (govCorporateEmailDomains || "").toLowerCase().split(/[,\s;]+/);
+    var allowedList = [];
+    for (var ai = 0; ai < rawAllowed.length; ai++) {
+      var cleanDom = normalizeDomainHost(rawAllowed[ai].replace(/^@/, ""));
+      if (cleanDom) allowedList.push(cleanDom);
+    }
+    if (allowedList.length > 0) {
+      var domainMatched = false;
+      for (var aj = 0; aj < allowedList.length; aj++) {
+        var ad = allowedList[aj];
+        if (domain === ad || domain.endsWith("." + ad)) {
+          domainMatched = true;
+          break;
+        }
+        if (!ad.includes(".") && (domain.startsWith(ad + ".") || domain === ad + ".com" || domain.includes("." + ad + "."))) {
+          domainMatched = true;
+          break;
+        }
       }
-      if (allowedList.length > 0) {
-        var domainMatched = false;
-        for (var aj = 0; aj < allowedList.length; aj++) {
-          var ad = allowedList[aj];
-          if (domain === ad || domain.endsWith("." + ad)) {
-            domainMatched = true;
-            break;
-          }
-          if (!ad.includes(".") && (domain.startsWith(ad + ".") || domain === ad + ".com" || domain.includes("." + ad + "."))) {
-            domainMatched = true;
-            break;
-          }
+      if (domainMatched && govAllowedWorkspaceIds && ws) {
+        var allowedWs = govAllowedWorkspaceIds.toLowerCase().split(/[,\s;]+/);
+        var wsMatched = allowedWs.some(function (w) {
+          var cleanW = w.trim();
+          return cleanW && (ws.toLowerCase() === cleanW || ws.toLowerCase().includes(cleanW));
+        });
+        if (!wsMatched) {
+          domainMatched = false;
         }
-        if (!domainMatched) {
-          var blockMsg = govCorporateBlockMessage || ("Corporate policy restricts access to authorized domains (@" + allowedList.join(", @") + "). Personal account (@" + domain + ") is blocked.");
-          handleSessionAuthDecision({
-            decision: "block",
-            message: blockMsg
-          });
-        } else {
-          handleSessionAuthDecision({ decision: "allow" });
-        }
+      }
+      if (!domainMatched) {
+        var blockMsg = govCorporateBlockMessage || ("Corporate policy restricts access to authorized domains (@" + allowedList.join(", @") + "). Personal account (@" + domain + ") is blocked.");
+        handleSessionAuthDecision({
+          decision: "block",
+          message: blockMsg
+        });
+      } else {
+        handleSessionAuthDecision({ decision: "allow" });
       }
     }
 
@@ -2189,7 +2231,7 @@
       var timer = setTimeout(function () {
         delete pending[id];
         resolve(clientDecision || { blocked: false, passthrough: true });
-      }, 5000);
+      }, 1000);
 
       pending[id] = function (decision) {
         clearTimeout(timer);
@@ -2446,7 +2488,7 @@
         if (txt.indexOf("...") !== -1 || txt.indexOf("\u2026") !== -1) {
           continue;
         }
-        var m = txt.match(/^([a-zA-Z0-9_\-\. ]+\.[a-zA-Z0-9]{1,8})$/);
+        var m = txt.match(/^([a-zA-Z0-9_\-. ]+\.[a-zA-Z0-9]{1,8})$/);
         if (m && m[1]) {
           var fn = m[1].trim();
           if (fn && !detected.some(function (x) { return x.name === fn; })) {
@@ -3594,6 +3636,7 @@
       var sel = window.getSelection();
       var selectedText = sel ? sel.toString().trim() : "";
       if (selectedText.length > 0) {
+        if (ev && ev.preventDefault) ev.preventDefault();
         if (sel.removeAllRanges) sel.removeAllRanges();
         if (sel.empty) sel.empty();
         var screenshotShieldActive = !!(document.getElementById("yp-screenshot-shield") || document.getElementById("yp-blur-curtain"));
@@ -3898,7 +3941,7 @@
       showBubble(govDownloadBlockMessage || govBlockMessage || "Downloading files, artifacts, and exports from this AI tool is restricted by corporate security policy.", "Download Policy", "block");
       var siteHost = location.hostname || location.host || "website";
       var dlDesc = href || label || title || text || "download";
-      try { dlDesc = dlDesc.replace(/^.*[\\\/]/, "").trim(); } catch (_) {}
+      try { dlDesc = dlDesc.replace(/^.*[\\/]/, "").trim(); } catch (_) {}
       var promptText = "--download [DOWNLOAD BLOCKED] -- " + siteHost + (dlDesc ? (" (" + dlDesc.slice(0, 50) + ")") : "");
       window.postMessage({
         source: "gateway-guard-page",
@@ -3925,7 +3968,7 @@
           showBubble(govDownloadBlockMessage || govBlockMessage || "File download was blocked by corporate data governance policy.", "Download Policy", "block");
           var siteHost = location.hostname || location.host || "website";
           var dlDesc = this.getAttribute("download") || href || "file";
-          try { dlDesc = dlDesc.replace(/^.*[\\\/]/, "").trim(); } catch (_) {}
+          try { dlDesc = dlDesc.replace(/^.*[\\/]/, "").trim(); } catch (_) {}
           var promptText = "--download [DOWNLOAD BLOCKED] -- " + siteHost + (dlDesc ? (" (" + dlDesc.slice(0, 50) + ")") : "");
           window.postMessage({
             source: "gateway-guard-page",
@@ -4700,6 +4743,18 @@
       var promptText = "";
       var netFiles = [];
 
+      var lowUrl = (url || "").toLowerCase();
+      var isPureUploadEndpoint =
+        lowUrl.includes("/backend-api/files") ||
+        lowUrl.includes("/files") ||
+        lowUrl.includes("/upload") ||
+        lowUrl.includes("blob.core.windows.net") ||
+        lowUrl.includes("amazonaws.com") ||
+        lowUrl.includes("storage.googleapis.com") ||
+        lowUrl.includes("/media/upload") ||
+        lowUrl.includes("/convert_document") ||
+        lowUrl.includes("/attachments");
+
       // Handle JSON body
       if (typeof body === "string") {
         try {
@@ -4708,17 +4763,28 @@
             if (typeof parsed.file_name === "string" && parsed.file_name) {
               lastCreatedFileName = parsed.file_name;
             }
-            // 1. Direct prompt fields across OpenAI, Claude, Gemini, Copilot, DeepSeek, Mistral
+            // 1. Direct prompt fields across OpenAI, Claude, Gemini, Copilot, DeepSeek, Mistral, and custom AI target domains
             if (typeof parsed.prompt === "string") promptText = parsed.prompt;
+            else if (typeof parsed.prompt_text === "string") promptText = parsed.prompt_text;
+            else if (typeof parsed.user_prompt === "string") promptText = parsed.user_prompt;
             else if (typeof parsed.query === "string" && !parsed.query.toLowerCase().startsWith("plsenvironmentquery") && !parsed.query.toLowerCase().startsWith("query pls")) promptText = parsed.query;
             else if (typeof parsed.text === "string") promptText = parsed.text;
             else if (typeof parsed.input === "string") promptText = parsed.input;
+            else if (typeof parsed.inputText === "string") promptText = parsed.inputText;
             else if (typeof parsed.userMessage === "string") promptText = parsed.userMessage;
+            else if (typeof parsed.question === "string") promptText = parsed.question;
+            else if (typeof parsed.content === "string") promptText = parsed.content;
+            else if (typeof parsed.message === "string") promptText = parsed.message;
             else if (parsed.message && typeof parsed.message.text === "string") promptText = parsed.message.text;
+            else if (parsed.message && typeof parsed.message.content === "string") promptText = parsed.message.content;
             else if (Array.isArray(parsed.arguments) && parsed.arguments[0]) {
               var a0 = parsed.arguments[0];
               if (a0.message && typeof a0.message.text === "string") promptText = a0.message.text;
+              else if (a0.message && typeof a0.message.content === "string") promptText = a0.message.content;
               else if (typeof a0.text === "string") promptText = a0.text;
+              else if (typeof a0.input === "string") promptText = a0.input;
+              else if (typeof a0.prompt === "string") promptText = a0.prompt;
+              else if (typeof a0.query === "string") promptText = a0.query;
             }
 
             // 2. Claude Connect-RPC / PerformAction format
@@ -4864,7 +4930,7 @@
             if (isFileVal) {
               formFiles.push(val);
               netFiles.push({ name: val.name, size: val.size || 0, type: val.type || "" });
-            } else if (typeof val === "string" && (key.indexOf("prompt") >= 0 || key.indexOf("query") >= 0 || key.indexOf("message") >= 0)) {
+            } else if (typeof val === "string" && typeof key === "string" && (key.indexOf("prompt") >= 0 || key.indexOf("query") >= 0 || key.indexOf("message") >= 0 || key.indexOf("question") >= 0 || key.indexOf("text") >= 0 || key.indexOf("input") >= 0)) {
               promptText = val;
             }
           });
@@ -4895,18 +4961,7 @@
         }
       }
 
-      // Check if URL looks like a pure file upload endpoint (ChatGPT /files, Claude upload, Azure Blob, S3, etc.)
-      var lowUrl = (url || "").toLowerCase();
-      var isPureUploadEndpoint =
-        lowUrl.includes("/backend-api/files") ||
-        lowUrl.includes("/files") ||
-        lowUrl.includes("/upload") ||
-        lowUrl.includes("blob.core.windows.net") ||
-        lowUrl.includes("amazonaws.com") ||
-        lowUrl.includes("storage.googleapis.com") ||
-        lowUrl.includes("/media/upload") ||
-        lowUrl.includes("/convert_document") ||
-        lowUrl.includes("/attachments");
+      // URL is already verified via isPureUploadEndpoint above
 
       // Check if master upload block is active on this site
       if (govBlockUpload && isControlActiveForSite(govUploadTargetWebsites)) {
@@ -5020,7 +5075,7 @@
       var targetUrl = url;
 
       // Robustly enrich netFiles with cached base64 and text content
-      var now_ts = Date.now();
+      // enrich netFiles
       var freshStaged = getAllFreshStagedFiles();
       for (var nf = 0; nf < netFiles.length; nf++) {
         var nFile = netFiles[nf];
@@ -5140,7 +5195,25 @@
     if (typeof body === "string") {
       try {
         var parsed = JSON.parse(body);
-        if (parsed && typeof parsed.prompt === "string") promptText = parsed.prompt;
+        if (parsed) {
+          if (typeof parsed.prompt === "string") promptText = parsed.prompt;
+          else if (typeof parsed.prompt_text === "string") promptText = parsed.prompt_text;
+          else if (typeof parsed.user_prompt === "string") promptText = parsed.user_prompt;
+          else if (typeof parsed.query === "string") promptText = parsed.query;
+          else if (typeof parsed.text === "string") promptText = parsed.text;
+          else if (typeof parsed.input === "string") promptText = parsed.input;
+          else if (typeof parsed.inputText === "string") promptText = parsed.inputText;
+          else if (typeof parsed.userMessage === "string") promptText = parsed.userMessage;
+          else if (typeof parsed.question === "string") promptText = parsed.question;
+          else if (typeof parsed.content === "string") promptText = parsed.content;
+          else if (typeof parsed.message === "string") promptText = parsed.message;
+          else if (parsed.message && typeof parsed.message.text === "string") promptText = parsed.message.text;
+          else if (parsed.message && typeof parsed.message.content === "string") promptText = parsed.message.content;
+          else if (Array.isArray(parsed.messages) && parsed.messages.length > 0) {
+            var lastM = parsed.messages[parsed.messages.length - 1];
+            if (lastM && typeof lastM.content === "string") promptText = lastM.content;
+          }
+        }
       } catch (e) { }
     }
     if (promptText) {
@@ -5171,7 +5244,7 @@
     var origWSSend = window.WebSocket.prototype.send;
     window.WebSocket.prototype.send = function (data) {
       if (armed && typeof data === "string" && data.length > 3) {
-        var cleanStr = data.replace(/\x1e/g, "").trim();
+        var cleanStr = data.split("\u001e").join("").trim();
         var promptText = "";
         try {
           var parsed = JSON.parse(cleanStr);

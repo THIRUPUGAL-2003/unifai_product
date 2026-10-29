@@ -15,23 +15,25 @@
     var host = String(value || "").toLowerCase().trim();
     if (!host) return "";
     if (host.indexOf("://") >= 0) {
-      try { host = new URL(host).hostname; } catch (e) { return ""; }
-    } else {
-      host = host.split("/", 1)[0].split("?", 1)[0].split("#", 1)[0];
-      if ((host.match(/:/g) || []).length === 1 && /:\d+$/.test(host)) {
-        host = host.replace(/:\d+$/, "");
+      try {
+        host = new URL(host).hostname;
+      } catch (_) {
+        host = host.split("://", 2)[1] || host;
       }
+    }
+    host = host.split("/", 1)[0].split("?", 1)[0].split("#", 1)[0];
+    if ((host.match(/:/g) || []).length === 1 && /:\d+$/.test(host)) {
+      host = host.replace(/:\d+$/, "");
     }
     if (host.charAt(0) === "[" && host.indexOf("]") >= 0) {
       host = host.slice(1, host.indexOf("]"));
     }
-    host = host.replace(/^www\./, "").replace(/\.$/, "");
-    return host;
+    return host.replace(/^[*@.]+/g, "").replace(/^www\./, "").replace(/^[*@.]+/g, "").replace(/\.+$/, "");
   }
 
   function isLoopbackHost(host) {
     return host === "localhost" || host === "127.0.0.1" || host === "0.0.0.0" || host === "::1" ||
-      /^127\./.test(host) || /\.localhost$/.test(host);
+      host.startsWith("127.") || host.endsWith(".localhost");
   }
 
   var serverHost = (typeof GATEWAY_SERVER_HOST === "string" && GATEWAY_SERVER_HOST.trim()) ? normalizeDomainHost(GATEWAY_SERVER_HOST) : "";
@@ -172,7 +174,11 @@
       lastSitesList = domains;
       sitesMap = buildDomainMap(domains);
     }
-    return matchDomainInMap(host, sitesMap, domains);
+    if (matchDomainInMap(host, sitesMap, domains)) return true;
+    if (Array.isArray(domains) && domains.length > 0) {
+      return hostInConfiguredSites(host, domains.join(","));
+    }
+    return false;
   }
 
   function hostBlockedMatches(host, blockedDomains) {
@@ -180,7 +186,11 @@
       lastBlockedSitesList = blockedDomains;
       blockedSitesMap = buildDomainMap(blockedDomains);
     }
-    return matchDomainInMap(host, blockedSitesMap, blockedDomains);
+    if (matchDomainInMap(host, blockedSitesMap, blockedDomains)) return true;
+    if (Array.isArray(blockedDomains) && blockedDomains.length > 0) {
+      return hostInConfiguredSites(host, blockedDomains.join(","));
+    }
+    return false;
   }
 
   function getRootDomain(host) {
@@ -220,6 +230,7 @@
       ["deepseek.com", "chat.deepseek.com"],
       ["mistral.ai", "chat.mistral.ai"],
       ["perplexity.ai", "www.perplexity.ai"],
+      ["grok.com", "x.ai"],
       ["lovable.dev", "lovable.app"],
       ["lovable.dev", "app.lovable.dev"],
       ["poe.com", "quora.com"]
@@ -242,6 +253,7 @@
     if (h.includes("deepseek")) return "deepseek";
     if (h.includes("mistral")) return "mistral";
     if (h.includes("perplexity")) return "perplexity";
+    if (h.includes("grok") || h.includes("x.ai")) return "grok";
     if (h.includes("lovable")) return "lovable";
     if (h.includes("poe.com")) return "poe";
     return "";
@@ -279,13 +291,13 @@
     if (!clipboardPolicy.enabled) return false;
     if (isServerHost(location.hostname)) return false;
     var raw = String(clipboardPolicy.targetSites || "").trim();
-    if (!raw || raw.toLowerCase() === "none") return false;
-    if (raw.toUpperCase() === "ALL" || raw === "*") {
+    if (raw.toLowerCase() === "none") return false;
+    if (!raw || raw.toUpperCase() === "ALL" || raw === "*") {
       var monitoredSites = clipboardPolicy.monitoredSites || monitoredSitesForPolicy;
       if (Array.isArray(monitoredSites) && monitoredSites.length > 0) {
         return hostMatches(location.hostname, monitoredSites);
       }
-      return true;
+      return false;
     }
     return hostInConfiguredSites(location.hostname, raw);
   }
@@ -596,6 +608,7 @@
       var sel = window.getSelection();
       var selectedText = sel ? sel.toString().trim() : "";
       if (selectedText.length > 0) {
+        if (ev && ev.preventDefault) ev.preventDefault();
         if (sel.removeAllRanges) sel.removeAllRanges();
         if (sel.empty) sel.empty();
         if (!document.getElementById("yp-raksha-alert-card")) {
@@ -738,7 +751,7 @@
     if (Array.isArray(monitoredSites) && monitoredSites.length > 0) {
       return hostMatches(location.hostname, monitoredSites);
     }
-    return true;
+    return false;
   }
 
   function applyCorporatePolicyState(state) {
@@ -760,13 +773,13 @@
     if (!dragDropPolicy.enabled) return false;
     if (isServerHost(location.hostname)) return false;
     var raw = String(dragDropPolicy.targetSites || "").trim();
-    if (!raw || raw.toLowerCase() === "none") return false;
-    if (raw.toUpperCase() === "ALL" || raw === "*") {
+    if (raw.toLowerCase() === "none") return false;
+    if (!raw || raw.toUpperCase() === "ALL" || raw === "*") {
       var monitoredSites = dragDropPolicy.monitoredSites || monitoredSitesForPolicy;
       if (Array.isArray(monitoredSites) && monitoredSites.length > 0) {
         return hostMatches(location.hostname, monitoredSites);
       }
-      return true;
+      return false;
     }
     return hostInConfiguredSites(location.hostname, raw);
   }
@@ -883,13 +896,13 @@
     if (!screenshotPolicy.enabled) return false;
     if (isServerHost(location.hostname)) return false;
     var raw = String(screenshotPolicy.targetSites || "").trim();
-    if (!raw || raw.toLowerCase() === "none") return false;
-    if (raw.toUpperCase() === "ALL" || raw === "*") {
+    if (raw.toLowerCase() === "none") return false;
+    if (!raw || raw.toUpperCase() === "ALL" || raw === "*") {
       var monitoredSites = screenshotPolicy.monitoredSites || monitoredSitesForPolicy;
       if (Array.isArray(monitoredSites) && monitoredSites.length > 0) {
         return hostMatches(location.hostname, monitoredSites);
       }
-      return true;
+      return false;
     }
     return hostInConfiguredSites(location.hostname, raw);
   }
@@ -963,19 +976,8 @@
     if (curtain) curtain.remove();
   }
 
-  window.addEventListener("blur", function () {
-    if (!isExtensionValid()) return;
-    applyIsolatedCurtain();
-  }, true);
-  window.addEventListener("focus", function () {
-    if (!isExtensionValid()) return;
-    removeIsolatedCurtain();
-  }, true);
-  document.addEventListener("visibilitychange", function () {
-    if (!isExtensionValid()) return;
-    if (document.hidden) applyIsolatedCurtain();
-    else removeIsolatedCurtain();
-  }, true);
+  // Screen capture protection is triggered on capture keys (PrintScreen, Win+Shift+S, Mac capture shortcuts)
+  // or screen recording API calls, NEVER on normal window blur, focus, or tab switching.
 
   function handleIsolatedCaptureKeys(e) {
     if (!isExtensionValid()) return;
@@ -1050,12 +1052,21 @@
       return;
     }
     try {
+      var parent = document.documentElement || document.head || document.body;
+      if (!parent) {
+        if (document.readyState === "loading") {
+          document.addEventListener("DOMContentLoaded", function () { ensureHookInjected(done); }, { once: true });
+          return;
+        }
+        if (done) done();
+        return;
+      }
       hookInjected = true;
       var s = document.createElement("script");
       s.src = chrome.runtime.getURL("page_hook.js");
       s.dataset.guardNonce = guardNonce;
       s.onload = function () { s.remove(); if (done) done(); };
-      (document.documentElement || document.head || document.body).appendChild(s);
+      parent.appendChild(s);
     } catch (e) {
       if (done) done();
     }
@@ -1220,7 +1231,8 @@
         var sitesChanged = SITE_KEYS.some(function (key) { return Boolean(changes[key]); });
         var clipChanged = CLIPBOARD_KEYS.some(function (key) { return Boolean(changes[key]); });
         if (sitesChanged || clipChanged) {
-          var wasArmed = armedHere;
+          // site check
+
           try {
             chrome.storage.local.get(SITE_KEYS.concat(CLIPBOARD_KEYS), function (res) {
               if (!isExtensionValid()) return;
@@ -1269,6 +1281,25 @@
     }
 
     if (msg.type === "authorize_ai_session") {
+      function sendAuthResult(result) {
+        window.postMessage({
+          source: "gateway-guard",
+          nonce: guardNonce,
+          type: "session_authorization_result",
+          id: msg.id,
+          result: result || { decision: "allow", reason_code: "FAIL_OPEN_DISCONNECTED" }
+        }, "*");
+      }
+
+      if (!corporatePolicy.enabled) {
+        sendAuthResult({ decision: "allow", reason_code: "POLICY_NOT_ENFORCED" });
+        return;
+      }
+      if (corporatePolicy.targetSites && !hostInConfiguredSites(location.hostname, corporatePolicy.targetSites)) {
+        sendAuthResult({ decision: "allow", reason_code: "TARGET_NOT_RESTRICTED" });
+        return;
+      }
+
       var authPayload = {
         action: "authorize_ai_session",
         provider: msg.provider || "",
@@ -1278,15 +1309,6 @@
         page_url: msg.page_url || location.href,
         policy_version: msg.policy_version || 1
       };
-      function sendAuthResult(result) {
-        window.postMessage({
-          source: "gateway-guard",
-          nonce: guardNonce,
-          type: "session_authorization_result",
-          id: msg.id,
-          result: result || { decision: "block", reason_code: "GATEWAY_UNREACHABLE" }
-        }, "*");
-      }
 
       function fallbackGatewayDirect() {
         var endpoints = [];
@@ -1297,9 +1319,9 @@
         function tryNext() {
           if (idx >= endpoints.length) {
             sendAuthResult({
-              decision: "block",
-              reason_code: "GATEWAY_UNREACHABLE",
-              message: "Gateway session verification unavailable; access is blocked until verification succeeds."
+              decision: "allow",
+              reason_code: "FAIL_OPEN_DISCONNECTED",
+              message: "Gateway session verification unavailable; failing open to preserve browsing."
             });
             return;
           }
@@ -1434,12 +1456,18 @@
     function doCheck() {
       withBase(function () {
         if (base) {
+          var ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+          var tId = ctrl ? setTimeout(function () { try { ctrl.abort(); } catch (_) {} }, 1000) : null;
           fetch(base + "/extension/check", {
             method: "POST",
             headers: { "Content-Type": "application/json", "X-Browser-Guard-Extension": "1" },
-            body: JSON.stringify(checkPayload)
+            body: JSON.stringify(checkPayload),
+            signal: ctrl ? ctrl.signal : undefined
           })
-            .then(function (r) { return r.json(); })
+            .then(function (r) {
+              if (tId) clearTimeout(tId);
+              return r.json();
+            })
             .then(function (decision) {
               var dec = decision || { blocked: false };
               // Save EXE evaluation decision into chrome.storage.local
@@ -1517,4 +1545,13 @@
   });
 
   armIfMonitored();
+  if (typeof setInterval !== "undefined") {
+    setInterval(function () {
+      if (!isExtensionValid()) {
+        try {
+          window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "disarm" }, "*");
+        } catch (_) {}
+      }
+    }, 1500);
+  }
 })();

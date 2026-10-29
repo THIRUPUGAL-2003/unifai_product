@@ -108,11 +108,9 @@ def _detect_pac_mode() -> str:
     if not body or "FindProxyForURL" not in body:
         return "unknown"
     upper = body.upper()
-    # Health-loop all-DIRECT while local MitM proxy is down
+    # Health-loop all-DIRECT while local MitM proxy is down or backend disconnected
     if 'RETURN "DIRECT"' in upper.replace(" ", "") and "PROXY " not in upper:
         return "fail_open_direct"
-    if "PROXY " in upper and "; DIRECT" in upper:
-        return "bypass_chain"  # sticky DIRECT risk — should be stripped
     if "PROXY " in upper:
         return "strict_proxy"
     return "unknown"
@@ -245,18 +243,18 @@ def health_loop(stop_event: threading.Event, proxy_port: int) -> None:
             report = run_health_check(proxy_port)
             checks = report.get("checks") if isinstance(report, dict) else {}
             proxy_up = bool(checks.get("proxy_port"))
-            # Require several misses before all-DIRECT — one blip must not sticky-bypass forever.
-            if not proxy_up:
+            backend_up = bool(checks.get("backend_targets"))
+            # If server connection is cut or local proxy is down, fail open to DIRECT immediately so websites work normally!
+            if not proxy_up or not backend_up:
                 fail_streak += 1
-                # Instant fail-open to DIRECT so browsers never show ERR_PROXY_CONNECTION_FAILED while proxy is starting or recovering.
                 if fail_streak >= 1:
                     write_local_pac(
-                        "// Gateway Guard — local proxy down; fail open until proxy returns.\n"
+                        "// Gateway Guard — server connection cut or local proxy down; fail open until connection returns.\n"
                         'function FindProxyForURL(url, host) { return "DIRECT"; }\n'
                     )
                     apply_pac_with_bust(silent=True, force_new=True)
                     proxy_was_down = True
-                    print("[Gateway Guard] Proxy port down — PAC fail-open DIRECT immediately (browsers stay online).")
+                    print("[Gateway Guard] Server connection cut or proxy down — PAC fail-open DIRECT immediately (browsers stay online).")
             else:
                 if fail_streak > 0 or proxy_was_down:
                     pac = fetch_proxy_pac()

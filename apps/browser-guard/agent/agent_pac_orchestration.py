@@ -88,6 +88,11 @@ def clear_guard_runtime(clear_startup: bool = True) -> None:
     set_browser_quic(enable_quic=True)
     if clear_startup:
         clear_autostart()
+    try:
+        from agent_extension import remove_guard_extension_policy
+        remove_guard_extension_policy()
+    except Exception as e:
+        print(f"[Gateway Guard WARNING] remove_guard_extension_policy: {e}")
 
 
 def sync_pac_loop(stop_event: threading.Event) -> None:
