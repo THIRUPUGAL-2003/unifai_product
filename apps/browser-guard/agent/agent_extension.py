@@ -41,11 +41,7 @@ def extension_source_dir() -> str:
     return candidates[0]
 
 def get_extension_version() -> str:
-    """Return synchronized extension version.
-    Automatically stays monotonically increasing with Guard EXE releases or code edits,
-    so Chrome's enterprise update.xml detects the update and auto-updates the extension in all browsers.
-    """
-    base = "1.0.3"
+    """Return synchronized extension version matching manifest.json."""
     try:
         m_path = os.path.join(extension_source_dir(), "manifest.json")
         if os.path.isfile(m_path):
@@ -53,72 +49,10 @@ def get_extension_version() -> str:
                 data = json.load(f)
                 v = str(data.get("version") or "").strip()
                 if v:
-                    base = v
+                    return v
     except Exception:
         pass
-
-    def parse_v(s: str):
-        try:
-            return tuple(int(x) for x in s.strip().lstrip("v").split(".") if x.isdigit())
-        except Exception:
-            return (0,)
-
-    if AGENT_VERSION and parse_v(AGENT_VERSION) > parse_v(base):
-        base = AGENT_VERSION.strip().lstrip("v")
-
-    counter_path = os.path.join(data_dir(), "extension_build.txt")
-    hash_path = os.path.join(data_dir(), "extension_source_hash.txt")
-
-    src = extension_source_dir()
-    h = hashlib.sha256()
-    for name in sorted(("manifest.json", "content.js", "page_hook.js", "endpoint.js", "background.js", "popup.js", "guard_base.js")):
-        p = os.path.join(src, name)
-        if os.path.isfile(p):
-            try:
-                with open(p, "rb") as f:
-                    h.update(f.read())
-            except Exception:
-                pass
-    curr_hash = h.hexdigest()
-
-    saved_hash = ""
-    build_num = 1
-    if os.path.isfile(hash_path):
-        try:
-            with open(hash_path, "r", encoding="utf-8") as f:
-                saved_hash = f.read().strip()
-        except Exception:
-            pass
-    if os.path.isfile(counter_path):
-        try:
-            with open(counter_path, "r", encoding="utf-8") as f:
-                raw_c = f.read().strip()
-                if raw_c.isdigit():
-                    build_num = int(raw_c)
-        except Exception:
-            pass
-
-    if curr_hash != saved_hash:
-        build_num += 1
-        try:
-            with open(hash_path, "w", encoding="utf-8") as f:
-                f.write(curr_hash)
-            with open(counter_path, "w", encoding="utf-8") as f:
-                f.write(str(build_num))
-        except Exception:
-            pass
-
-    base_parts = [p for p in base.split(".") if p.isdigit()]
-    if build_num == 0:
-        if len(base_parts) >= 3:
-            return f"{base_parts[0]}.{base_parts[1]}.{base_parts[2]}"
-        elif len(base_parts) == 2:
-            return f"{base_parts[0]}.{base_parts[1]}.0"
-    if len(base_parts) >= 3:
-        return f"{base_parts[0]}.{base_parts[1]}.{base_parts[2]}.{build_num}"
-    elif len(base_parts) == 2:
-        return f"{base_parts[0]}.{base_parts[1]}.{build_num}"
-    return f"{base}.{build_num}"
+    return "1.5.0"
 
 EXTENSION_VERSION = get_extension_version()
 _sites_lock = threading.Lock()
