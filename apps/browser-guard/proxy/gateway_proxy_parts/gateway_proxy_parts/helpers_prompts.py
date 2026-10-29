@@ -851,6 +851,8 @@ def _body_has_user_send_payload(data) -> bool:
         return False
     if "_dd" in data or "format_version" in data:
         return False
+    if "app_name" in data or "has_web_push_capabilities" in data or "web_push_notification_permission" in data or "is_dark_mode" in data:
+        return False
     event = str(data.get("event") or data.get("type") or "").lower()
     if event in (
         "ping", "pong", "typing", "presence", "heartbeat", "metrics", "internal",

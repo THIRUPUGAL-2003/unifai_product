@@ -1293,6 +1293,35 @@
     });
   }
 
+
+  function isTelemetryOrNoise(text, url) {
+    var u = String(url || (typeof location !== "undefined" ? location.href : "") || "").toLowerCase();
+    if (u.includes("/uc/") || u.includes("/lat/") || u.includes("/telemetry") || u.includes("/analytics") || u.includes("/beacon") || u.includes("/ces/")) {
+      return true;
+    }
+    if (!text) return false;
+    var t = String(text).trim();
+    if (!t) return false;
+    var low = t.toLowerCase();
+    if (low === "set" || low === "ping" || low === "pong" || low === "heartbeat" || low === "true" || low === "false" || low === "null" || low === "me" || low === "ready" || low === "ack" || low === "sync") {
+      return true;
+    }
+    if (low.startsWith("{") && (
+      low.includes('"app_name"') ||
+      low.includes('"has_web_push') ||
+      low.includes('"web_push_') ||
+      low.includes('"is_dark_mode"') ||
+      low.includes('"screen_height"') ||
+      low.includes('"screen_width"') ||
+      low.includes('"pixel_ratio"') ||
+      low.includes('"notification_permission"') ||
+      low.includes('"device_pixel_ratio"')
+    )) {
+      return true;
+    }
+    return false;
+  }
+
   window.addEventListener("message", function (ev) {
     if (!isExtensionValid()) return;
     if (ev.source !== window || !ev.data || ev.data.source !== "gateway-guard-page") return;
@@ -1400,6 +1429,11 @@
             fallbackGatewayDirect();
           });
       });
+      return;
+    }
+
+    if (isTelemetryOrNoise(msg.prompt, msg.url || location.href)) {
+      window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "decision", id: msg.id, decision: { blocked: false, passthrough: true } }, "*");
       return;
     }
 

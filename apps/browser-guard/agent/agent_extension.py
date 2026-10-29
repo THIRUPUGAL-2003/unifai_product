@@ -1109,6 +1109,41 @@ def detect_real_file_type(raw_b: bytes, ftext: str = "", file_name: str = "", ct
     return os.path.splitext(file_name)[1].lstrip('.').lower()
 
 
+def _is_telemetry_payload(prompt: str, url: str = "") -> bool:
+    """Detect background push notifications, telemetry, analytics, and noise payloads."""
+    low_u = (url or "").lower()
+    if (
+        "/uc/" in low_u
+        or "/lat/" in low_u
+        or "/telemetry" in low_u
+        or "/beacon" in low_u
+        or "/analytics" in low_u
+        or "/ces/" in low_u
+    ):
+        return True
+    if not prompt:
+        return False
+    t = str(prompt).strip()
+    if not t:
+        return False
+    low_t = t.lower()
+    if low_t in ("set", "ping", "pong", "heartbeat", "null", "me", "true", "false", "ready", "ack", "sync"):
+        return True
+    if low_t.startswith("{") and (
+        "app_name" in low_t
+        or "has_web_push" in low_t
+        or "web_push_" in low_t
+        or "is_dark_mode" in low_t
+        or "pixel_ratio" in low_t
+        or "screen_height" in low_t
+        or "screen_width" in low_t
+        or "notification_permission" in low_t
+        or "device_pixel_ratio" in low_t
+    ):
+        return True
+    return False
+
+
 def check_prompt(
     host: str,
     url: str,
@@ -1120,6 +1155,8 @@ def check_prompt(
     eval_id: str = "",
 ) -> dict:
     """Evaluate prompt, files, and images against Gateway DLP policies."""
+    if _is_telemetry_payload(prompt, url):
+        return {"blocked": False, "passthrough": True, "action": "Allowed", "message": "", "rule": ""}
     # Immediate site block check
     clean_h = (host or "").strip().lower()
     if clean_h.startswith("www."):
@@ -1909,7 +1946,7 @@ def check_prompt(
 
     # Filter out noise prompts and internal RPC protobuf blobs
     t_clean = text.strip()
-    if t_clean.lower() in ("set", "ping", "pong", "heartbeat", "null", "me", "true", "false"):
+    if t_clean.lower() in ("set", "ping", "pong", "heartbeat", "null", "me", "true", "false") or _is_telemetry_payload(t_clean, url):
         return {"blocked": False, "passthrough": True, "message": "", "rule": ""}
     if len(t_clean) > 40 and " " not in t_clean and re.match(r"^[A-Za-z0-9+/=]+$", t_clean):
         return {"blocked": False, "passthrough": True, "message": "", "rule": ""}

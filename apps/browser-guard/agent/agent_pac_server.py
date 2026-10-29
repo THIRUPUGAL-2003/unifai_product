@@ -153,7 +153,12 @@ class _PACRequestHandler(http.server.BaseHTTPRequestHandler):
             data = {}
         if not isinstance(data, dict):
             data = {}
-        from agent_extension import check_prompt
+        from agent_extension import check_prompt, _is_telemetry_payload
+        req_prompt = str(data.get("prompt") or data.get("text") or "")
+        req_url = str(data.get("url") or "")
+        if _is_telemetry_payload(req_prompt, req_url):
+            self._json(200, {"blocked": False, "passthrough": True, "action": "Allowed", "message": "", "rule": ""})
+            return
         result = check_prompt(
             str(data.get("host") or ""),
             str(data.get("url") or ""),

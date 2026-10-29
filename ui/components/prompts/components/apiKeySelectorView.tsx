@@ -288,6 +288,23 @@ export function ApiKeySelectorView({
 		for (const customer of customers.values()) {
 			if (customer.budgets?.length) groups.set(`customer:${customer.id}`, { id: `customer:${customer.id}`, label: `Customer Budget (${customer.name})`, budgets: customer.budgets });
 		}
+		for (const unit of selectedVK.business_units ?? []) {
+			const budget = unit.budget;
+			const maxLimit = Number(budget?.max_limit ?? 0);
+			if (maxLimit > 0) {
+				groups.set(`business-unit:${unit.id}`, {
+					id: `business-unit:${unit.id}`,
+					label: `Business Unit Budget (${unit.name})`,
+					budgets: [{
+						id: `business-unit:${unit.id}`,
+						max_limit: maxLimit,
+						current_usage: Number(budget?.current_usage ?? 0),
+						reset_duration: budget?.reset_duration || "1M",
+						last_reset: budget?.last_reset || "",
+					}],
+				});
+			}
+		}
 		const matchingConfigs = (selectedVK.provider_configs ?? []).filter((config) => {
 			const configProvider = config.provider.trim().toLowerCase();
 			return config.budgets?.length && (configProvider === targetProvider || configProvider === "*");

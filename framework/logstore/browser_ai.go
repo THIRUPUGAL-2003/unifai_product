@@ -91,6 +91,13 @@ func IsNonPromptWireRequest(s string) bool {
 	if strings.Contains(low, "ic3product") || strings.Contains(low, "copilotconsumer") || strings.Contains(low, "getuserproperties") || strings.Contains(low, "getmigrationstatus") || strings.Contains(low, "getispicassouser") || strings.Contains(low, "useglobalendpoint") {
 		return true
 	}
+	// Background telemetry, web push capabilities, analytics, beacon payloads (ChatGPT, Claude, etc.)
+	if strings.Contains(low, "app_name") || strings.Contains(low, "has_web_push") || strings.Contains(low, "web_push_") || strings.Contains(low, "is_dark_mode") || strings.Contains(low, "screen_height") || strings.Contains(low, "pixel_ratio") || strings.Contains(low, "notification_permission") {
+		return true
+	}
+	if strings.Contains(low, "/uc/") || strings.Contains(low, "/lat/") || strings.Contains(low, "/telemetry") || strings.Contains(low, "/analytics") || strings.Contains(low, "/beacon") || strings.Contains(low, "/ces/") {
+		return true
+	}
 	if strings.HasPrefix(low, "{\"action\":") || strings.HasPrefix(low, "{\"action\" :") || strings.HasPrefix(low, "{\"action\": \"") {
 		return true
 	}
@@ -2414,6 +2421,24 @@ func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, prompt
 			EstTokens:         0,
 			ClientIP:          clientIP,
 			Status:            "Skipped (internal portal/traffic)",
+			Action:            "Allowed",
+			RiskScore:         0,
+			PredictiveRisk:    "LOW",
+			PredictedCategory: "SAFE",
+			CreatedAt:         time.Now(),
+		}, "", nil
+	}
+
+	if strings.Contains(metaURL, "/uc/") || strings.Contains(metaURL, "/lat/") || strings.Contains(metaURL, "/telemetry") || strings.Contains(metaURL, "/beacon") || strings.Contains(metaURL, "/analytics") || strings.Contains(metaURL, "/ces/") {
+		return &BrowserAILog{
+			ID:                uuid.New().String(),
+			Timestamp:         time.Now(),
+			Platform:          platform,
+			UserPromptPreview: "",
+			UserPromptFull:    "",
+			EstTokens:         0,
+			ClientIP:          clientIP,
+			Status:            "Skipped (telemetry)",
 			Action:            "Allowed",
 			RiskScore:         0,
 			PredictiveRisk:    "LOW",

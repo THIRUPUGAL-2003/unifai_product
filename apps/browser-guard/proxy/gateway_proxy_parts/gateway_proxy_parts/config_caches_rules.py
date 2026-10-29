@@ -253,6 +253,7 @@ UPLOAD_CONTENT_TYPES = (
 
 # Paths to ignore (telemetry, analytics, pings, ChatGPT control-plane noise)
 IGNORE_PATH_PATTERNS = [
+    "/uc/", "/uc", "/web_push",
     "/ces/v1/t", "/ces/v1/rgstr", "/ces/v1", "/ces/", "/ces", "/telemetry", "/analytics", "/segment",
     "/log", "/ping", "/tracking", "/monitoring",
     "/metrics", "/web-reports", "/title", "/rgstr", "/beacon", "/health",

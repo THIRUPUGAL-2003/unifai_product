@@ -133,11 +133,9 @@ export function SettingsPanel() {
 	const isMemberOnly = isPromptMemberRole(authStatus?.role);
 
 	const { data: virtualKeysData, isError: vkFailed, error: vkError, refetch: refetchVk } = useGetVirtualKeysQuery(undefined, { pollingInterval: vkPollMs });
-	const focusUserId =
-		selectedPrompt?.user_ids?.split(",").map((id) => id.trim()).find(Boolean) ||
-		selectedPrompt?.owner_user_id ||
-		(isMemberOnly ? (authStatus?.user_id || "") : "") ||
-		"";
+	const focusUserId = isMemberOnly
+		? (authStatus?.user_id || "")
+		: selectedPrompt?.user_ids?.split(",").map((id) => id.trim()).find(Boolean) || selectedPrompt?.owner_user_id || "";
 	const { data: focusUserKeys, isLoading: focusUserKeysLoading, refetch: refetchFocusUserKeys } = useGetUserVirtualKeysQuery(focusUserId, { skip: !focusUserId });
 	const { data: teamsData, refetch: refetchTeams } = useGetTeamsQuery(undefined, { skip: isMemberOnly });
 	const { data: sessionUsers, refetch: refetchSessionUsers } = useGetSessionUsersQuery(undefined, { skip: isMemberOnly });
@@ -188,14 +186,24 @@ export function SettingsPanel() {
 		if (owner && !["admin", "super_admin"].includes(owner.role.trim().toLowerCase())) audienceUsers.add(owner.id);
 		const audienceTeams = new Set(splitIds(selectedPrompt.team_ids));
 		const audienceCustomers = new Set(splitIds(selectedPrompt.customer_ids));
+		const audienceBusinessUnits = new Set<string>();
 		for (const team of teamsData?.teams ?? []) {
 			if (audienceTeams.has(team.id) && team.customer_id) audienceCustomers.add(team.customer_id);
+		}
+		for (const team of teamsData?.teams ?? []) {
+			if (audienceTeams.has(team.id) || (team.customer_id && audienceCustomers.has(team.customer_id))) {
+				if (team.business_unit_id) audienceBusinessUnits.add(team.business_unit_id);
+			}
 		}
 		const matchingKeys = virtualKeysData.virtual_keys.filter((vk) => {
 			const userIds = new Set([...(vk.user_ids ?? []), ...(vk.users ?? []).map((user) => user.user_id)]);
 			const teamIds = new Set([vk.team_id, ...(vk.team_ids ?? []), ...(vk.teams ?? []).map((team) => team.id)].filter((id): id is string => Boolean(id)));
 			const customerIds = new Set([vk.customer_id, ...(vk.customer_ids ?? []), ...(vk.customers ?? []).map((customer) => customer.id)].filter((id): id is string => Boolean(id)));
-			return [...audienceUsers].some((id) => userIds.has(id)) || [...audienceTeams].some((id) => teamIds.has(id)) || [...audienceCustomers].some((id) => customerIds.has(id));
+			const businessUnitIds = new Set([...(vk.business_unit_ids ?? []), ...(vk.business_units ?? []).map((unit) => unit.id)]);
+			return [...audienceUsers].some((id) => userIds.has(id)) ||
+				[...audienceTeams].some((id) => teamIds.has(id)) ||
+				[...audienceCustomers].some((id) => customerIds.has(id)) ||
+				[...audienceBusinessUnits].some((id) => businessUnitIds.has(id));
 		});
 		const inheritedUserKeys = audienceUsers.has(focusUserId) ? (focusUserKeys?.virtual_keys ?? []) : [];
 		const uniqueKeys = new Map<string, VirtualKey>();
@@ -498,8 +506,27 @@ export function SettingsPanel() {
 		}));
 
 		let allowed: string[] = [];
-		if (isMemberOnly && allowedProviders !== null) {
-			allowed = allowedProviders;
+		if (isMemberOnly) {
+			const promptProviders = allowedProviders;
+			if (activeVkList.length > 0) {
+				const { providers: keyProviders, wildcardProviders } = providersFromVirtualKeys(activeVkList);
+				const availableProviders = wildcardProviders ? list.map((item) => item.value) : keyProviders;
+				allowed = promptProviders === null || promptProviders.includes("*")
+					? availableProviders
+					: availableProviders.filter((candidate) => promptProviders.some((value) => value.toLowerCase() === candidate.toLowerCase()));
+			} else {
+				const directKeyIds = allowedApiKeys !== null
+					? allowedApiKeys
+					: apiKeyId && apiKeyId !== "__auto__" && apiKeyId !== "__none__" ? [apiKeyId] : [];
+				const availableProviders = [...new Set((allKeys ?? [])
+					.filter((key) => directKeyIds.includes(key.key_id))
+					.map((key) => String(key.provider || "").trim())
+					.filter(Boolean))];
+				allowed = promptProviders === null || promptProviders.includes("*")
+					? availableProviders
+					: availableProviders.filter((candidate) => promptProviders.some((value) => value.toLowerCase() === candidate.toLowerCase()));
+			}
+			if (allowed.length === 0) return [];
 		} else if (activeVkList.length > 0) {
 			const { providers: vkProviders, wildcardProviders } = providersFromVirtualKeys(activeVkList);
 			if (wildcardProviders) {
@@ -525,7 +552,7 @@ export function SettingsPanel() {
 		}
 		const allowedSet = new Set(allowed.map((p) => p.toLowerCase()));
 		return list.filter((p) => allowedSet.has(p.value.toLowerCase()));
-	}, [configuredProviders, isMemberOnly, allowedProviders, activeVkList, providerVirtualKeys, provider]);
+	}, [configuredProviders, isMemberOnly, allowedProviders, allowedApiKeys, apiKeyId, allKeys, activeVkList, providerVirtualKeys, provider]);
 
 	// Auto-select single/first provider when options change or when current provider is invalid
 	useEffect(() => {
@@ -559,7 +586,9 @@ export function SettingsPanel() {
 		if (focusUserId && focusUserKeysLoading) return;
 		const savedParams = selectedPrompt.latest_version?.model_params;
 		const hasSavedKeyScope = Array.isArray(savedParams?.prompt_allowed_virtual_keys) ||
-			(Boolean(savedParams?.virtual_key_id) && savedParams?.virtual_key_id !== "__auto__" && savedParams?.virtual_key_id !== "__none__");
+			Array.isArray(savedParams?.prompt_allowed_api_keys) ||
+			(Boolean(savedParams?.virtual_key_id) && savedParams?.virtual_key_id !== "__auto__" && savedParams?.virtual_key_id !== "__none__") ||
+			(Boolean(savedParams?.api_key_id) && savedParams?.api_key_id !== "__auto__" && savedParams?.api_key_id !== "__none__");
 		if (hasSavedKeyScope || targetAssignedVirtualKeys.length === 0) return;
 
 		const keys = targetAssignedVirtualKeys;

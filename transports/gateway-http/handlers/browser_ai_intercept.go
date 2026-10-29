@@ -226,7 +226,14 @@ func (h *BrowserAIHandler) intercept(ctx *fasthttp.RequestCtx) {
 	}
 
 	normPrompt := strings.ToLower(strings.TrimSpace(payload.Prompt))
-	if normPrompt == "set" || normPrompt == "ping" || normPrompt == "pong" || normPrompt == "heartbeat" || normPrompt == "ready" || normPrompt == "ack" || normPrompt == "sync" {
+	reqMetaURL := ""
+	if payload.Metadata != nil {
+		if u, ok := payload.Metadata["url"].(string); ok {
+			reqMetaURL = strings.ToLower(strings.TrimSpace(u))
+		}
+	}
+	isTelemetry := strings.Contains(reqMetaURL, "/uc/") || strings.Contains(reqMetaURL, "/lat/") || strings.Contains(reqMetaURL, "/telemetry") || strings.Contains(reqMetaURL, "/beacon") || strings.Contains(reqMetaURL, "/analytics") || strings.Contains(reqMetaURL, "/ces/")
+	if isTelemetry || logstore.IsNonPromptWireRequest(payload.Prompt) || normPrompt == "set" || normPrompt == "ping" || normPrompt == "pong" || normPrompt == "heartbeat" || normPrompt == "ready" || normPrompt == "ack" || normPrompt == "sync" {
 		SendJSON(ctx, map[string]any{
 			"status":             "success",
 			"allowed":            true,

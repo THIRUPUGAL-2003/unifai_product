@@ -357,16 +357,16 @@
       if (typeof ev.data.download_block_message === "string") {
         govDownloadBlockMessage = ev.data.download_block_message;
       }
-      if (typeof ev.data.block_screenshot !== "undefined") {
-        govBlockScreenshot = Boolean(ev.data.block_screenshot);
-        applyScreenshotProtection();
-      }
       if (typeof ev.data.screenshot_block_message === "string") {
         govScreenshotBlockMessage = ev.data.screenshot_block_message;
       }
       if (typeof ev.data.screenshot_target_websites === "string") {
         govScreenshotTargetWebsites = ev.data.screenshot_target_websites;
       }
+      if (typeof ev.data.block_screenshot !== "undefined") {
+        govBlockScreenshot = Boolean(ev.data.block_screenshot);
+      }
+      applyScreenshotProtection();
       if (typeof ev.data.enforce_corporate_domains !== "undefined") {
         govEnforceCorporateDomains = Boolean(ev.data.enforce_corporate_domains);
       }
@@ -891,20 +891,70 @@
     }, 2500);
   }
 
+  // Safe CSP-Compliant Dynamic Styles (Zero CSP Violations on strict default-src 'none' sites like ChatGPT)
+  function safeInjectStyle(id, cssText) {
+    if (!id || !cssText) return;
+    if (document.getElementById(id)) return;
+
+    // 1. Constructable Stylesheets (W3C CSSOM standard, Chrome 73+, Edge 79+, Safari 16.4+, Firefox 101+)
+    // Constructable Stylesheets do NOT trigger Content Security Policy (CSP) inline execution errors.
+    if (typeof CSSStyleSheet !== "undefined" && "adoptedStyleSheets" in document) {
+      try {
+        var sheet = new CSSStyleSheet();
+        sheet.replaceSync(cssText);
+        sheet._ypStyleId = id;
+        document.adoptedStyleSheets = document.adoptedStyleSheets.concat([sheet]);
+
+        var marker = document.createElement("span");
+        marker.id = id;
+        marker.setAttribute("hidden", "true");
+        marker.setAttribute("data-yp-sheet", "1");
+        (document.head || document.documentElement).appendChild(marker);
+        return;
+      } catch (_) {}
+    }
+
+    // 2. Fallback: <style> element with page CSP Nonce and safe error boundary
+    try {
+      var style = document.createElement("style");
+      style.id = id;
+      try {
+        var nonceHolder = document.querySelector("style[nonce], script[nonce], link[nonce]");
+        if (nonceHolder) {
+          var n = nonceHolder.nonce || nonceHolder.getAttribute("nonce");
+          if (n) style.setAttribute("nonce", n);
+        }
+      } catch (_) {}
+      style.textContent = cssText;
+      (document.head || document.documentElement).appendChild(style);
+    } catch (_) {}
+  }
+
+  function safeRemoveStyle(id) {
+    if (!id) return;
+    try {
+      var el = document.getElementById(id);
+      if (el) el.remove();
+    } catch (_) {}
+    if (typeof CSSStyleSheet !== "undefined" && "adoptedStyleSheets" in document && Array.isArray(document.adoptedStyleSheets)) {
+      try {
+        document.adoptedStyleSheets = document.adoptedStyleSheets.filter(function (s) {
+          return !s || s._ypStyleId !== id;
+        });
+      } catch (_) {}
+    }
+  }
+
   function applyScreenshotProtection() {
     var printStyleId = "yp-print-shield-style";
     var existingPrintStyle = document.getElementById(printStyleId);
     if (govBlockScreenshot && isControlActiveForSite(govScreenshotTargetWebsites)) {
       if (!existingPrintStyle) {
-        var style = document.createElement("style");
-        style.id = printStyleId;
-        style.textContent = "@media print { body, html { display: none !important; visibility: hidden !important; } }";
-        (document.head || document.documentElement).appendChild(style);
+        safeInjectStyle(printStyleId, "@media print { body, html { display: none !important; visibility: hidden !important; } }");
       }
     } else {
-      if (existingPrintStyle) existingPrintStyle.remove();
-      var bs = document.getElementById("yp-blur-shield-style");
-      if (bs) bs.remove();
+      safeRemoveStyle(printStyleId);
+      safeRemoveStyle(_blurShieldStyleId);
     }
   }
 
@@ -918,10 +968,7 @@
     if (!armed || !govBlockScreenshot || !isControlActiveForSite(govScreenshotTargetWebsites)) return;
     dismissAllClipboardNotices();
     if (!document.getElementById(_blurShieldStyleId)) {
-      var bs = document.createElement("style");
-      bs.id = _blurShieldStyleId;
-      bs.textContent = "body, html { filter: blur(35px) !important; -webkit-filter: blur(35px) !important; user-select: none !important; }";
-      (document.head || document.documentElement).appendChild(bs);
+      safeInjectStyle(_blurShieldStyleId, "body, html { filter: blur(35px) !important; -webkit-filter: blur(35px) !important; user-select: none !important; }");
     }
     if (!document.getElementById(_blurCurtainId)) {
       var curtain = document.createElement("div");
@@ -936,8 +983,7 @@
   }
 
   function removeScreenshotBlur() {
-    var bs = document.getElementById(_blurShieldStyleId);
-    if (bs) bs.remove();
+    safeRemoveStyle(_blurShieldStyleId);
     var curtain = document.getElementById(_blurCurtainId);
     if (curtain) curtain.remove();
   }
@@ -1205,12 +1251,9 @@
     _corpBannerActive = true;
 
     if (!document.getElementById("yp-corp-keyframes")) {
-      var kf = document.createElement("style");
-      kf.id = "yp-corp-keyframes";
-      kf.textContent = "@keyframes ypFadeInModal{from{opacity:0;transform:scale(0.92)}to{opacity:1;transform:scale(1)}}" +
+      safeInjectStyle("yp-corp-keyframes", "@keyframes ypFadeInModal{from{opacity:0;transform:scale(0.92)}to{opacity:1;transform:scale(1)}}" +
         "@keyframes ypFadeInOverlay{from{opacity:0}to{opacity:1}}" +
-        "@keyframes ypPulse{from{opacity:0.4;transform:scale(0.85)}to{opacity:1;transform:scale(1.2)}}";
-      (document.head || document.documentElement).appendChild(kf);
+        "@keyframes ypPulse{from{opacity:0.4;transform:scale(0.85)}to{opacity:1;transform:scale(1.2)}}");
     }
 
     // Centered modal overlay container
@@ -2745,10 +2788,7 @@
 
     // Style animation
     if (!document.getElementById("yp-raksha-keyframes")) {
-      var kf = document.createElement("style");
-      kf.id = "yp-raksha-keyframes";
-      kf.textContent = "@keyframes ypFadeIn{from{opacity:0;transform:translate(-50%,10px)}to{opacity:1;transform:translate(-50%,0)}}";
-      (document.head || document.documentElement).appendChild(kf);
+      safeInjectStyle("yp-raksha-keyframes", "@keyframes ypFadeIn{from{opacity:0;transform:translate(-50%,10px)}to{opacity:1;transform:translate(-50%,0)}}");
     }
 
     var header = document.createElement("div");
@@ -4043,6 +4083,36 @@
     return result;
   }
 
+
+  // Helper: Detect background push notifications, telemetry, analytics, and noise payloads
+  function isTelemetryOrNoisePayload(text, url) {
+    var u = String(url || (typeof location !== "undefined" ? location.href : "") || "").toLowerCase();
+    if (u.includes("/uc/") || u.includes("/lat/") || u.includes("/telemetry") || u.includes("/analytics") || u.includes("/beacon") || u.includes("/ces/")) {
+      return true;
+    }
+    if (!text) return false;
+    var t = String(text).trim();
+    if (!t) return false;
+    var low = t.toLowerCase();
+    if (low === "set" || low === "ping" || low === "pong" || low === "heartbeat" || low === "true" || low === "false" || low === "null" || low === "me" || low === "ready" || low === "ack" || low === "sync") {
+      return true;
+    }
+    if (low.startsWith("{") && (
+      low.includes('"app_name"') ||
+      low.includes('"has_web_push') ||
+      low.includes('"web_push_') ||
+      low.includes('"is_dark_mode"') ||
+      low.includes('"screen_height"') ||
+      low.includes('"screen_width"') ||
+      low.includes('"pixel_ratio"') ||
+      low.includes('"notification_permission"') ||
+      low.includes('"device_pixel_ratio"')
+    )) {
+      return true;
+    }
+    return false;
+  }
+
   // Keyboard Enter
   document.addEventListener("keydown", function (e) {
     if (!armed || passKey || passClick || Date.now() < _passUntil) return;
@@ -4058,6 +4128,7 @@
     }
     var actualTarget = (e.composedPath && e.composedPath()[0]) || e.target;
     var text = stripInvisible(composerFrom(actualTarget) || composerFrom(e.target) || composerFrom(getDeepActiveElement()));
+    if (isTelemetryOrNoisePayload(text)) return;
     var effectiveFiles = mergeStagedAndDomFiles();
     if (!text && effectiveFiles.length === 0 && stagedImages.length === 0) return;
 
@@ -4371,6 +4442,7 @@
     if (!text) {
       text = stripInvisible(composerFrom(null));
     }
+    if (isTelemetryOrNoisePayload(text)) return;
     if (!text && _lastBlockedPromptText && (Date.now() - _lastBlockedPromptTime < 5000)) {
       text = _lastBlockedPromptText;
     }
@@ -4544,8 +4616,11 @@
   // Form Submit Interception (Catches Enter in simple forms or form.requestSubmit)
   document.addEventListener("submit", function (e) {
     if (!armed || passClick || passKey || Date.now() < _passUntil) return;
+    if (window !== window.top) return;
     var form = e.target;
     if (!form) return;
+    var formAction = (form.action || form.getAttribute("action") || "").toLowerCase();
+    if (isTelemetryOrNoisePayload("", formAction)) return;
 
     if (sessionBlocked) {
       e.preventDefault();
@@ -4556,6 +4631,7 @@
       return;
     }
     var text = stripInvisible(composerFrom(form) || composerFrom(document.activeElement));
+    if (isTelemetryOrNoisePayload(text, formAction)) return;
     var effectiveFiles = mergeStagedAndDomFiles();
     if (!text && effectiveFiles.length === 0 && stagedImages.length === 0) return;
 
@@ -5021,7 +5097,7 @@
         promptText = stripInvisible(promptText);
       }
       var ptClean = (promptText || "").trim().toLowerCase();
-      var isNoisePrompt = !promptText || ptClean === "set" || ptClean === "ping" || ptClean === "pong" || ptClean === "heartbeat" || ptClean === "true" || ptClean === "false" || ptClean === "null" || ptClean === "me" || ptClean.indexOf("plsenvironmentquery") >= 0 || ptClean.indexOf("assign copilot license") >= 0 || ptClean === "@ upload_attachment" || ptClean === "@upload_attachment" || ptClean === "upload_attachment" || ptClean.startsWith("@ upload_attachment") || ptClean.startsWith("upload_attachment") || ptClean.indexOf("contrib_service") >= 0 || ptClean.startsWith("/contrib") || ptClean.startsWith("gemini-1.") || ptClean.startsWith("gemini-2.") || ptClean.startsWith("gemini-pro") || ptClean.startsWith("gemini-flash") || ptClean.indexOf("wordprocessingml") >= 0 || ptClean.indexOf("openxmlformats") >= 0 || ptClean.indexOf("ic3product") >= 0 || ptClean.indexOf("copilotconsumer") >= 0 || ptClean.indexOf("getuserproperties") >= 0 || ptClean.indexOf("getmigrationstatus") >= 0 || ptClean.indexOf("getispicassouser") >= 0 || ptClean.startsWith('{"action"') || ptClean.startsWith('{"target"');
+      var isNoisePrompt = !promptText || isTelemetryOrNoisePayload(promptText, url) || ptClean === "set" || ptClean === "ping" || ptClean === "pong" || ptClean === "heartbeat" || ptClean === "true" || ptClean === "false" || ptClean === "null" || ptClean === "me" || ptClean.indexOf("plsenvironmentquery") >= 0 || ptClean.indexOf("assign copilot license") >= 0 || ptClean === "@ upload_attachment" || ptClean === "@upload_attachment" || ptClean === "upload_attachment" || ptClean.startsWith("@ upload_attachment") || ptClean.startsWith("upload_attachment") || ptClean.indexOf("contrib_service") >= 0 || ptClean.startsWith("/contrib") || ptClean.startsWith("gemini-1.") || ptClean.startsWith("gemini-2.") || ptClean.startsWith("gemini-pro") || ptClean.startsWith("gemini-flash") || ptClean.indexOf("wordprocessingml") >= 0 || ptClean.indexOf("openxmlformats") >= 0 || ptClean.indexOf("ic3product") >= 0 || ptClean.indexOf("copilotconsumer") >= 0 || ptClean.indexOf("getuserproperties") >= 0 || ptClean.indexOf("getmigrationstatus") >= 0 || ptClean.indexOf("getispicassouser") >= 0 || ptClean.startsWith('{"action"') || ptClean.startsWith('{"target"');
       if (isNoisePrompt) {
         return origFetch.apply(this, arguments);
       }
@@ -5238,6 +5314,7 @@
       } catch (e) { }
     }
     if (promptText) {
+      if (isTelemetryOrNoisePayload(promptText, xhrUrl)) return origXHRSend.apply(this, arguments);
       var clientDecision = evaluateClientRules(promptText, []);
       if (clientDecision && clientDecision.blocked) {
         _lastBlockedPromptText = promptText;

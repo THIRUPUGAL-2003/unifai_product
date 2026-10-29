@@ -28,6 +28,7 @@ export interface Team {
 	id: string;
 	name: string;
 	customer_id?: string;
+	business_unit_id?: string;
 	rate_limit_id?: string;
 	// Team-wide: applies to all team budgets and the team rate limit
 	calendar_aligned?: boolean;
@@ -99,7 +100,7 @@ export interface VirtualKey {
 	customer?: Customer;
 	teams?: Team[];
 	customers?: Customer[];
-	business_units?: { id: string; name: string }[];
+	business_units?: { id: string; name: string; budget?: Partial<Budget> }[];
 	users?: VirtualKeyUserLink[]; // Link rows only; resolve names via user_id
 	budgets?: Budget[];
 	rate_limit?: RateLimit;
