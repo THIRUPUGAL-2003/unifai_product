@@ -755,7 +755,9 @@ async function detectFileMimeType(file: File): Promise<string> {
 	else if (ascii(0, 4) === "OggS") detected = ext === "ogv" ? "video/ogg" : "audio/ogg";
 	else if (ascii(0, 3) === "ID3") detected = "audio/mpeg";
 	else if (bytes.length >= 2 && bytes[0] === 0xff && (bytes[1] & 0xe0) === 0xe0) detected = "audio/mpeg";
-	else if (startsWith(0x1a, 0x45, 0xdf, 0xa3)) detected = ext === "webm" ? "video/webm" : "video/x-matroska";
+	else if (startsWith(0x1a, 0x45, 0xdf, 0xa3)) {
+		detected = ext === "webm" ? (file.type.startsWith("audio/") ? file.type : "video/webm") : "video/x-matroska";
+	}
 	else if (ascii(4, 4) === "ftyp") {
 		const brand = ascii(8, 4).trim();
 		if (/^(heic|heix|hevc|hevx|mif1|msf1)$/i.test(brand)) detected = "image/heic";

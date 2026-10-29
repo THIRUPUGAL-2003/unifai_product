@@ -8,6 +8,19 @@ import { usePromptContext } from "../context";
 import { fileToAttachment, filesToAttachments, PROMPT_FILE_ACCEPT, PROMPT_FILE_ACCEPT_LABEL } from "../utils/attachment";
 import { transcribeAudioFile, voiceTranscriptAttachment } from "../utils/transcribeAudio";
 
+type BrowserSpeechRecognitionResult = ArrayLike<{ transcript: string }> & { isFinal: boolean };
+type BrowserSpeechRecognitionEvent = { results: ArrayLike<BrowserSpeechRecognitionResult> };
+type BrowserSpeechRecognition = {
+	continuous: boolean;
+	interimResults: boolean;
+	lang: string;
+	onresult: ((event: BrowserSpeechRecognitionEvent) => void) | null;
+	onerror: ((event: { error: string }) => void) | null;
+	start: () => void;
+	stop: () => void;
+	abort: () => void;
+};
+
 function getSupportedAudioMimeType(): string {
 	const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4", "audio/wav"];
 	for (const type of candidates) {
@@ -96,8 +109,7 @@ export function PromptFileImportBar({
 	const animFrameRef = useRef<number | null>(null);
 
 	// Web Speech Recognition ref
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	const recognitionRef = useRef<any>(null);
+	const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
 	const transcriptRef = useRef<string>("");
 	const finalTranscriptRef = useRef<string>("");
 	const recordingSessionRef = useRef(0);
@@ -248,10 +260,11 @@ export function PromptFileImportBar({
 			}
 
 			// 2. Setup Web Speech Recognition for instant Speech-To-Text transcription
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			const SpeechRecognitionClass =
-				(window as unknown as { SpeechRecognition?: any; webkitSpeechRecognition?: any }).SpeechRecognition ||
-				(window as unknown as { SpeechRecognition?: any; webkitSpeechRecognition?: any }).webkitSpeechRecognition;
+			const speechWindow = window as unknown as {
+				SpeechRecognition?: new () => BrowserSpeechRecognition;
+				webkitSpeechRecognition?: new () => BrowserSpeechRecognition;
+			};
+			const SpeechRecognitionClass = speechWindow.SpeechRecognition || speechWindow.webkitSpeechRecognition;
 
 			if (SpeechRecognitionClass) {
 				try {
@@ -259,8 +272,7 @@ export function PromptFileImportBar({
 					recognition.continuous = true;
 					recognition.interimResults = true;
 					recognition.lang = typeof navigator !== "undefined" && navigator.language ? navigator.language : "en-US";
-					// eslint-disable-next-line @typescript-eslint/no-explicit-any
-					recognition.onresult = (event: any) => {
+					recognition.onresult = (event: BrowserSpeechRecognitionEvent) => {
 						let fullText = "";
 						let finalizedText = "";
 						for (let i = 0; i < event.results.length; i++) {
@@ -276,8 +288,7 @@ export function PromptFileImportBar({
 							onLiveTranscriptRef.current(fullText);
 						}
 					};
-					// eslint-disable-next-line @typescript-eslint/no-explicit-any
-					recognition.onerror = (event: any) => {
+					recognition.onerror = (event: { error: string }) => {
 						console.warn("Speech recognition notice:", event.error);
 					};
 					recognition.start();

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { Message } from "@/lib/message";
 
 const { normalizeAudioToWavFile, transcribeAudioFile } = vi.hoisted(() => ({
 	normalizeAudioToWavFile: vi.fn(),
@@ -37,7 +38,8 @@ describe("audio file attachments", () => {
 	});
 
 	it("never labels an unconverted webm recording as wav", async () => {
-		const attachment = await fileToAttachment(new File(["webm-audio"], "speech.webm", { type: "audio/webm" }), {
+		const webmAudio = new File([new Uint8Array([0x1a, 0x45, 0xdf, 0xa3, 0x00])], "speech.webm", { type: "audio/webm" });
+		const attachment = await fileToAttachment(webmAudio, {
 			silent: true,
 		});
 
@@ -69,7 +71,8 @@ describe("audio file attachments", () => {
 			},
 		);
 
-		const attachment = await fileToAttachment(new File(["webm-audio"], "speech.webm", { type: "audio/webm" }), {
+		const webmAudio = new File([new Uint8Array([0x1a, 0x45, 0xdf, 0xa3, 0x00])], "speech.webm", { type: "audio/webm" });
+		const attachment = await fileToAttachment(webmAudio, {
 			silent: true,
 		});
 
@@ -77,12 +80,24 @@ describe("audio file attachments", () => {
 	});
 
 	it("does not call transcription again when the caller already attempted it", async () => {
-		const attachment = await fileToAttachment(new File(["webm-audio"], "speech.webm", { type: "audio/webm" }), {
+		const webmAudio = new File([new Uint8Array([0x1a, 0x45, 0xdf, 0xa3, 0x00])], "speech.webm", { type: "audio/webm" });
+		const attachment = await fileToAttachment(webmAudio, {
 			silent: true,
 			skipAudioTranscription: true,
 		});
 
 		expect(transcribeAudioFile).not.toHaveBeenCalled();
 		expect(attachment).toMatchObject({ type: "text", text: expect.stringContaining("Transcription unavailable") });
+	});
+
+	it("passes the extracted voice transcript and question into the chat request", () => {
+		const message = Message.request("What time does the meeting start?", 0, [
+			{ type: "text", text: "Voice transcript (meeting.wav):\n\nThe meeting starts at 10 AM." },
+		]);
+		const [apiMessage] = Message.toAPIMessages([message], "gpt-4o-mini", "openai");
+
+		expect(apiMessage?.role).toBe("user");
+		expect(apiMessage?.content).toContain("What time does the meeting start?");
+		expect(apiMessage?.content).toContain("The meeting starts at 10 AM.");
 	});
 });
