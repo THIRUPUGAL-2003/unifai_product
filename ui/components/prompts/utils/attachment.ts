@@ -862,14 +862,14 @@ function loadImageElement(file: File): Promise<HTMLImageElement> {
 export async function normalizeImageForModel(file: File, mimeType: string): Promise<string | null> {
 	const supported = MODEL_IMAGE_MIMES.has(mimeType);
 	if (supported && file.size <= MODEL_IMAGE_MAX_BYTES) {
-		if (mimeType === "image/gif") return fileToBase64(file);
+		if (mimeType === "image/gif") return fileToBase64(file, mimeType);
 		try {
 			const img = await loadImageElement(file);
 			if (Math.max(img.naturalWidth, img.naturalHeight) <= MODEL_IMAGE_MAX_DIMENSION) {
-				return fileToBase64(file);
+				return fileToBase64(file, mimeType);
 			}
 		} catch {
-			return fileToBase64(file);
+			return fileToBase64(file, mimeType);
 		}
 	}
 
@@ -929,6 +929,7 @@ export type AttachmentImportOptions = {
 	virtualKeyId?: string;
 	archiveDepth?: number;
 	silent?: boolean;
+	skipAudioTranscription?: boolean;
 };
 
 /** Run tasks in parallel with a controlled concurrency limit to avoid freezing the browser on 100+ files */
@@ -990,6 +991,15 @@ export async function filesToAttachments(files: FileList | File[], opts?: Attach
 					name: file.name,
 					error: `No attachments were created for "${file.name}"`,
 				});
+			} else if (
+				res.some(
+					(attachment) =>
+						attachment.type === "text" &&
+						attachment.text?.startsWith("Voice transcript") &&
+						attachment.text.includes("[Transcription unavailable:"),
+				)
+			) {
+				failedFiles.push({ name: file.name, error: `Voice audio could not be transcribed: ${file.name}` });
 			}
 			completedCount++;
 			if (isBulk && (completedCount % 5 === 0 || completedCount === filesList.length)) {
@@ -1083,21 +1093,29 @@ function textAttachmentFromExtract(fileName: string, extracted: string): Message
 	};
 }
 
-async function tryPdfOcr(file: File, opts?: AttachmentImportOptions): Promise<MessageContent | null> {
+async function tryPdfOcr(file: File, opts?: AttachmentImportOptions): Promise<{ text: string; model: string } | null> {
 	if (!opts?.silent) toast.message(`Running OCR on scanned PDF ${file.name}…`);
 	const dataUrl = await fileToBase64(file, "application/pdf");
 	const ocr = await ocrPdfFile(dataUrl, { apiKeyId: opts?.apiKeyId, virtualKeyId: opts?.virtualKeyId });
 	if (ocr?.text) {
 		if (!opts?.silent && ocr.text.includes("[Truncated:")) {
 			toast.warning(`OCR read only part of ${file.name}`, {
-				description: "The extracted page range is marked in the attached text; questions about other pages cannot be answered from it.",
+				description: "The OCR page range is marked in the attachment. Text-layer content may cover other pages; scanned-only text outside that range may be missing.",
 			});
 		} else if (!opts?.silent) {
 			toast.success(`OCR extracted text from ${file.name} (${ocr.model})`);
 		}
-		return ocrTextAttachment(file.name, ocr.text);
+		return ocr;
 	}
 	return null;
+}
+
+function pdfTextLayerMissesPages(text: string): boolean {
+	if (!text || text.includes("[Truncated:")) return false;
+	const totalPages = Number(text.match(/\[Page\s+\d+\s+of\s+(\d+)\]/i)?.[1] || 0);
+	if (totalPages <= 1) return false;
+	const extractedPages = new Set(Array.from(text.matchAll(/\[Page\s+(\d+)\s+of\s+\d+\]/gi), (match) => Number(match[1])));
+	return extractedPages.size < totalPages;
 }
 
 function isVideoFile(file: File, mimeType: string): boolean {
@@ -1109,10 +1127,10 @@ function isVideoFile(file: File, mimeType: string): boolean {
 async function imageFileAttachments(file: File, mimeType: string, opts?: AttachmentImportOptions): Promise<MessageContent[]> {
 	const out: MessageContent[] = [];
 	const dataUrl = await normalizeImageForModel(file, mimeType);
-	const ocrSource = dataUrl || (await fileToBase64(file));
+	const ocrSource = dataUrl || (await fileToBase64(file, mimeType));
 	let extracted = "";
 	if (ocrSource.startsWith("data:image/") || ocrSource.startsWith("data:application/")) {
-		toast.message(`Extracting text from image ${file.name}…`);
+		if (!opts?.silent) toast.message(`Extracting text from image ${file.name}…`);
 		const ocr = await ocrImageFile(ocrSource, { apiKeyId: opts?.apiKeyId, virtualKeyId: opts?.virtualKeyId });
 		if (ocr?.text?.trim()) extracted = ocr.text.trim();
 	}
@@ -1144,14 +1162,18 @@ async function imageFileAttachments(file: File, mimeType: string, opts?: Attachm
 			),
 		);
 	}
-	if (dataUrl && extracted) {
-		toast.success(`Image and extracted text attached: ${file.name}`);
-	} else if (extracted) {
-		toast.success(`Extracted text from image ${file.name}`);
-	} else if (dataUrl) {
-		toast.success(`Image attached: ${file.name}`);
-	} else {
-		toast.message(`Attached "${file.name}" (image reference)`);
+	if (!opts?.silent) {
+		if (dataUrl && extracted) {
+			toast.success(`Image and extracted text attached: ${file.name}`);
+		} else if (extracted) {
+			toast.success(`Extracted text from image ${file.name}`);
+		} else if (dataUrl) {
+			toast.success(`Image attached: ${file.name}`);
+		} else {
+			toast.error(`Could not read image "${file.name}"`, {
+				description: "The image could not be decoded and OCR found no readable text, so image questions cannot be answered from this upload.",
+			});
+		}
 	}
 	return out;
 }
@@ -1218,7 +1240,6 @@ async function videoFileAttachments(file: File, mimeType: string, opts?: Attachm
 		console.warn("Could not create object URL for video:", e);
 	}
 
-	const WHISPER_EXTS = new Set(["flac", "mp3", "mp4", "mpeg", "mpga", "m4a", "ogg", "wav", "webm", "aac", "opus", "weba"]);
 	const fileExt = file.name.split(".").pop()?.toLowerCase() || "";
 	let transcriptText = "";
 
@@ -1361,48 +1382,77 @@ export async function fileToAttachment(file: File, opts?: AttachmentImportOption
 	const audioLike = mimeType.startsWith("audio/") || ["mp3", "wav", "m4a", "flac", "ogg", "opus", "aac", "wma", "aiff", "aif", "amr", "weba", "mpga"].includes(fileExt);
 
 	if (audioLike) {
-		const normalized = (await normalizeAudioToWavFile(file)) || (WHISPER_EXTS.has(fileExt) ? file : null);
-		if (normalized) {
-			toast.message("Transcribing voice with Whisper…");
-			const transcript = await transcribeAudioFile(normalized, { apiKeyId: opts?.apiKeyId, virtualKeyId: opts?.virtualKeyId });
-			if (transcript && transcript.text) {
-				toast.success(`Voice transcribed (${transcript.model})`);
+		const normalized = await normalizeAudioToWavFile(file);
+		let transcript: Awaited<ReturnType<typeof transcribeAudioFile>> = null;
+		if (!opts?.skipAudioTranscription) {
+			if (!opts?.silent) toast.message(`Transcribing voice ${file.name}…`);
+			transcript = await transcribeAudioFile(normalized || file, {
+				apiKeyId: opts?.apiKeyId,
+				virtualKeyId: opts?.virtualKeyId,
+			});
+			if (transcript?.text) {
+				if (!opts?.silent) toast.success(`Voice transcribed (${transcript.model})`);
 				return voiceTranscriptAttachment(file.name, transcript.text);
 			}
-			if (audioLike) {
-				try {
-					const b64Url = await fileToBase64(normalized);
-					const commaIdx = b64Url.indexOf(",");
-					const rawB64 = commaIdx >= 0 ? b64Url.slice(commaIdx + 1) : b64Url;
-					const fmt = (fileExt === "mp3" || fileExt === "wav" ? fileExt : "wav") as "mp3" | "wav";
-					toast.message(`Attached audio: ${file.name}`);
-					return {
-						type: "input_audio",
-						input_audio: {
-							data: rawB64,
-							format: fmt,
-						},
-					};
-				} catch {
-					const reason = transcript && "error" in transcript ? transcript.error : "no transcript";
-					toast.error(`Voice was not transcribed: ${reason}`);
+		}
+
+		const originalFormat = audioFormatFromMimeOrName(file.type || mimeType, file.name);
+		const rawAudioFormat = normalized ? "wav" : originalFormat === "mp3" || originalFormat === "wav" ? originalFormat : null;
+		if (rawAudioFormat) {
+			try {
+				const audioFile = normalized || file;
+				const dataUrl = await fileToBase64(audioFile, rawAudioFormat === "mp3" ? "audio/mpeg" : "audio/wav");
+				const commaIdx = dataUrl.indexOf(",");
+				const rawB64 = commaIdx >= 0 ? dataUrl.slice(commaIdx + 1) : dataUrl;
+				if (!opts?.silent) {
+					if (transcript && "error" in transcript) {
+						toast.warning(`Voice transcription unavailable for ${file.name}`, { description: transcript.error });
+					} else {
+						toast.message(`Attached audio: ${file.name}`);
+					}
 				}
+				return { type: "input_audio", input_audio: { data: rawB64, format: rawAudioFormat } };
+			} catch (err) {
+				const reason = err instanceof Error ? err.message : String(err);
+				if (!opts?.silent) toast.error(`Could not attach voice audio: ${reason}`);
+				return voiceTranscriptAttachment(file.name, `[Transcription unavailable: audio could not be attached (${reason}).]`);
 			}
 		}
+
+		const reason = transcript && "error" in transcript ? transcript.error : "No readable speech was returned.";
+		if (!opts?.silent) {
+			toast.error(`Voice was not transcribed: ${file.name}`, {
+				description: `${reason} This audio format could not be converted to a model-compatible audio attachment.`,
+			});
+		}
+		return voiceTranscriptAttachment(file.name, `[Transcription unavailable: ${reason}]`);
 	}
 
 	const extracted = await extractPromptFileText(file, mimeType);
+	const extractedText = extracted ?? "";
 	const pdf = isPdfFile(file, mimeType);
 
 	// Scanned / image-only PDF: text layer empty or thin → OCR document_url
-	if (pdf && isThinExtractedText(extracted)) {
-		const ocrAtt = await tryPdfOcr(file, opts);
-		if (ocrAtt) return ocrAtt;
-		if (extracted && extracted.trim()) {
-			toast.message(`Using thin PDF text layer for ${file.name}`, {
-				description: "OCR unavailable. Configure Mistral OCR for better scan results.",
-			});
-			return textAttachmentFromExtract(file.name, extracted);
+	if (pdf && (isThinExtractedText(extractedText) || pdfTextLayerMissesPages(extractedText))) {
+		const ocr = await tryPdfOcr(file, opts);
+		if (ocr) {
+			const combinedText =
+				ocr.model.startsWith("tesseract") && extractedText.trim()
+					? `${ocr.text}\n\n[PDF text layer included to retain text from pages outside the local OCR range.]\n${extractedText}`
+					: ocr.text;
+			return ocrTextAttachment(file.name, combinedText);
+		}
+		if (extractedText.trim()) {
+			if (!opts?.silent && pdfTextLayerMissesPages(extractedText)) {
+				toast.warning(`Some pages in ${file.name} could not be read`, {
+					description: "The extracted text layer misses pages; OCR is unavailable, so scanned-only content may be missing.",
+				});
+			} else if (!opts?.silent) {
+				toast.message(`Using thin PDF text layer for ${file.name}`, {
+					description: "OCR unavailable. Configure Mistral OCR for better scan results.",
+				});
+			}
+			return textAttachmentFromExtract(file.name, extractedText);
 		}
 		toast.error(`Could not extract text from scanned PDF "${file.name}"`, {
 			description: "Configure a Mistral OCR key/model, or use a text-based PDF.",
@@ -1410,11 +1460,11 @@ export async function fileToAttachment(file: File, opts?: AttachmentImportOption
 		return null;
 	}
 
-	if (extracted && extracted.trim()) {
-		const isBinaryStub = extracted.startsWith("[Binary File:") || extracted.startsWith("[File:");
+	if (extractedText.trim()) {
+		const isBinaryStub = extractedText.startsWith("[Binary File:") || extractedText.startsWith("[File:");
 		const isSilent = Boolean(opts?.silent);
 		if (isBinaryStub) {
-			const lowerExtract = extracted.toLowerCase();
+			const lowerExtract = extractedText.toLowerCase();
 			if (!isSilent && (lowerExtract.includes("no readable text content found") || lowerExtract.includes("extraction error:"))) {
 				toast.error(`Could not read the contents of "${file.name}"`, {
 					description: "Only file metadata is available, so answers about its contents may not be possible.",
@@ -1427,7 +1477,7 @@ export async function fileToAttachment(file: File, opts?: AttachmentImportOption
 				});
 			}
 		} else {
-			if (!isSilent && extracted.includes("[Truncated:")) {
+			if (!isSilent && extractedText.includes("[Truncated:")) {
 				toast.warning(`Part of ${file.name} was extracted`, {
 					description: "The extracted text reached the processing limit; the assistant will be told that the file is incomplete.",
 				});
@@ -1435,7 +1485,7 @@ export async function fileToAttachment(file: File, opts?: AttachmentImportOption
 				toast.success(`Extracted text from ${file.name}`);
 			}
 		}
-		return textAttachmentFromExtract(file.name, extracted);
+		return textAttachmentFromExtract(file.name, extractedText);
 	}
 
 	toast.error(`Could not process "${file.name}"`, {

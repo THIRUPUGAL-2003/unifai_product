@@ -4,7 +4,6 @@ const DEFAULT_TRANSCRIPTION_MODELS = [
 	"openai/whisper-1",
 	"whisper-1",
 	"groq/whisper-large-v3",
-	"groq/distil-whisper-large-v3-en",
 	"whisper-large-v3",
 	"mistral/voxtral-mini-latest",
 	"voxtral-mini-latest",
@@ -47,6 +46,7 @@ export async function transcribeAudioFile(
 	file: File,
 	opts?: { apiKeyId?: string; virtualKeyId?: string; models?: string[]; signal?: AbortSignal },
 ): Promise<TranscriptionResult | null> {
+	if (file.size === 0) return { text: "", model: "", error: "The audio file is empty." };
 	const models = (opts?.models?.length ? opts.models : DEFAULT_TRANSCRIPTION_MODELS).filter(Boolean);
 	const auth = buildAuthHeaders(opts?.apiKeyId, opts?.virtualKeyId);
 	let lastError = "";
@@ -79,6 +79,8 @@ export async function transcribeAudioFile(
 					/* ignore */
 				}
 				lastError = `${model}: ${msg}`;
+				// These errors apply to the upload/request itself, so trying every model only repeats the same failure.
+				if (response.status === 413 || /unsupported file format|invalid file type/i.test(msg)) break;
 				continue;
 			}
 
@@ -97,6 +99,7 @@ export async function transcribeAudioFile(
 		} catch (err) {
 			if (err instanceof DOMException && err.name === "AbortError") throw err;
 			lastError = err instanceof Error ? err.message : String(err);
+			if (err instanceof TypeError) break;
 		}
 	}
 

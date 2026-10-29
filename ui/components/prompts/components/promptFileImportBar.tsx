@@ -99,6 +99,8 @@ export function PromptFileImportBar({
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	const recognitionRef = useRef<any>(null);
 	const transcriptRef = useRef<string>("");
+	const finalTranscriptRef = useRef<string>("");
+	const recordingSessionRef = useRef(0);
 
 	const addFiles = useCallback(
 		async (files: FileList | File[]) => {
@@ -143,6 +145,7 @@ export function PromptFileImportBar({
 
 	useEffect(() => {
 		return () => {
+			recordingSessionRef.current += 1;
 			if (mediaRecorderRef.current?.state !== "inactive") {
 				try {
 					mediaRecorderRef.current?.stop();
@@ -155,6 +158,10 @@ export function PromptFileImportBar({
 	}, [cleanupAudioVisualizer, cleanupStream, cleanupTimer]);
 
 	const startRecording = useCallback(async () => {
+		const recordingSessionId = ++recordingSessionRef.current;
+		transcriptRef.current = "";
+		finalTranscriptRef.current = "";
+		setLiveTranscript("");
 		if (typeof window !== "undefined" && !window.isSecureContext) {
 			toast.error("Microphone requires HTTPS or localhost", {
 				description: "Open this page with https:// or use localhost to record voice.",
@@ -189,6 +196,10 @@ export function PromptFileImportBar({
 			} catch (constraintErr) {
 				console.warn("Advanced audio constraints rejected by driver, falling back to basic audio: true", constraintErr);
 				stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+			}
+			if (recordingSessionId !== recordingSessionRef.current) {
+				stream.getTracks().forEach((track) => track.stop());
+				return;
 			}
 			mediaStreamRef.current = stream;
 
@@ -237,8 +248,6 @@ export function PromptFileImportBar({
 			}
 
 			// 2. Setup Web Speech Recognition for instant Speech-To-Text transcription
-			transcriptRef.current = "";
-			setLiveTranscript("");
 			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			const SpeechRecognitionClass =
 				(window as unknown as { SpeechRecognition?: any; webkitSpeechRecognition?: any }).SpeechRecognition ||
@@ -253,10 +262,15 @@ export function PromptFileImportBar({
 					// eslint-disable-next-line @typescript-eslint/no-explicit-any
 					recognition.onresult = (event: any) => {
 						let fullText = "";
+						let finalizedText = "";
 						for (let i = 0; i < event.results.length; i++) {
-							fullText += event.results[i][0].transcript;
+							const result = event.results[i];
+							const text = result[0]?.transcript || "";
+							fullText += text;
+							if (result.isFinal) finalizedText += text;
 						}
 						transcriptRef.current = fullText;
+						finalTranscriptRef.current = finalizedText.trim();
 						setLiveTranscript(fullText);
 						if (onLiveTranscriptRef.current && fullText) {
 							onLiveTranscriptRef.current(fullText);
@@ -290,6 +304,7 @@ export function PromptFileImportBar({
 			};
 
 			recorder.onerror = () => {
+				recordingSessionRef.current += 1;
 				cleanupStream();
 				cleanupAudioVisualizer();
 				cleanupTimer();
@@ -306,8 +321,14 @@ export function PromptFileImportBar({
 				setIsRecording(false);
 				onRecordingChangeRef.current?.(false);
 				mediaRecorderRef.current = null;
+				if (recordingSessionId !== recordingSessionRef.current) {
+					audioChunksRef.current = [];
+					transcriptRef.current = "";
+					finalTranscriptRef.current = "";
+					return;
+				}
 
-				const capturedLiveText = transcriptRef.current.trim();
+				const capturedLiveText = finalTranscriptRef.current.trim();
 
 				// Option A: Live Speech Recognition provided the text
 				if (capturedLiveText) {
@@ -359,10 +380,21 @@ export function PromptFileImportBar({
 				}
 
 				// Option C: Raw audio attachment fallback
-				const attachment = await fileToAttachment(file, { apiKeyId });
+				const attachment = await fileToAttachment(file, {
+					apiKeyId,
+					virtualKeyId,
+					skipAudioTranscription: true,
+					silent: true,
+				});
 				if (attachment) {
 					onAttachmentsAdded([attachment]);
-					toast.success("Voice recording attached");
+					if (attachment.type === "text" && attachment.text?.includes("[Transcription unavailable:")) {
+						toast.error("Voice recording could not be transcribed or attached");
+					} else {
+						toast.success("Voice recording attached");
+					}
+				} else {
+					toast.error("Voice recording could not be attached");
 				}
 			};
 
@@ -399,6 +431,7 @@ export function PromptFileImportBar({
 	}, []);
 
 	const cancelRecording = useCallback(() => {
+		recordingSessionRef.current += 1;
 		if (recognitionRef.current) {
 			try {
 				recognitionRef.current.abort();
@@ -411,6 +444,7 @@ export function PromptFileImportBar({
 		mediaRecorderRef.current = null;
 		audioChunksRef.current = [];
 		transcriptRef.current = "";
+		finalTranscriptRef.current = "";
 		setLiveTranscript("");
 		cleanupStream();
 		cleanupAudioVisualizer();

@@ -40,15 +40,23 @@ function encodeWav(samples: Float32Array, sampleRate: number): Blob {
 }
 
 function downsampleToMono(buffer: AudioBuffer, targetRate = 16000): Float32Array {
-	const channel = buffer.numberOfChannels > 0 ? buffer.getChannelData(0) : new Float32Array(0);
-	if (buffer.sampleRate === targetRate) {
-		return channel.slice();
-	}
+	if (buffer.numberOfChannels <= 0 || buffer.length <= 0) return new Float32Array(0);
+	const channels = Array.from({ length: buffer.numberOfChannels }, (_value, index) => buffer.getChannelData(index));
 	const ratio = buffer.sampleRate / targetRate;
-	const newLength = Math.max(1, Math.floor(channel.length / ratio));
+	const newLength = Math.max(1, Math.floor(buffer.length / ratio));
 	const result = new Float32Array(newLength);
 	for (let i = 0; i < newLength; i++) {
-		result[i] = channel[Math.min(channel.length - 1, Math.floor(i * ratio))] || 0;
+		const start = Math.min(buffer.length - 1, Math.floor(i * ratio));
+		const end = Math.min(buffer.length, Math.max(start + 1, Math.floor((i + 1) * ratio)));
+		let frameTotal = 0;
+		for (let frame = start; frame < end; frame++) {
+			let sampleTotal = 0;
+			for (const channel of channels) {
+				sampleTotal += channel[frame] || 0;
+			}
+			frameTotal += sampleTotal / channels.length;
+		}
+		result[i] = frameTotal / (end - start);
 	}
 	return result;
 }
