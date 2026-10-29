@@ -4,7 +4,7 @@ import { audioFormatFromMimeOrName, normalizeAudioToWavFile } from "./audioNorma
 import { extractPromptFileText } from "./extractFileText";
 import { extractArchiveInnerFiles, isPromptArchive } from "./extractArchive";
 import { isThinExtractedText, ocrImageFile, ocrPdfFile, ocrTextAttachment } from "./ocrImage";
-import { transcribeAudioFile, voiceTranscriptAttachment } from "./transcribeAudio";
+import { MAX_AUDIO_TRANSCRIPTION_BYTES, transcribeAudioFile, voiceTranscriptAttachment } from "./transcribeAudio";
 
 /** Accepted file types for prompt repository attachments */
 export const PROMPT_FILE_ACCEPT = "*/*";
@@ -718,8 +718,30 @@ export function resolveFileMimeType(file: File): string {
 }
 
 const ZIP_PACKAGED_DOCUMENT_EXTENSIONS = new Set([
-	"docx", "docm", "dotx", "dotm", "xlsx", "xlsm", "xlsb", "xltx", "xltm", "pptx", "pptm", "ppsx", "ppsm",
-	"potx", "potm", "odt", "ott", "ods", "ots", "odp", "otp", "odg", "epub", "numbers",
+	"docx",
+	"docm",
+	"dotx",
+	"dotm",
+	"xlsx",
+	"xlsm",
+	"xlsb",
+	"xltx",
+	"xltm",
+	"pptx",
+	"pptm",
+	"ppsx",
+	"ppsm",
+	"potx",
+	"potm",
+	"odt",
+	"ott",
+	"ods",
+	"ots",
+	"odp",
+	"otp",
+	"odg",
+	"epub",
+	"numbers",
 ]);
 
 /** Use file signatures when browser MIME and extension are missing or misleading. */
@@ -736,14 +758,9 @@ async function detectFileMimeType(file: File): Promise<string> {
 	let detected: string | undefined;
 
 	if (ascii(0, 5) === "%PDF-") detected = "application/pdf";
-	else if (
-		startsWith(0xff, 0xfe) ||
-		startsWith(0xfe, 0xff) ||
-		startsWith(0xef, 0xbb, 0xbf)
-	) {
+	else if (startsWith(0xff, 0xfe) || startsWith(0xfe, 0xff) || startsWith(0xef, 0xbb, 0xbf)) {
 		detected = "text/plain";
-	}
-	else if (startsWith(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)) detected = "image/png";
+	} else if (startsWith(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)) detected = "image/png";
 	else if (startsWith(0xff, 0xd8, 0xff)) detected = "image/jpeg";
 	else if (["GIF87a", "GIF89a"].includes(ascii(0, 6))) detected = "image/gif";
 	else if (ascii(0, 2) === "BM") detected = "image/bmp";
@@ -757,8 +774,7 @@ async function detectFileMimeType(file: File): Promise<string> {
 	else if (bytes.length >= 2 && bytes[0] === 0xff && (bytes[1] & 0xe0) === 0xe0) detected = "audio/mpeg";
 	else if (startsWith(0x1a, 0x45, 0xdf, 0xa3)) {
 		detected = ext === "webm" ? (file.type.startsWith("audio/") ? file.type : "video/webm") : "video/x-matroska";
-	}
-	else if (ascii(4, 4) === "ftyp") {
+	} else if (ascii(4, 4) === "ftyp") {
 		const brand = ascii(8, 4).trim();
 		if (/^(heic|heix|hevc|hevx|mif1|msf1)$/i.test(brand)) detected = "image/heic";
 		else if (/^(avif|avis)$/i.test(brand)) detected = "image/avif";
@@ -801,12 +817,58 @@ export function isImageFile(file: File, mimeType?: string): boolean {
 	if (effectiveMime.startsWith("image/")) return true;
 	const ext = file.name.split(".").pop()?.toLowerCase() || "";
 	return [
-		"png", "jpg", "jpeg", "jpe", "webp", "gif", "bmp", "dib", "svg", "tiff", "tif",
-		"avif", "heic", "heif", "ico", "cur", "psd", "psb", "ai", "indd", "idml",
-		"cdr", "xcf", "kra", "afphoto", "afdesign", "raw", "dng", "cr2", "cr3",
-		"nef", "arw", "orf", "rw2", "raf", "jp2", "j2k", "pbm", "pgm", "ppm",
-		"pnm", "exr", "hdr", "tga", "dds", "ktx", "ktx2", "blend", "ora", "wmf",
-		"emf", "jxl"
+		"png",
+		"jpg",
+		"jpeg",
+		"jpe",
+		"webp",
+		"gif",
+		"bmp",
+		"dib",
+		"svg",
+		"tiff",
+		"tif",
+		"avif",
+		"heic",
+		"heif",
+		"ico",
+		"cur",
+		"psd",
+		"psb",
+		"ai",
+		"indd",
+		"idml",
+		"cdr",
+		"xcf",
+		"kra",
+		"afphoto",
+		"afdesign",
+		"raw",
+		"dng",
+		"cr2",
+		"cr3",
+		"nef",
+		"arw",
+		"orf",
+		"rw2",
+		"raf",
+		"jp2",
+		"j2k",
+		"pbm",
+		"pgm",
+		"ppm",
+		"pnm",
+		"exr",
+		"hdr",
+		"tga",
+		"dds",
+		"ktx",
+		"ktx2",
+		"blend",
+		"ora",
+		"wmf",
+		"emf",
+		"jxl",
 	].includes(ext);
 }
 
@@ -839,6 +901,10 @@ const MODEL_IMAGE_MIMES = new Set(["image/png", "image/jpeg", "image/webp", "ima
 /** Anthropic rejects inline images above 5 MB; stay under it with base64 overhead in mind. */
 const MODEL_IMAGE_MAX_BYTES = 3.75 * 1024 * 1024;
 const MODEL_IMAGE_MAX_DIMENSION = 2048;
+/** Mistral OCR accepts images up to 20 MB. Avoid base64-encoding arbitrary or oversized files. */
+const OCR_IMAGE_MAX_BYTES = 20 * 1024 * 1024;
+const OCR_RAW_IMAGE_MIMES = new Set(["image/png", "image/jpeg", "image/gif", "image/bmp", "image/tiff", "image/webp", "image/avif"]);
+const GATEWAY_TRANSCRIPTION_EXTENSIONS = new Set(["flac", "mp3", "mp4", "mpeg", "mpga", "m4a", "ogg", "wav", "webm"]);
 
 function loadImageElement(file: File): Promise<HTMLImageElement> {
 	return new Promise((resolve, reject) => {
@@ -863,54 +929,65 @@ function loadImageElement(file: File): Promise<HTMLImageElement> {
  */
 export async function normalizeImageForModel(file: File, mimeType: string): Promise<string | null> {
 	const supported = MODEL_IMAGE_MIMES.has(mimeType);
-	if (supported && file.size <= MODEL_IMAGE_MAX_BYTES) {
-		if (mimeType === "image/gif") return fileToBase64(file, mimeType);
-		try {
-			const img = await loadImageElement(file);
-			if (Math.max(img.naturalWidth, img.naturalHeight) <= MODEL_IMAGE_MAX_DIMENSION) {
-				return fileToBase64(file, mimeType);
-			}
-		} catch {
-			return fileToBase64(file, mimeType);
-		}
-	}
-
-	let img: HTMLImageElement;
 	try {
-		img = await loadImageElement(file);
+		const img = await loadImageElement(file);
+		const width = img.naturalWidth;
+		const height = img.naturalHeight;
+		if (width <= 0 || height <= 0) return null;
+		if (supported && file.size <= MODEL_IMAGE_MAX_BYTES && Math.max(width, height) <= MODEL_IMAGE_MAX_DIMENSION) {
+			return await fileToBase64(file, mimeType);
+		}
+		let scale = Math.min(1, MODEL_IMAGE_MAX_DIMENSION / Math.max(width, height));
+		const keepAlpha = mimeType === "image/png" || mimeType === "image/svg+xml" || mimeType === "image/x-icon" || mimeType === "image/webp";
+
+		for (let attempt = 0; attempt < 5; attempt++) {
+			const canvas = document.createElement("canvas");
+			canvas.width = Math.max(1, Math.round(width * scale));
+			canvas.height = Math.max(1, Math.round(height * scale));
+			const g = canvas.getContext("2d");
+			if (!g) return null;
+			const asPng = keepAlpha && attempt === 0;
+			if (!asPng) {
+				g.fillStyle = "#ffffff";
+				g.fillRect(0, 0, canvas.width, canvas.height);
+			}
+			g.drawImage(img, 0, 0, canvas.width, canvas.height);
+			const dataUrl = asPng ? canvas.toDataURL("image/png") : canvas.toDataURL("image/jpeg", attempt <= 1 ? 0.9 : 0.8);
+			const bytes = Math.ceil(((dataUrl.length - dataUrl.indexOf(",") - 1) * 3) / 4);
+			if (bytes <= MODEL_IMAGE_MAX_BYTES) {
+				if (!supported || scale < 1) {
+					toast.message(`"${file.name}" converted for model compatibility`, {
+						description: `${canvas.width}×${canvas.height} ${dataUrl.startsWith("data:image/png") ? "PNG" : "JPEG"}`,
+					});
+				}
+				return dataUrl;
+			}
+			scale *= 0.75;
+		}
+		return null;
 	} catch {
 		return null;
 	}
-	const width = img.naturalWidth || 1024;
-	const height = img.naturalHeight || 1024;
-	let scale = Math.min(1, MODEL_IMAGE_MAX_DIMENSION / Math.max(width, height));
-	const keepAlpha = mimeType === "image/png" || mimeType === "image/svg+xml" || mimeType === "image/x-icon" || mimeType === "image/webp";
+}
 
-	for (let attempt = 0; attempt < 5; attempt++) {
-		const canvas = document.createElement("canvas");
-		canvas.width = Math.max(1, Math.round(width * scale));
-		canvas.height = Math.max(1, Math.round(height * scale));
-		const g = canvas.getContext("2d");
-		if (!g) return null;
-		const asPng = keepAlpha && attempt === 0;
-		if (!asPng) {
-			g.fillStyle = "#ffffff";
-			g.fillRect(0, 0, canvas.width, canvas.height);
-		}
-		g.drawImage(img, 0, 0, canvas.width, canvas.height);
-		const dataUrl = asPng ? canvas.toDataURL("image/png") : canvas.toDataURL("image/jpeg", attempt <= 1 ? 0.9 : 0.8);
-		const bytes = Math.ceil(((dataUrl.length - dataUrl.indexOf(",") - 1) * 3) / 4);
-		if (bytes <= MODEL_IMAGE_MAX_BYTES) {
-			if (!supported || scale < 1) {
-				toast.message(`"${file.name}" converted for model compatibility`, {
-					description: `${canvas.width}×${canvas.height} ${dataUrl.startsWith("data:image/png") ? "PNG" : "JPEG"}`,
-				});
-			}
-			return dataUrl;
-		}
-		scale *= 0.75;
+/** Validate the signature before sending a browser-undecodable image to cloud OCR. */
+async function rawImageForOcr(file: File, mimeType: string): Promise<string | null> {
+	if (file.size <= 0 || file.size > OCR_IMAGE_MAX_BYTES || !OCR_RAW_IMAGE_MIMES.has(mimeType)) return null;
+	try {
+		const bytes = new Uint8Array(await file.slice(0, 16).arrayBuffer());
+		const ascii = (start: number, length: number) => String.fromCharCode(...bytes.subarray(start, start + length));
+		const matches =
+			(mimeType === "image/png" && [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a].every((b, i) => bytes[i] === b)) ||
+			(mimeType === "image/jpeg" && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) ||
+			(mimeType === "image/gif" && ["GIF87a", "GIF89a"].includes(ascii(0, 6))) ||
+			(mimeType === "image/bmp" && ascii(0, 2) === "BM") ||
+			(mimeType === "image/tiff" && ["II*\0", "MM\0*", "II+\0", "MM\0+"].includes(ascii(0, 4))) ||
+			(mimeType === "image/webp" && ascii(0, 4) === "RIFF" && ascii(8, 4) === "WEBP") ||
+			(mimeType === "image/avif" && ascii(4, 4) === "ftyp" && /^(avif|avis)$/i.test(ascii(8, 4)));
+		return matches ? await fileToBase64(file, mimeType) : null;
+	} catch {
+		return null;
 	}
-	return null;
 }
 
 function isZipFile(file: File, mimeType: string): boolean {
@@ -1030,7 +1107,10 @@ export async function filesToAttachments(files: FileList | File[], opts?: Attach
 		} else {
 			toast.warning(`Imported ${attachments.length} attachments (${failedFiles.length} file(s) failed)`, {
 				id: bulkToastId,
-				description: failedFiles.slice(0, 3).map((f) => f.name).join(", "),
+				description: failedFiles
+					.slice(0, 3)
+					.map((f) => f.name)
+					.join(", "),
 			});
 		}
 	}
@@ -1079,10 +1159,7 @@ async function attachmentsFromZip(zipFile: File, opts?: AttachmentImportOptions,
 		}
 	}
 	if (out.length > 0 && !opts?.silent) {
-		const extra =
-			skipped > 0 || errors.length > 0
-				? ` (${skipped} skipped${errors.length ? `; ${errors[0]}` : ""})`
-				: "";
+		const extra = skipped > 0 || errors.length > 0 ? ` (${skipped} skipped${errors.length ? `; ${errors[0]}` : ""})` : "";
 		toast.success(`Imported ${out.length} file(s) from ${zipFile.name}${extra}`);
 	}
 	return out;
@@ -1102,7 +1179,8 @@ async function tryPdfOcr(file: File, opts?: AttachmentImportOptions): Promise<{ 
 	if (ocr?.text) {
 		if (!opts?.silent && ocr.text.includes("[Truncated:")) {
 			toast.warning(`OCR read only part of ${file.name}`, {
-				description: "The OCR page range is marked in the attachment. Text-layer content may cover other pages; scanned-only text outside that range may be missing.",
+				description:
+					"The OCR page range is marked in the attachment. Text-layer content may cover other pages; scanned-only text outside that range may be missing.",
 			});
 		} else if (!opts?.silent) {
 			toast.success(`OCR extracted text from ${file.name} (${ocr.model})`);
@@ -1129,12 +1207,16 @@ function isVideoFile(file: File, mimeType: string): boolean {
 async function imageFileAttachments(file: File, mimeType: string, opts?: AttachmentImportOptions): Promise<MessageContent[]> {
 	const out: MessageContent[] = [];
 	const dataUrl = await normalizeImageForModel(file, mimeType);
-	const ocrSource = dataUrl || (await fileToBase64(file, mimeType));
+	const ocrSource = dataUrl || (await rawImageForOcr(file, mimeType));
 	let extracted = "";
-	if (ocrSource.startsWith("data:image/") || ocrSource.startsWith("data:application/")) {
+	if (ocrSource) {
 		if (!opts?.silent) toast.message(`Extracting text from image ${file.name}…`);
-		const ocr = await ocrImageFile(ocrSource, { apiKeyId: opts?.apiKeyId, virtualKeyId: opts?.virtualKeyId });
-		if (ocr?.text?.trim()) extracted = ocr.text.trim();
+		try {
+			const ocr = await ocrImageFile(ocrSource, { apiKeyId: opts?.apiKeyId, virtualKeyId: opts?.virtualKeyId });
+			if (ocr?.text?.trim()) extracted = ocr.text.trim();
+		} catch (error) {
+			console.warn(`OCR failed for image "${file.name}":`, error);
+		}
 	}
 	if (!extracted) {
 		const fallback = await extractPromptFileText(file, mimeType);
@@ -1173,7 +1255,8 @@ async function imageFileAttachments(file: File, mimeType: string, opts?: Attachm
 			toast.success(`Image attached: ${file.name}`);
 		} else {
 			toast.error(`Could not read image "${file.name}"`, {
-				description: "The image could not be decoded and OCR found no readable text, so image questions cannot be answered from this upload.",
+				description:
+					"The image could not be decoded and OCR found no readable text, so image questions cannot be answered from this upload.",
 			});
 		}
 	}
@@ -1287,8 +1370,8 @@ async function videoFileAttachments(file: File, mimeType: string, opts?: Attachm
 	const textContent = transcriptText
 		? `Attached video: ${file.name}\n\n--- Video Speech Transcript ---\n${transcriptText}`
 		: screenOcrText
-		? `Attached video: ${file.name}\n\n--- Video Screen OCR Content ---\n${screenOcrText}`
-		: `Attached video: ${file.name} (${sizeMb} MB | ${mimeType || "video"})\n\n[Visual video media attached for playback preview]`;
+			? `Attached video: ${file.name}\n\n--- Video Screen OCR Content ---\n${screenOcrText}`
+			: `Attached video: ${file.name} (${sizeMb} MB | ${mimeType || "video"})\n\n[Visual video media attached for playback preview]`;
 
 	const out: MessageContent[] = [];
 
@@ -1343,7 +1426,11 @@ async function expandFileAttachments(file: File, opts?: AttachmentImportOptions,
 	return one ? [one] : [];
 }
 
-export async function fileToAttachment(file: File, opts?: AttachmentImportOptions, detectedMimeType?: string): Promise<MessageContent | null> {
+export async function fileToAttachment(
+	file: File,
+	opts?: AttachmentImportOptions,
+	detectedMimeType?: string,
+): Promise<MessageContent | null> {
 	const mimeType = detectedMimeType || (await detectFileMimeType(file));
 
 	if (isZipFile(file, mimeType)) {
@@ -1379,29 +1466,53 @@ export async function fileToAttachment(file: File, opts?: AttachmentImportOption
 	}
 
 	const fileExt = file.name.split(".").pop()?.toLowerCase() || "";
-	const audioLike = mimeType.startsWith("audio/") || ["mp3", "wav", "m4a", "flac", "ogg", "opus", "aac", "wma", "aiff", "aif", "amr", "weba", "mpga"].includes(fileExt);
+	const audioLike =
+		mimeType.startsWith("audio/") ||
+		["mp3", "wav", "m4a", "flac", "ogg", "opus", "aac", "wma", "aiff", "aif", "amr", "weba", "mpga"].includes(fileExt);
 
 	if (audioLike) {
-		const normalized = await normalizeAudioToWavFile(file);
+		const detectedAudioMime = mimeType.startsWith("audio/");
+		const originalFormat = audioFormatFromMimeOrName(mimeType, file.name);
+		const canTranscribeOriginal = detectedAudioMime && GATEWAY_TRANSCRIPTION_EXTENSIONS.has(fileExt);
+		const normalizationAttempted = !canTranscribeOriginal;
+		const normalized = normalizationAttempted ? await normalizeAudioToWavFile(file) : null;
+		const transcriptionFile = normalized || (canTranscribeOriginal ? file : null);
 		let transcript: Awaited<ReturnType<typeof transcribeAudioFile>> = null;
 		if (!opts?.skipAudioTranscription) {
 			if (!opts?.silent) toast.message(`Transcribing voice ${file.name}…`);
-			transcript = await transcribeAudioFile(normalized || file, {
-				apiKeyId: opts?.apiKeyId,
-				virtualKeyId: opts?.virtualKeyId,
-			});
+			if (!transcriptionFile) {
+				transcript = {
+					text: "",
+					model: "",
+					error:
+						file.size > MAX_AUDIO_TRANSCRIPTION_BYTES
+							? "Audio is larger than the 25 MB transcription limit."
+							: "This audio format is unsupported and could not be converted by the browser.",
+				};
+			} else if (transcriptionFile.size > MAX_AUDIO_TRANSCRIPTION_BYTES) {
+				transcript = { text: "", model: "", error: "Converted audio is larger than the 25 MB transcription limit." };
+			} else {
+				transcript = await transcribeAudioFile(transcriptionFile, {
+					apiKeyId: opts?.apiKeyId,
+					virtualKeyId: opts?.virtualKeyId,
+				});
+			}
 			if (transcript?.text) {
 				if (!opts?.silent) toast.success(`Voice transcribed (${transcript.model})`);
 				return voiceTranscriptAttachment(file.name, transcript.text);
 			}
 		}
 
-		const originalFormat = audioFormatFromMimeOrName(file.type || mimeType, file.name);
-		const rawAudioFormat = normalized ? "wav" : originalFormat === "mp3" || originalFormat === "wav" ? originalFormat : null;
-		if (rawAudioFormat) {
+		let rawAudioFile = normalized || (detectedAudioMime && (originalFormat === "mp3" || originalFormat === "wav") ? file : null);
+		if (!rawAudioFile && !normalizationAttempted && file.size <= MAX_AUDIO_TRANSCRIPTION_BYTES) {
+			rawAudioFile = await normalizeAudioToWavFile(file);
+		}
+		const rawAudioFormat = rawAudioFile
+			? audioFormatFromMimeOrName(rawAudioFile === file ? mimeType : rawAudioFile.type, rawAudioFile.name)
+			: null;
+		if (rawAudioFile && rawAudioFile.size <= MAX_AUDIO_TRANSCRIPTION_BYTES && (rawAudioFormat === "mp3" || rawAudioFormat === "wav")) {
 			try {
-				const audioFile = normalized || file;
-				const dataUrl = await fileToBase64(audioFile, rawAudioFormat === "mp3" ? "audio/mpeg" : "audio/wav");
+				const dataUrl = await fileToBase64(rawAudioFile, rawAudioFormat === "mp3" ? "audio/mpeg" : "audio/wav");
 				const commaIdx = dataUrl.indexOf(",");
 				const rawB64 = commaIdx >= 0 ? dataUrl.slice(commaIdx + 1) : dataUrl;
 				if (!opts?.silent) {
@@ -1419,7 +1530,14 @@ export async function fileToAttachment(file: File, opts?: AttachmentImportOption
 			}
 		}
 
-		const reason = transcript && "error" in transcript ? transcript.error : "No readable speech was returned.";
+		const reason =
+			transcript && "error" in transcript
+				? transcript.error
+				: file.size > MAX_AUDIO_TRANSCRIPTION_BYTES
+					? "Audio is larger than the 25 MB transcription limit."
+					: rawAudioFile && rawAudioFile.size > MAX_AUDIO_TRANSCRIPTION_BYTES
+						? "Converted audio is larger than the 25 MB transcription limit."
+						: "No readable speech was returned.";
 		if (!opts?.silent) {
 			toast.error(`Voice was not transcribed: ${file.name}`, {
 				description: `${reason} This audio format could not be converted to a model-compatible audio attachment.`,

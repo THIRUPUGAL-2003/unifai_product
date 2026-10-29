@@ -1,5 +1,7 @@
 /** Convert browser-recorded audio (often webm/ogg) to PCM WAV for chat input_audio. */
 
+const MAX_AUDIO_NORMALIZATION_BYTES = 25 * 1024 * 1024;
+
 function writeString(view: DataView, offset: number, value: string) {
 	for (let i = 0; i < value.length; i++) {
 		view.setUint8(offset + i, value.charCodeAt(i));
@@ -71,6 +73,7 @@ export async function normalizeAudioToWavFile(file: File): Promise<File | null> 
 	if (mime.includes("wav") || name.endsWith(".wav")) {
 		return file;
 	}
+	if (file.size > MAX_AUDIO_NORMALIZATION_BYTES) return null;
 
 	if (typeof window === "undefined") {
 		return null;

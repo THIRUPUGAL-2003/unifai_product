@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { transcribeAudioFile } from "./transcribeAudio";
+import { MAX_AUDIO_TRANSCRIPTION_BYTES, transcribeAudioFile } from "./transcribeAudio";
 
 afterEach(() => {
 	vi.restoreAllMocks();
@@ -11,6 +11,16 @@ describe("transcribeAudioFile", () => {
 		const result = await transcribeAudioFile(new File([], "empty.wav", { type: "audio/wav" }));
 
 		expect(result).toMatchObject({ text: "", error: "The audio file is empty." });
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
+	it("rejects files over the gateway limit before sending a request", async () => {
+		const fetchMock = vi.spyOn(globalThis, "fetch");
+		const oversizedFile = { size: MAX_AUDIO_TRANSCRIPTION_BYTES + 1 } as File;
+
+		const result = await transcribeAudioFile(oversizedFile);
+
+		expect(result).toMatchObject({ text: "", error: "Audio is larger than the 25 MB transcription limit." });
 		expect(fetchMock).not.toHaveBeenCalled();
 	});
 
@@ -53,11 +63,26 @@ describe("transcribeAudioFile", () => {
 		expect(result).toMatchObject({ text: "", error: expect.stringContaining("audio upload too large") });
 	});
 
+	it("stops retrying when the gateway reports its 25 MB upload limit", async () => {
+		const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+			new Response(JSON.stringify({ error: { message: "file size exceeds maximum limit of 25 MB" } }), {
+				status: 400,
+				headers: { "content-type": "application/json" },
+			}),
+		);
+
+		await transcribeAudioFile(new File(["audio"], "speech.wav"), {
+			models: ["first-model", "second-model", "third-model"],
+		});
+
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+	});
+
 	it("preserves cancellation instead of converting it into a transcription error", async () => {
 		vi.spyOn(globalThis, "fetch").mockRejectedValue(new DOMException("Aborted", "AbortError"));
 
-		await expect(
-			transcribeAudioFile(new File(["audio"], "speech.wav"), { models: ["first-model"] }),
-		).rejects.toMatchObject({ name: "AbortError" });
+		await expect(transcribeAudioFile(new File(["audio"], "speech.wav"), { models: ["first-model"] })).rejects.toMatchObject({
+			name: "AbortError",
+		});
 	});
 });

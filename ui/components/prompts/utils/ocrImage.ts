@@ -1,15 +1,8 @@
 /** OCR helpers for Prompt Repo (Mistral OCR via /v1/ocr). */
 
-const DEFAULT_OCR_MODELS = [
-	"mistral/mistral-ocr-latest",
-	"mistral-ocr-latest",
-	"mistral/mistral-ocr-2505-22",
-	"mistral-ocr-2505-22",
-];
+const DEFAULT_OCR_MODELS = ["mistral/mistral-ocr-latest", "mistral-ocr-latest", "mistral/mistral-ocr-2505-22", "mistral-ocr-2505-22"];
 
-export type OcrDocumentInput =
-	| { type: "image_url"; image_url: string }
-	| { type: "document_url"; document_url: string };
+export type OcrDocumentInput = { type: "image_url"; image_url: string } | { type: "document_url"; document_url: string };
 
 function buildAuthHeaders(apiKeyId?: string, virtualKeyId?: string): Record<string, string> {
 	const headers: Record<string, string> = {
@@ -41,6 +34,16 @@ function parseOcrMarkdown(data: unknown, pageNumbers?: number[]): string {
 	return parts.join("\n\n").trim();
 }
 
+function isAbortError(error: unknown): boolean {
+	return Boolean(error && typeof error === "object" && "name" in error && error.name === "AbortError");
+}
+
+function shouldTryNextOcrModel(status: number, message: string): boolean {
+	if (status === 408 || status === 429 || status >= 500) return true;
+	if ((status === 400 || status === 404) && /model/i.test(message)) return true;
+	return false;
+}
+
 /**
  * OCR via gateway `POST /v1/ocr` (Mistral OCR).
  * Supports image_url (photos) and document_url (PDF / scanned docs).
@@ -49,10 +52,7 @@ export async function ocrDocument(
 	document: OcrDocumentInput,
 	opts?: { apiKeyId?: string; virtualKeyId?: string; models?: string[]; signal?: AbortSignal; pages?: number[] },
 ): Promise<{ text: string; model: string } | null> {
-	const url =
-		document.type === "image_url"
-			? document.image_url
-			: document.document_url;
+	const url = document.type === "image_url" ? document.image_url : document.document_url;
 	if (!url?.startsWith("data:")) {
 		return null;
 	}
@@ -98,15 +98,16 @@ export async function ocrDocument(
 					/* ignore */
 				}
 				lastError = `${model}: ${msg}`;
+				if (!shouldTryNextOcrModel(response.status, msg)) break;
 				continue;
 			}
 
 			const data = await response.json();
-			const text = parseOcrMarkdown(data, document.type === "document_url" ? (opts?.pages || []) : undefined);
+			const text = parseOcrMarkdown(data, document.type === "document_url" ? opts?.pages || [] : undefined);
 			if (text) return { text, model };
 			lastError = `${model}: empty OCR text`;
 		} catch (err) {
-			if (err instanceof DOMException && err.name === "AbortError") throw err;
+			if (isAbortError(err)) throw err;
 			lastError = err instanceof Error ? err.message : String(err);
 		}
 	}
@@ -184,7 +185,8 @@ export async function ocrPdfFile(
 
 			const doc = await pdfjs.getDocument({ data: bytes }).promise;
 			const requestedPages = [...new Set((opts?.pages || []).filter((page) => Number.isInteger(page) && page > 0 && page <= doc.numPages))];
-			const pagesToScan = requestedPages.length > 0 ? requestedPages.slice(0, 5) : Array.from({ length: Math.min(doc.numPages, 5) }, (_v, i) => i + 1);
+			const pagesToScan =
+				requestedPages.length > 0 ? requestedPages.slice(0, 5) : Array.from({ length: Math.min(doc.numPages, 5) }, (_v, i) => i + 1);
 			const Tesseract = await getTesseract();
 			const pageTexts: string[] = [];
 
@@ -208,7 +210,10 @@ export async function ocrPdfFile(
 
 			if (pageTexts.length > 0) {
 				const omittedPages = doc.numPages - pagesToScan.length;
-				const truncationNotice = omittedPages > 0 ? `\n\n[Truncated: local OCR processed ${pagesToScan.length} of ${doc.numPages} pages; ${omittedPages} pages were not read.]` : "";
+				const truncationNotice =
+					omittedPages > 0
+						? `\n\n[Truncated: local OCR processed ${pagesToScan.length} of ${doc.numPages} pages; ${omittedPages} pages were not read.]`
+						: "";
 				return { text: `${pageTexts.join("\n\n").trim()}${truncationNotice}`, model: "tesseract-ocr (English)" };
 			}
 		}
@@ -219,7 +224,10 @@ export async function ocrPdfFile(
 	return null;
 }
 
-export function ocrTextAttachment(fileName: string, ocrText: string): {
+export function ocrTextAttachment(
+	fileName: string,
+	ocrText: string,
+): {
 	type: "text";
 	text: string;
 } {

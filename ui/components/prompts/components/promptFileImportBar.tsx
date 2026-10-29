@@ -113,6 +113,7 @@ export function PromptFileImportBar({
 	const transcriptRef = useRef<string>("");
 	const finalTranscriptRef = useRef<string>("");
 	const recordingSessionRef = useRef(0);
+	const transcriptionAbortRef = useRef<AbortController | null>(null);
 
 	const addFiles = useCallback(
 		async (files: FileList | File[]) => {
@@ -158,6 +159,12 @@ export function PromptFileImportBar({
 	useEffect(() => {
 		return () => {
 			recordingSessionRef.current += 1;
+			transcriptionAbortRef.current?.abort();
+			transcriptionAbortRef.current = null;
+			try {
+				(recognitionRef.current as BrowserSpeechRecognition | null)?.abort();
+			} catch {}
+			recognitionRef.current = null;
 			if (mediaRecorderRef.current?.state !== "inactive") {
 				try {
 					mediaRecorderRef.current?.stop();
@@ -170,6 +177,8 @@ export function PromptFileImportBar({
 	}, [cleanupAudioVisualizer, cleanupStream, cleanupTimer]);
 
 	const startRecording = useCallback(async () => {
+		transcriptionAbortRef.current?.abort();
+		transcriptionAbortRef.current = null;
 		const recordingSessionId = ++recordingSessionRef.current;
 		transcriptRef.current = "";
 		finalTranscriptRef.current = "";
@@ -218,8 +227,7 @@ export function PromptFileImportBar({
 			// 1. Setup Audio Frequency Analyser for real-time waveform visualization
 			try {
 				const AudioContextClass =
-					window.AudioContext ||
-					(window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+					window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
 				if (AudioContextClass) {
 					const audioCtx = new AudioContextClass();
 					if (audioCtx.state === "suspended") {
@@ -316,6 +324,12 @@ export function PromptFileImportBar({
 
 			recorder.onerror = () => {
 				recordingSessionRef.current += 1;
+				transcriptionAbortRef.current?.abort();
+				transcriptionAbortRef.current = null;
+				try {
+					(recognitionRef.current as BrowserSpeechRecognition | null)?.abort();
+				} catch {}
+				recognitionRef.current = null;
 				cleanupStream();
 				cleanupAudioVisualizer();
 				cleanupTimer();
@@ -373,7 +387,22 @@ export function PromptFileImportBar({
 				const file = new File([blob], `voice-${Date.now()}.${ext}`, { type: recordedMimeType });
 
 				toast.message("Transcribing voice audio…");
-				const whisperResult = await transcribeAudioFile(file, { apiKeyId, virtualKeyId });
+				const transcriptionAbort = new AbortController();
+				transcriptionAbortRef.current = transcriptionAbort;
+				let whisperResult: Awaited<ReturnType<typeof transcribeAudioFile>> = null;
+				try {
+					whisperResult = await transcribeAudioFile(file, {
+						apiKeyId,
+						virtualKeyId,
+						signal: transcriptionAbort.signal,
+					});
+				} catch (error) {
+					if (error instanceof DOMException && error.name === "AbortError") return;
+					toast.warning("Cloud transcription unavailable — attaching voice audio recording");
+				} finally {
+					if (transcriptionAbortRef.current === transcriptionAbort) transcriptionAbortRef.current = null;
+				}
+				if (recordingSessionId !== recordingSessionRef.current) return;
 				if (whisperResult && "error" in whisperResult) {
 					toast.warning("Cloud transcription unavailable — attaching voice audio recording");
 				}
@@ -397,6 +426,7 @@ export function PromptFileImportBar({
 					skipAudioTranscription: true,
 					silent: true,
 				});
+				if (recordingSessionId !== recordingSessionRef.current) return;
 				if (attachment) {
 					onAttachmentsAdded([attachment]);
 					if (attachment.type === "text" && attachment.text?.includes("[Transcription unavailable:")) {
@@ -418,6 +448,11 @@ export function PromptFileImportBar({
 				setRecordingSeconds((prev) => prev + 1);
 			}, 1000);
 		} catch (error) {
+			recordingSessionRef.current += 1;
+			try {
+				(recognitionRef.current as BrowserSpeechRecognition | null)?.abort();
+			} catch {}
+			recognitionRef.current = null;
 			cleanupStream();
 			cleanupAudioVisualizer();
 			cleanupTimer();
@@ -443,6 +478,8 @@ export function PromptFileImportBar({
 
 	const cancelRecording = useCallback(() => {
 		recordingSessionRef.current += 1;
+		transcriptionAbortRef.current?.abort();
+		transcriptionAbortRef.current = null;
 		if (recognitionRef.current) {
 			try {
 				recognitionRef.current.abort();
@@ -468,7 +505,9 @@ export function PromptFileImportBar({
 
 	if (isRecording) {
 		return (
-			<div className={`flex items-center gap-2 rounded-full border border-rose-500/30 bg-rose-500/10 px-3 py-1 text-xs shadow-sm ${className}`}>
+			<div
+				className={`flex items-center gap-2 rounded-full border border-rose-500/30 bg-rose-500/10 px-3 py-1 text-xs shadow-sm ${className}`}
+			>
 				{/* Live Pulsing Dot */}
 				<span className="relative flex h-2 w-2 shrink-0">
 					<span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-75" />
@@ -476,12 +515,12 @@ export function PromptFileImportBar({
 				</span>
 
 				{/* Timer */}
-				<span className="font-mono text-[11px] font-semibold text-rose-600 dark:text-rose-400 shrink-0">
+				<span className="shrink-0 font-mono text-[11px] font-semibold text-rose-600 dark:text-rose-400">
 					{formatDuration(recordingSeconds)}
 				</span>
 
 				{/* Animated Audio Frequency Bars */}
-				<div className="flex items-center gap-[2px] h-4 px-1" title="Voice frequency waveform">
+				<div className="flex h-4 items-center gap-[2px] px-1" title="Voice frequency waveform">
 					{frequencyData.map((val, idx) => (
 						<div
 							key={idx}
@@ -493,11 +532,11 @@ export function PromptFileImportBar({
 
 				{/* Live Transcript / Status */}
 				{liveTranscript ? (
-					<span className="text-[11px] text-foreground font-medium max-w-[130px] truncate" title={liveTranscript}>
+					<span className="text-foreground max-w-[130px] truncate text-[11px] font-medium" title={liveTranscript}>
 						&ldquo;{liveTranscript}&rdquo;
 					</span>
 				) : (
-					<span className="text-[10px] text-muted-foreground italic shrink-0">Listening...</span>
+					<span className="text-muted-foreground shrink-0 text-[10px] italic">Listening...</span>
 				)}
 
 				{/* Stop & Extract Button */}
@@ -526,7 +565,7 @@ export function PromptFileImportBar({
 							size="icon"
 							variant="ghost"
 							onClick={cancelRecording}
-							className="h-6 w-6 rounded-full text-muted-foreground hover:text-foreground"
+							className="text-muted-foreground hover:text-foreground h-6 w-6 rounded-full"
 							aria-label="Discard recording"
 						>
 							<X className="h-3 w-3" />
@@ -589,9 +628,7 @@ export function PromptFileImportBar({
 						<Mic className="h-3.5 w-3.5" />
 					</Button>
 				</TooltipTrigger>
-				<TooltipContent side="top">
-					Record voice & extract text
-				</TooltipContent>
+				<TooltipContent side="top">Record voice & extract text</TooltipContent>
 			</Tooltip>
 		</div>
 	);

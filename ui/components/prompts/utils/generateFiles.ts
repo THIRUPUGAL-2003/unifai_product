@@ -85,13 +85,19 @@ function extractDocumentTitle(content: string): string {
 	for (const line of lines) {
 		const trimmed = line.trim();
 		if (trimmed.startsWith("#")) {
-			return trimmed.replace(/^#+\s*/, "").replace(/[*_~`]/g, "").trim();
+			return trimmed
+				.replace(/^#+\s*/, "")
+				.replace(/[*_~`]/g, "")
+				.trim();
 		}
 	}
 	for (const line of lines) {
 		const trimmed = line.trim();
 		if (trimmed.length > 3 && !trimmed.startsWith("|") && !trimmed.startsWith("```")) {
-			return trimmed.replace(/[*_~`]/g, "").slice(0, 40).trim();
+			return trimmed
+				.replace(/[*_~`]/g, "")
+				.slice(0, 40)
+				.trim();
 		}
 	}
 	return "document";
@@ -129,7 +135,10 @@ export function parseMarkdownTables(content: string): TableData[] {
 					// Check preceding line for potential title
 					let title: string | undefined;
 					if (i > 0 && lines[i - 1].trim()) {
-						title = lines[i - 1].replace(/^#+\s*/, "").replace(/[*_]/g, "").trim();
+						title = lines[i - 1]
+							.replace(/^#+\s*/, "")
+							.replace(/[*_]/g, "")
+							.trim();
 					}
 					tables.push({ title, headers, rows });
 				}
@@ -181,8 +190,8 @@ export function parseCodeBlocks(content: string): CodeBlockInfo[] {
 		let filename = "";
 		const firstLines = code.split("\n", 2);
 		for (const fl of firstLines) {
-			const nameMatch = fl.match(/(?:filename|file|name)[:=]\s*([a-zA-Z0-9_.-]+)/i) ||
-				fl.match(/(?:\/\/|#|\/\*|<!--)\s*([a-zA-Z0-9_-]+\.[a-zA-Z0-9]+)/);
+			const nameMatch =
+				fl.match(/(?:filename|file|name)[:=]\s*([a-zA-Z0-9_.-]+)/i) || fl.match(/(?:\/\/|#|\/\*|<!--)\s*([a-zA-Z0-9_-]+\.[a-zA-Z0-9]+)/);
 			if (nameMatch && nameMatch[1]) {
 				filename = nameMatch[1].trim();
 				break;
@@ -244,13 +253,45 @@ function plain(text: string): string {
 		.replace(/`([^`]+)`/g, "$1");
 }
 
-function parseCsv(text: string): string[][] | null {
-	const lines = text
-		.split("\n")
-		.map((line) => line.trim())
-		.filter(Boolean);
-	if (lines.length < 2 || !lines.every((line) => line.includes(","))) return null;
-	return lines.map((line) => line.split(",").map((cell) => plain(cell.trim())));
+export function parseCsvRows(text: string): string[][] | null {
+	const normalized = text
+		.replace(/^\uFEFF/, "")
+		.replace(/\r\n?/g, "\n")
+		.trim();
+	if (!normalized) return null;
+	const firstLine = normalized.split("\n", 1)[0];
+	const separator = firstLine.includes("\t") && !firstLine.includes(",") ? "\t" : ",";
+	if (!firstLine.includes(separator)) return null;
+
+	const rows: string[][] = [];
+	let row: string[] = [];
+	let cell = "";
+	let inQuotes = false;
+	for (let index = 0; index < normalized.length; index++) {
+		const char = normalized[index];
+		if (char === '"') {
+			if (inQuotes && normalized[index + 1] === '"') {
+				cell += '"';
+				index++;
+			} else {
+				inQuotes = !inQuotes;
+			}
+		} else if (!inQuotes && char === separator) {
+			row.push(plain(cell.trim()));
+			cell = "";
+		} else if (!inQuotes && char === "\n") {
+			row.push(plain(cell.trim()));
+			if (row.some((value) => value !== "")) rows.push(row);
+			row = [];
+			cell = "";
+		} else {
+			cell += char;
+		}
+	}
+	row.push(plain(cell.trim()));
+	if (row.some((value) => value !== "")) rows.push(row);
+	if (inQuotes || rows.length < 2 || Math.max(...rows.map((item) => item.length)) < 2) return null;
+	return rows;
 }
 
 /** Walk markdown into blocks so exports keep every line instead of clipping a paragraph. */
@@ -284,7 +325,12 @@ function markdownBlocks(content: string): Array<{ kind: string; text: string; ro
 			}
 			const rows = tableLines
 				.filter((l) => !/^\|[\s-:|]+\|$/.test(l))
-				.map((l) => l.slice(1, -1).split("|").map((c) => plain(c.trim())));
+				.map((l) =>
+					l
+						.slice(1, -1)
+						.split("|")
+						.map((c) => plain(c.trim())),
+				);
 			blocks.push({ kind: "table", text: "", rows });
 			continue;
 		}
@@ -405,7 +451,7 @@ export async function exportToExcel(content: string, customTitle?: string): Prom
 		const wb = XLSX.utils.book_new();
 		const docTitle = customTitle || extractDocumentTitle(content);
 		const logo = await loadLogoAsset(LOGO_SRC);
-		const csvRows = parseCsv(content);
+		const csvRows = parseCsvRows(content);
 		if (csvRows) {
 			const ws = XLSX.utils.aoa_to_sheet(csvRows);
 			ws["!cols"] = csvRows[0].map(() => ({ wch: 28 }));
@@ -419,22 +465,11 @@ export async function exportToExcel(content: string, customTitle?: string): Prom
 					console.error("Excel logo embed failed:", logoErr);
 				}
 			}
-			triggerBlobDownload(
-				new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
-				filename,
-			);
+			triggerBlobDownload(new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), filename);
 			toast.success(`Generated and downloaded "${filename}"!`, { id: "excel-export" });
 			return true;
 		}
-		const contentRows: string[][] = [
-			[""],
-			[""],
-			[""],
-			[PRODUCT_NAME],
-			[docTitle],
-			[`Exported ${new Date().toLocaleString()}`],
-			[""],
-		];
+		const contentRows: string[][] = [[""], [""], [""], [PRODUCT_NAME], [docTitle], [`Exported ${new Date().toLocaleString()}`], [""]];
 		for (const block of markdownBlocks(content)) {
 			if (block.kind === "table" && block.rows) {
 				for (const row of block.rows) contentRows.push(row);
@@ -467,10 +502,7 @@ export async function exportToExcel(content: string, customTitle?: string): Prom
 				console.error("Excel logo embed failed:", logoErr);
 			}
 		}
-		triggerBlobDownload(
-			new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
-			filename,
-		);
+		triggerBlobDownload(new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), filename);
 
 		toast.success(`Generated and downloaded "${filename}"!`, { id: "excel-export" });
 		return true;
@@ -484,81 +516,94 @@ export async function exportToExcel(content: string, customTitle?: string): Prom
 	}
 }
 
-/** Export assistant content to a styled Word Document (.docx / .doc) */
+function escapeXml(text: string): string {
+	return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
+}
+
+function docxParagraph(text: string, style?: string, monospace = false): string {
+	const styleXml = style ? `<w:pPr><w:pStyle w:val="${style}"/></w:pPr>` : "";
+	const fontXml = monospace ? '<w:rPr><w:rFonts w:ascii="Consolas" w:hAnsi="Consolas"/><w:sz w:val="19"/></w:rPr>' : "";
+	return `<w:p>${styleXml}<w:r>${fontXml}<w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r></w:p>`;
+}
+
+function docxTable(rows: string[][]): string {
+	const columns = Math.max(1, ...rows.map((row) => row.length));
+	const cellWidth = Math.floor(9840 / columns);
+	const grid = Array.from({ length: columns }, () => `<w:gridCol w:w="${cellWidth}"/>`).join("");
+	const body = rows
+		.map((row, rowIndex) => {
+			const cells = Array.from({ length: columns }, (_, index) => {
+				const fill = rowIndex === 0 ? '<w:shd w:fill="E2E8F0"/>' : "";
+				const bold = rowIndex === 0 ? "<w:rPr><w:b/></w:rPr>" : "";
+				return `<w:tc><w:tcPr><w:tcW w:w="${cellWidth}" w:type="dxa"/>${fill}</w:tcPr><w:p><w:r>${bold}<w:t xml:space="preserve">${escapeXml(row[index] || "")}</w:t></w:r></w:p></w:tc>`;
+			}).join("");
+			return `<w:tr>${cells}</w:tr>`;
+		})
+		.join("");
+	return `<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblBorders><w:top w:val="single" w:sz="4" w:color="CBD5E1"/><w:left w:val="single" w:sz="4" w:color="CBD5E1"/><w:bottom w:val="single" w:sz="4" w:color="CBD5E1"/><w:right w:val="single" w:sz="4" w:color="CBD5E1"/><w:insideH w:val="single" w:sz="4" w:color="CBD5E1"/><w:insideV w:val="single" w:sz="4" w:color="CBD5E1"/></w:tblBorders></w:tblPr><w:tblGrid>${grid}</w:tblGrid>${body}</w:tbl>`;
+}
+
+/** Export assistant content to a real, styled Office Open XML Word document. */
 export async function exportToWordDocx(content: string, customTitle?: string): Promise<boolean> {
 	try {
 		toast.loading("Generating Word document (.docx)...", { id: "word-export" });
 		const docTitle = customTitle || extractDocumentTitle(content);
-		const logo = await loadLogoAsset(LOGO_SRC);
-		let logoHtml = "";
-		if (logo) {
-			const size = logoDrawSize(logo, 180, 48);
-			logoHtml = `<p style="margin:0 0 12pt 0;"><img src="${logo.dataUrl}" alt="Logo" width="${Math.round(size.w)}" height="${Math.round(size.h)}" /></p>`;
-		}
-
-		let bodyHtml = "";
+		const JSZipMod = await import("jszip");
+		const JSZip = JSZipMod.default ?? JSZipMod;
+		const zip = new JSZip();
+		const paragraphs: string[] = [
+			docxParagraph(docTitle, "Title"),
+			docxParagraph(`${PRODUCT_NAME} • ${new Date().toLocaleDateString()}`, "Subtitle"),
+		];
 		for (const block of markdownBlocks(content)) {
 			if (block.kind === "h1" || block.kind === "h2" || block.kind === "h3") {
-				const tag = block.kind;
-				bodyHtml += `<${tag} style="font-family:'Segoe UI', Calibri, sans-serif; color:#1e293b;">${escapeHtml(block.text)}</${tag}>`;
+				paragraphs.push(docxParagraph(block.text, block.kind === "h1" ? "Heading1" : block.kind === "h2" ? "Heading2" : "Heading3"));
 			} else if (block.kind === "code") {
-				bodyHtml += `<pre style="background-color:#f8fafc; border:1px solid #cbd5e1; padding:12px; font-family:Consolas, 'Courier New', monospace; font-size:9.5pt; color:#0f172a; white-space:pre-wrap;">${escapeHtml(block.text)}</pre>`;
-			} else if (block.kind === "table" && block.rows) {
-				const [header, ...rest] = block.rows;
-				bodyHtml += `<table style="border-collapse:collapse; width:100%; margin:12px 0;"><thead><tr>${(header || []).map((h) => `<th style="border:1px solid #94a3b8; padding:8px;">${escapeHtml(h)}</th>`).join("")}</tr></thead><tbody>${rest.map((cells) => `<tr>${cells.map((c) => `<td style="border:1px solid #cbd5e1; padding:8px;">${escapeHtml(c)}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+				for (const line of block.text.split("\n")) paragraphs.push(docxParagraph(line || " ", "Code", true));
+			} else if (block.kind === "table" && block.rows?.length) {
+				paragraphs.push(docxTable(block.rows));
 			} else if (block.kind === "ul" || block.kind === "ol") {
-				const tag = block.kind;
-				bodyHtml += `<${tag} style="font-family:'Segoe UI', Calibri, sans-serif; font-size:11pt; line-height:1.6;">${block.text.split("\n").map((it) => `<li>${escapeHtml(it)}</li>`).join("")}</${tag}>`;
+				block.text
+					.split("\n")
+					.forEach((item, index) =>
+						paragraphs.push(docxParagraph(`${block.kind === "ol" ? `${index + 1}.` : "•"} ${item}`, "ListParagraph")),
+					);
 			} else {
-				bodyHtml += `<p style="font-family:'Segoe UI', Calibri, sans-serif; font-size:11pt; color:#1e293b; line-height:1.6; margin-bottom:10px;">${block.text.split("\n").map((line) => escapeHtml(line)).join("<br/>")}</p>`;
+				block.text.split("\n").forEach((line) => paragraphs.push(docxParagraph(line || " ")));
 			}
 		}
 
-		const fullHtml = `<!DOCTYPE html>
-<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
-<head>
-	<meta charset="utf-8">
-	<title>${escapeHtml(docTitle)}</title>
-	<!--[if gte mso 9]>
-	<xml>
-		<w:WordDocument>
-			<w:View>Print</w:View>
-			<w:Zoom>100</w:Zoom>
-			<w:DoNotOptimizeForBrowser/>
-		</w:WordDocument>
-	</xml>
-	<![endif]-->
-	<style>
-		@page {
-			size: 8.5in 11.0in;
-			margin: 1.0in 1.0in 1.0in 1.0in;
-			mso-header-margin: .5in;
-			mso-footer-margin: .5in;
-		}
-		body {
-			font-family: 'Segoe UI', Calibri, Arial, sans-serif;
-			font-size: 11pt;
-			color: #1e293b;
-		}
-	</style>
-</head>
-<body>
-	${logoHtml}
-	<div style="margin-bottom:20px;">
-		<h1 style="font-size:26pt; font-weight:bold; color:#0f172a; margin-bottom:4px; font-family:'Segoe UI', sans-serif;">${escapeHtml(docTitle)}</h1>
-		<p style="font-size:9pt; color:#64748b; font-style:italic;">${escapeHtml(PRODUCT_NAME)} • ${new Date().toLocaleDateString(undefined, { dateStyle: "long" })}</p>
-	</div>
-	<hr style="border:none; border-top:1px solid #cbd5e1; margin-bottom:24px;" />
-	${bodyHtml}
-</body>
-</html>`;
+		zip.file(
+			"[Content_Types].xml",
+			`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>`,
+		);
+		zip.file(
+			"_rels/.rels",
+			`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>`,
+		);
+		zip.file(
+			"word/_rels/document.xml.rels",
+			`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`,
+		);
+		zip.file(
+			"word/document.xml",
+			`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${paragraphs.join("")}<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1200" w:right="1200" w:bottom="1200" w:left="1200" w:header="600" w:footer="600" w:gutter="0"/></w:sectPr></w:body></w:document>`,
+		);
+		zip.file(
+			"word/styles.xml",
+			`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Aptos" w:hAnsi="Aptos" w:eastAsia="Aptos" w:cs="Aptos"/><w:sz w:val="22"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="140" w:line="300" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style><w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:rPr><w:b/><w:sz w:val="36"/><w:color w:val="0F172A"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Subtitle"><w:name w:val="Subtitle"/><w:rPr><w:color w:val="64748B"/><w:sz w:val="18"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:rPr><w:b/><w:sz w:val="30"/><w:color w:val="1E293B"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:basedOn w:val="Normal"/><w:rPr><w:b/><w:sz w:val="26"/><w:color w:val="1E293B"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading3"><w:name w:val="heading 3"/><w:basedOn w:val="Normal"/><w:rPr><w:b/><w:sz w:val="23"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Code"><w:name w:val="Code"/><w:basedOn w:val="Normal"/><w:pPr><w:shd w:fill="F1F5F9"/><w:ind w:left="180" w:right="180"/></w:pPr><w:rPr><w:rFonts w:ascii="Consolas" w:hAnsi="Consolas"/><w:sz w:val="19"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="ListParagraph"><w:name w:val="List Paragraph"/><w:basedOn w:val="Normal"/><w:pPr><w:ind w:left="360"/></w:pPr></w:style></w:styles>`,
+		);
+		zip.file(
+			"docProps/core.xml",
+			`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>${escapeXml(docTitle)}</dc:title><dc:creator>${escapeXml(PRODUCT_NAME)}</dc:creator></cp:coreProperties>`,
+		);
 
-		const blob = new Blob(["\ufeff", fullHtml], {
-			type: "application/msword;charset=utf-8",
+		const blob = await zip.generateAsync({
+			type: "blob",
+			mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 		});
 		const filename = `${sanitizeFileName(docTitle, "document")}.docx`;
 		triggerBlobDownload(blob, filename);
-
 		toast.success(`Generated and downloaded "${filename}"!`, { id: "word-export" });
 		return true;
 	} catch (err) {
@@ -707,6 +752,13 @@ export async function exportToPdf(content: string, customTitle?: string): Promis
 		}
 
 		const filename = `${sanitizeFileName(docTitle, "document")}.pdf`;
+		if (typeof window !== "undefined") {
+			window.dispatchEvent(
+				new CustomEvent("prompt-repo:pdf-preview", {
+					detail: { blob: doc.output("blob") as Blob, title: docTitle, filename },
+				}),
+			);
+		}
 		doc.save(filename);
 		toast.success(`Generated and downloaded "${filename}"!`, { id: "pdf-export" });
 		return true;
@@ -726,7 +778,7 @@ export function exportCodeFile(block: CodeBlockInfo): void {
 		const blob = new Blob([block.code], { type: "text/plain;charset=utf-8" });
 		triggerBlobDownload(blob, block.filename);
 		toast.success(`Downloaded "${block.filename}"`);
-	} catch (err) {
+	} catch {
 		toast.error(`Failed to download ${block.filename}`);
 	}
 }
@@ -759,13 +811,4 @@ export async function exportAllCodeFilesZip(blocks: CodeBlockInfo[], projectName
 		});
 		return false;
 	}
-}
-
-function escapeHtml(text: string): string {
-	return text
-		.replace(/&/g, "&amp;")
-		.replace(/</g, "&lt;")
-		.replace(/>/g, "&gt;")
-		.replace(/"/g, "&quot;")
-		.replace(/'/g, "&#039;");
 }

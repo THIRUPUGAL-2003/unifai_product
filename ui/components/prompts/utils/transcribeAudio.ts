@@ -12,6 +12,9 @@ const DEFAULT_TRANSCRIPTION_MODELS = [
 	"openai/gpt-4o-transcribe",
 ];
 
+/** Keep browser uploads aligned with the gateway transcription endpoint's request limit. */
+export const MAX_AUDIO_TRANSCRIPTION_BYTES = 25 * 1024 * 1024;
+
 function buildAuthHeaders(apiKeyId?: string, virtualKeyId?: string): Record<string, string> {
 	const headers: Record<string, string> = {};
 	if (virtualKeyId && virtualKeyId !== "__auto__" && virtualKeyId.startsWith("sk-uf-")) {
@@ -38,15 +41,16 @@ function parseTranscriptionText(data: unknown): string {
  * Transcribe audio via gateway `/v1/audio/transcriptions` (Whisper-compatible).
  * Tries a few common model ids until one succeeds.
  */
-export type TranscriptionResult =
-	| { text: string; model: string }
-	| { text: ""; model: ""; error: string };
+export type TranscriptionResult = { text: string; model: string } | { text: ""; model: ""; error: string };
 
 export async function transcribeAudioFile(
 	file: File,
 	opts?: { apiKeyId?: string; virtualKeyId?: string; models?: string[]; signal?: AbortSignal },
 ): Promise<TranscriptionResult | null> {
 	if (file.size === 0) return { text: "", model: "", error: "The audio file is empty." };
+	if (file.size > MAX_AUDIO_TRANSCRIPTION_BYTES) {
+		return { text: "", model: "", error: "Audio is larger than the 25 MB transcription limit." };
+	}
 	const models = (opts?.models?.length ? opts.models : DEFAULT_TRANSCRIPTION_MODELS).filter(Boolean);
 	const auth = buildAuthHeaders(opts?.apiKeyId, opts?.virtualKeyId);
 	let lastError = "";
@@ -80,7 +84,12 @@ export async function transcribeAudioFile(
 				}
 				lastError = `${model}: ${msg}`;
 				// These errors apply to the upload/request itself, so trying every model only repeats the same failure.
-				if (response.status === 413 || /unsupported file format|invalid file type/i.test(msg)) break;
+				if (
+					response.status === 413 ||
+					/unsupported file format|invalid file type|file size exceeds maximum limit|file too large/i.test(msg)
+				) {
+					break;
+				}
 				continue;
 			}
 
@@ -110,7 +119,10 @@ export async function transcribeAudioFile(
 	return null;
 }
 
-export function voiceTranscriptAttachment(fileName: string, transcript: string): {
+export function voiceTranscriptAttachment(
+	fileName: string,
+	transcript: string,
+): {
 	type: "text";
 	text: string;
 } {

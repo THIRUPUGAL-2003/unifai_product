@@ -6,7 +6,13 @@ export type StudioEvent = {
 	phase: "open" | "code" | "run" | "done" | "error" | "close";
 	title?: string;
 	language?: string;
+	kind?: StudioFileKind;
 	code?: string;
+	previewMarkdown?: string;
+	previewCsv?: string;
+	previewHtml?: string;
+	previewSvg?: string;
+	previewUrl?: string;
 	log?: string;
 };
 
@@ -128,7 +134,10 @@ function documentFromModel(raw: string): { title: string; body: string; csv: str
 	const python = contentFromModelCode(raw);
 	if (python.body || python.csv || python.svg) return python;
 	const fenced = raw.match(/```(?:markdown|md|text)?\s*([\s\S]*?)```/);
-	const text = (fenced?.[1] || raw).replace(/^```[\w-]*\s*/, "").replace(/```$/, "").trim();
+	const text = (fenced?.[1] || raw)
+		.replace(/^```[\w-]*\s*/, "")
+		.replace(/```$/, "")
+		.trim();
 	if (text.length > 40) return { title: "", body: text, csv: "", svg: "" };
 	return { title: "", body: "", csv: "", svg: "" };
 }
@@ -156,19 +165,24 @@ function safeSvg(svg: string): string | null {
 
 async function saveDocument(kind: StudioFileKind, title: string, plan: { markdown?: string; csv?: string; svg?: string }): Promise<string> {
 	const markdown = (plan.markdown || title).trim();
+	const extension = `.${KIND_EXT[kind]}`;
+	const normalizedTitle = title.replace(/[\\/:*?"<>|]+/g, "_").trim();
+	const baseTitle = normalizedTitle.toLowerCase().endsWith(extension) ? normalizedTitle.slice(0, -extension.length) : normalizedTitle;
+	const safeTitle = baseTitle.slice(0, 50) || "file";
 	if (kind === "pdf") {
-		await exportToPdf(markdown, title);
-		return `${title}.pdf`;
+		if (!(await exportToPdf(markdown, safeTitle))) throw new Error("The PDF could not be generated. Please try again.");
+		return `${safeTitle}.pdf`;
 	}
 	if (kind === "docx") {
-		await exportToWordDocx(markdown, title);
-		return `${title}.docx`;
+		if (!(await exportToWordDocx(markdown, safeTitle))) throw new Error("The Word document could not be generated. Please try again.");
+		return `${safeTitle}.docx`;
 	}
 	if (kind === "xlsx") {
-		await exportToExcel(plan.csv || markdown, title);
-		return `${title}.xlsx`;
+		if (!(await exportToExcel(plan.csv || markdown, safeTitle)))
+			throw new Error("The Excel file could not be generated. Please try again.");
+		return `${safeTitle}.xlsx`;
 	}
-	const filename = `${title.replace(/[\\/:*?"<>|]+/g, "_").slice(0, 50) || "file"}.${KIND_EXT[kind]}`;
+	const filename = `${safeTitle}.${KIND_EXT[kind]}`;
 	if (kind === "svg") {
 		const svg = safeSvg(plan.svg || "");
 		if (!svg) throw new Error("The model did not return a valid SVG.");
@@ -176,8 +190,7 @@ async function saveDocument(kind: StudioFileKind, title: string, plan: { markdow
 		return filename;
 	}
 	const body = kind === "csv" ? plan.csv || markdown : kind === "json" ? plan.markdown || "{}" : markdown;
-	const type =
-		kind === "html" ? "text/html" : kind === "json" ? "application/json" : kind === "csv" ? "text/csv" : "text/plain";
+	const type = kind === "html" ? "text/html" : kind === "json" ? "application/json" : kind === "csv" ? "text/csv" : "text/plain";
 	triggerBlobDownload(new Blob([body], { type: `${type};charset=utf-8` }), filename);
 	return filename;
 }
@@ -194,6 +207,7 @@ export async function runDocumentStudio(opts: {
 	emitStudio({
 		phase: "open",
 		title: `Writing ${KIND_EXT[opts.kind]}`,
+		kind: opts.kind,
 		language: "json",
 		code: "",
 		log: "The model is writing the code…",
@@ -231,12 +245,13 @@ export async function runDocumentStudio(opts: {
 	} catch {
 		code = "";
 	}
-	if (!pulled.body && !pulled.csv && revising && opts.previous) {
+	if (!pulled.body && !pulled.csv && !pulled.svg && revising && opts.previous) {
 		pulled = { title: opts.previous.title, body: opts.previous.markdown, csv: opts.previous.csv, svg: "" };
 	}
-	if (!code) {
-		code = JSON.stringify({ title: pulled.title || titleGuess, content: pulled.body }, null, 2);
+	if (!pulled.body && !pulled.csv && !pulled.svg) {
+		throw new Error("The model did not return usable file content. Please try again or make the request more specific.");
 	}
+	if (!code) code = JSON.stringify({ title: pulled.title || titleGuess, content: pulled.body, csv: pulled.csv, svg: pulled.svg }, null, 2);
 
 	let shown = "";
 	const lines = code.split("\n");
@@ -254,7 +269,17 @@ export async function runDocumentStudio(opts: {
 		csv: pulled.csv,
 		svg: pulled.svg,
 	};
-	emitStudio({ phase: "run", title: plan.title, code, log: revising ? "Updating the file…" : "Running…" });
+	emitStudio({
+		phase: "run",
+		title: plan.title,
+		kind: opts.kind,
+		code,
+		previewMarkdown: plan.markdown,
+		previewCsv: plan.csv,
+		previewHtml: opts.kind === "html" ? plan.markdown : undefined,
+		previewSvg: opts.kind === "svg" ? plan.svg : undefined,
+		log: revising ? "Updating the file…" : "Running…",
+	});
 	const filename = await saveDocument(opts.kind, plan.title || "Document", plan);
 	rememberFile({
 		kind: opts.kind,
