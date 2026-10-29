@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -321,7 +320,16 @@ func (h *PromptsHandler) createFolder(ctx *fasthttp.RequestCtx) {
 	// Bidirectional Sync: If creating under Teams/Customers/Business Units, auto-create in Governance!
 	if req.ParentID != nil && *req.ParentID != "" {
 		parent, pErr := h.store.GetFolderByID(ctx, *req.ParentID)
-		if pErr == nil && parent != nil {
+		if pErr != nil {
+			if errors.Is(pErr, configstore.ErrNotFound) {
+				SendError(ctx, fasthttp.StatusBadRequest, "parent folder not found")
+				return
+			}
+			logger.Error("failed to load parent folder for create: %v", pErr)
+			SendError(ctx, fasthttp.StatusInternalServerError, "Failed to load parent folder: "+pErr.Error())
+			return
+		}
+		if parent != nil {
 			isTeamsRoot := parent.Type == "system_teams_root" || (parent.Name == "Teams" && (parent.ParentID == nil || *parent.ParentID == ""))
 			isCustomersRoot := parent.Type == "system_customers_root" || (parent.Name == "Customers" && (parent.ParentID == nil || *parent.ParentID == ""))
 			isBURoot := parent.Type == "system_business_units_root" || (parent.Name == "Business Units" && (parent.ParentID == nil || *parent.ParentID == ""))
@@ -382,10 +390,22 @@ func (h *PromptsHandler) createFolder(ctx *fasthttp.RequestCtx) {
 					CreatedAt: time.Now(),
 					UpdatedAt: time.Now(),
 				}
-				if err := h.store.CreateCustomer(ctx, customer); err == nil {
-					folder.Type = "customer"
-					folder.EntityID = &custID
+				folder.Type = "customer"
+				folder.EntityID = &custID
+				if err := h.store.ExecuteTransaction(ctx, func(tx *gorm.DB) error {
+					if err := h.store.CreateCustomer(ctx, customer, tx); err != nil {
+						return fmt.Errorf("create customer: %w", err)
+					}
+					if err := tx.WithContext(ctx).Create(folder).Error; err != nil {
+						return fmt.Errorf("create customer folder: %w", err)
+					}
+					return nil
+				}); err != nil {
+					logger.Error("failed to create customer and folder: %v", err)
+					SendError(ctx, fasthttp.StatusInternalServerError, err.Error())
+					return
 				}
+				folderPersisted = true
 			} else if isBURoot {
 				// Business Unit created under Business Units/
 				buID := uuid.NewString()
@@ -395,12 +415,26 @@ func (h *PromptsHandler) createFolder(ctx *fasthttp.RequestCtx) {
 					CreatedAt: time.Now(),
 					UpdatedAt: time.Now(),
 				}
-				if h.store.DB() != nil {
-					if err := h.store.DB().WithContext(ctx).Create(bu).Error; err == nil {
-						folder.Type = "business_unit"
-						folder.EntityID = &buID
-					}
+				if h.store.DB() == nil {
+					SendError(ctx, fasthttp.StatusServiceUnavailable, "Database is unavailable")
+					return
 				}
+				folder.Type = "business_unit"
+				folder.EntityID = &buID
+				if err := h.store.ExecuteTransaction(ctx, func(tx *gorm.DB) error {
+					if err := tx.WithContext(ctx).Create(bu).Error; err != nil {
+						return fmt.Errorf("create business unit: %w", err)
+					}
+					if err := tx.WithContext(ctx).Create(folder).Error; err != nil {
+						return fmt.Errorf("create business-unit folder: %w", err)
+					}
+					return nil
+				}); err != nil {
+					logger.Error("failed to create business unit and folder: %v", err)
+					SendError(ctx, fasthttp.StatusInternalServerError, err.Error())
+					return
+				}
+				folderPersisted = true
 			}
 		}
 	}
@@ -1553,15 +1587,18 @@ func (h *PromptsHandler) getPromptAccess(ctx *fasthttp.RequestCtx) {
 	seenUserIDs := make(map[string]bool)
 	users := make([]PromptAccessUser, 0)
 
-	appendUser := func(userID, origin, originName string) {
+	appendUser := func(userID, origin, originName string) error {
 		if userID == "" || seenUserIDs[userID] {
-			return
+			return nil
+		}
+		u, err := h.store.GetUserByID(ctx, userID)
+		if errors.Is(err, configstore.ErrNotFound) || (err == nil && u == nil) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("load prompt access user %s: %w", userID, err)
 		}
 		seenUserIDs[userID] = true
-		u, err := h.store.GetUserByID(ctx, userID)
-		if err != nil || u == nil {
-			return
-		}
 		name := u.Username
 		if name == "" {
 			name = u.Email
@@ -1576,25 +1613,43 @@ func (h *PromptsHandler) getPromptAccess(ctx *fasthttp.RequestCtx) {
 			Origin:     origin,
 			OriginName: originName,
 		})
+		return nil
 	}
 
 	// 1. Direct Users
 	for _, uid := range userIDs {
-		appendUser(uid, "direct", "Direct Assignment")
+		if err := appendUser(uid, "direct", "Direct Assignment"); err != nil {
+			SendError(ctx, fasthttp.StatusInternalServerError, "Failed to load prompt access: "+err.Error())
+			return
+		}
 	}
 
 	// 2. Users from Teams
 	ws, _ := configstore.AsWorkspaceStore(h.store)
+	if ws == nil && (len(teamIDs) > 0 || len(customerIDs) > 0) {
+		SendError(ctx, fasthttp.StatusServiceUnavailable, "Workspace access data is unavailable")
+		return
+	}
 	if ws != nil {
 		for _, tid := range teamIDs {
 			team, err := h.store.GetTeam(ctx, tid)
 			teamName := "Team"
-			if err == nil && team != nil {
+			if err != nil && !errors.Is(err, configstore.ErrNotFound) {
+				SendError(ctx, fasthttp.StatusInternalServerError, "Failed to load team access: "+err.Error())
+				return
+			}
+			if team != nil {
 				teamName = team.Name
 			}
-			if members, err := ws.ListTeamMembers(ctx, tid); err == nil {
-				for _, m := range members {
-					appendUser(m.UserID, "team", teamName)
+			members, err := ws.ListTeamMembers(ctx, tid)
+			if err != nil {
+				SendError(ctx, fasthttp.StatusInternalServerError, "Failed to load team members: "+err.Error())
+				return
+			}
+			for _, m := range members {
+				if err := appendUser(m.UserID, "team", teamName); err != nil {
+					SendError(ctx, fasthttp.StatusInternalServerError, "Failed to load prompt access: "+err.Error())
+					return
 				}
 			}
 		}
@@ -1603,15 +1658,28 @@ func (h *PromptsHandler) getPromptAccess(ctx *fasthttp.RequestCtx) {
 		for _, cid := range customerIDs {
 			cust, err := h.store.GetCustomer(ctx, cid)
 			custName := "Customer"
-			if err == nil && cust != nil {
+			if err != nil && !errors.Is(err, configstore.ErrNotFound) {
+				SendError(ctx, fasthttp.StatusInternalServerError, "Failed to load customer access: "+err.Error())
+				return
+			}
+			if cust != nil {
 				custName = cust.Name
 			}
 			var custTeams []tables.TableTeam
-			_ = h.store.DB().Where("customer_id = ?", cid).Find(&custTeams).Error
+			if err := h.store.DB().WithContext(ctx).Where("customer_id = ?", cid).Find(&custTeams).Error; err != nil {
+				SendError(ctx, fasthttp.StatusInternalServerError, "Failed to load customer teams: "+err.Error())
+				return
+			}
 			for _, ct := range custTeams {
-				if members, err := ws.ListTeamMembers(ctx, ct.ID); err == nil {
-					for _, m := range members {
-						appendUser(m.UserID, "customer", custName+" / "+ct.Name)
+				members, err := ws.ListTeamMembers(ctx, ct.ID)
+				if err != nil {
+					SendError(ctx, fasthttp.StatusInternalServerError, "Failed to load customer team members: "+err.Error())
+					return
+				}
+				for _, m := range members {
+					if err := appendUser(m.UserID, "customer", custName+" / "+ct.Name); err != nil {
+						SendError(ctx, fasthttp.StatusInternalServerError, "Failed to load prompt access: "+err.Error())
+						return
 					}
 				}
 			}
@@ -1668,13 +1736,70 @@ func (h *PromptsHandler) updatePromptAccess(ctx *fasthttp.RequestCtx) {
 	tStr := strings.Join(cleanTeamIDs, ",")
 	uStr := strings.Join(cleanUserIDs, ",")
 
-	if err := h.store.DB().Model(&tables.TablePrompt{}).Where("id = ?", id).Updates(map[string]any{
-		"customer_ids": cStr,
-		"team_ids":     tStr,
-		"user_ids":     uStr,
-	}).Error; err != nil {
+	if err := h.store.ExecuteTransaction(ctx, func(tx *gorm.DB) error {
+		oldAudience, err := promptAudienceUserIDs(ctx, tx, splitNonEmpty(prompt.UserIDs, ","), splitNonEmpty(prompt.TeamIDs, ","), splitNonEmpty(prompt.CustomerIDs, ","))
+		if err != nil {
+			return fmt.Errorf("resolve previous prompt audience: %w", err)
+		}
+		newAudience, err := promptAudienceUserIDs(ctx, tx, cleanUserIDs, cleanTeamIDs, cleanCustomerIDs)
+		if err != nil {
+			return fmt.Errorf("resolve requested prompt audience: %w", err)
+		}
+		if prompt.OwnerUserID != nil && strings.TrimSpace(*prompt.OwnerUserID) != "" {
+			oldAudience[*prompt.OwnerUserID] = true
+			newAudience[*prompt.OwnerUserID] = true
+		}
+		if err := tx.WithContext(ctx).Model(&tables.TablePrompt{}).Where("id = ?", id).Updates(map[string]any{
+			"customer_ids": cStr,
+			"team_ids":     tStr,
+			"user_ids":     uStr,
+		}).Error; err != nil {
+			return fmt.Errorf("update prompt assignment: %w", err)
+		}
+
+		allUsers := make(map[string]struct{}, len(oldAudience)+len(newAudience))
+		for uid := range oldAudience {
+			allUsers[uid] = struct{}{}
+		}
+		for uid := range newAudience {
+			allUsers[uid] = struct{}{}
+		}
+		for uid := range allUsers {
+			var user tables.TableUser
+			if err := tx.WithContext(ctx).Where("id = ?", uid).First(&user).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					continue // stale user assignment; prompt rows remain the source of truth.
+				}
+				return fmt.Errorf("load prompt audience user %s: %w", uid, err)
+			}
+			repos := splitNonEmpty(user.AllowedPromptRepos, ",")
+			filtered := make([]string, 0, len(repos)+1)
+			found := false
+			for _, repoID := range repos {
+				if repoID == id {
+					if newAudience[uid] && !found {
+						filtered = append(filtered, id)
+						found = true
+					}
+					continue
+				}
+				filtered = append(filtered, repoID)
+			}
+			if newAudience[uid] && !found {
+				filtered = append(filtered, id)
+			}
+			newRepos := strings.Join(filtered, ",")
+			if newRepos == user.AllowedPromptRepos {
+				continue
+			}
+			if err := tx.WithContext(ctx).Model(&tables.TableUser{}).Where("id = ?", uid).Update("allowed_prompt_repos", newRepos).Error; err != nil {
+				return fmt.Errorf("sync prompt assignment for user %s: %w", uid, err)
+			}
+		}
+		return nil
+	}); err != nil {
 		logger.Error("failed to update prompt access: %v", err)
-		SendError(ctx, fasthttp.StatusInternalServerError, err.Error())
+		SendError(ctx, fasthttp.StatusInternalServerError, "Failed to update prompt access: "+err.Error())
 		return
 	}
 
@@ -1682,47 +1807,50 @@ func (h *PromptsHandler) updatePromptAccess(ctx *fasthttp.RequestCtx) {
 	prompt.TeamIDs = tStr
 	prompt.UserIDs = uStr
 
-	// Sync allowed_prompt_repos on users
-	ws, _ := configstore.AsWorkspaceStore(h.store)
-	if ws != nil {
-		allowedUserSet := make(map[string]bool)
-		for _, uid := range cleanUserIDs {
-			allowedUserSet[uid] = true
-		}
-		for _, tid := range cleanTeamIDs {
-			if members, err := ws.ListTeamMembers(ctx, tid); err == nil {
-				for _, m := range members {
-					allowedUserSet[m.UserID] = true
-				}
-			}
-		}
-		for _, cid := range cleanCustomerIDs {
-			var custTeams []tables.TableTeam
-			_ = h.store.DB().Where("customer_id = ?", cid).Find(&custTeams).Error
-			for _, ct := range custTeams {
-				if members, err := ws.ListTeamMembers(ctx, ct.ID); err == nil {
-					for _, m := range members {
-						allowedUserSet[m.UserID] = true
-					}
-				}
-			}
-		}
+	h.reloadCache(ctx)
+	h.getPromptAccess(ctx)
+}
 
-		// Ensure all allowed users have `id` in their AllowedPromptRepos
-		for uid := range allowedUserSet {
-			u, err := h.store.GetUserByID(ctx, uid)
-			if err == nil && u != nil {
-				repos := splitNonEmpty(u.AllowedPromptRepos, ",")
-				if !slices.Contains(repos, id) {
-					repos = append(repos, id)
-					_ = h.store.DB().Model(&tables.TableUser{}).Where("id = ?", uid).Update("allowed_prompt_repos", strings.Join(repos, ",")).Error
-				}
+func promptAudienceUserIDs(ctx context.Context, tx *gorm.DB, userIDs, teamIDs, customerIDs []string) (map[string]bool, error) {
+	users := make(map[string]bool, len(userIDs))
+	for _, id := range userIDs {
+		if id = strings.TrimSpace(id); id != "" {
+			users[id] = true
+		}
+	}
+	teamSet := make(map[string]bool, len(teamIDs))
+	for _, id := range teamIDs {
+		if id = strings.TrimSpace(id); id != "" {
+			teamSet[id] = true
+		}
+	}
+	if len(customerIDs) > 0 {
+		var customerTeams []tables.TableTeam
+		if err := tx.WithContext(ctx).Where("customer_id IN ?", customerIDs).Find(&customerTeams).Error; err != nil {
+			return nil, fmt.Errorf("list teams assigned through customers: %w", err)
+		}
+		for _, team := range customerTeams {
+			if team.ID != "" {
+				teamSet[team.ID] = true
 			}
 		}
 	}
-
-	h.reloadCache(ctx)
-	h.getPromptAccess(ctx)
+	if len(teamSet) > 0 {
+		ids := make([]string, 0, len(teamSet))
+		for id := range teamSet {
+			ids = append(ids, id)
+		}
+		var members []tables.TableTeamMember
+		if err := tx.WithContext(ctx).Where("team_id IN ?", ids).Find(&members).Error; err != nil {
+			return nil, fmt.Errorf("list members of assigned teams: %w", err)
+		}
+		for _, member := range members {
+			if member.UserID != "" {
+				users[member.UserID] = true
+			}
+		}
+	}
+	return users, nil
 }
 
 // unassignPromptFromAllUsers removes promptID from allowed_prompt_repos across all users in the DB.

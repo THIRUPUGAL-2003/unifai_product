@@ -14,6 +14,7 @@ import (
 	"github.com/gateway/gateway/framework/encrypt"
 	"github.com/google/uuid"
 	"github.com/valyala/fasthttp"
+	"gorm.io/gorm"
 )
 
 func (h *WorkspaceHandler) scimWorkspaceStore() configstore.WorkspaceStore {
@@ -59,26 +60,34 @@ func (h *WorkspaceHandler) scimDefaultTeam(ctx *fasthttp.RequestCtx) string {
 
 // scimAssignDefaultTeam adds the user to the default SCIM team (if configured)
 // and fires the lifecycle hook so audit logs and budget limits are applied.
-func (h *WorkspaceHandler) scimAssignDefaultTeam(ctx *fasthttp.RequestCtx, userID string) {
+func (h *WorkspaceHandler) scimAssignDefaultTeam(ctx *fasthttp.RequestCtx, userID string) error {
 	teamID := h.scimDefaultTeam(ctx)
 	if teamID == "" {
-		return
+		return nil
 	}
 	ws := h.scimWorkspaceStore()
 	if ws == nil {
-		return
+		return fmt.Errorf("workspace team store is unavailable for configured SCIM default team %s", teamID)
 	}
 	// Skip if already a member
-	if members, err := ws.ListTeamMembers(ctx, teamID); err == nil {
-		for _, m := range members {
-			if m.UserID == userID {
-				return
-			}
+	members, err := ws.ListTeamMembers(ctx, teamID)
+	if err != nil {
+		return fmt.Errorf("list members of configured SCIM default team %s: %w", teamID, err)
+	}
+	for _, m := range members {
+		if m.UserID == userID {
+			return nil
 		}
 	}
-	if err := ws.AddTeamMember(ctx, teamID, userID); err == nil && h.promptLifecycle != nil {
-		_ = h.promptLifecycle.OnTeamMemberAdded(ctx, teamID, userID)
+	if err := ws.AddTeamMember(ctx, teamID, userID); err != nil {
+		return fmt.Errorf("assign user %s to SCIM default team %s: %w", userID, teamID, err)
 	}
+	if h.promptLifecycle != nil {
+		if err := h.promptLifecycle.OnTeamMemberAdded(ctx, teamID, userID); err != nil {
+			return fmt.Errorf("sync Prompt Repository for SCIM team assignment: %w", err)
+		}
+	}
+	return nil
 }
 
 func (h *WorkspaceHandler) scimServiceProviderConfig(ctx *fasthttp.RequestCtx) {
@@ -446,7 +455,7 @@ func (h *WorkspaceHandler) scimCreateUser(ctx *fasthttp.RequestCtx) {
 			existing.Email = email
 		}
 		existing.UpdatedAt = time.Now().UTC()
-		if err := h.store.ConfigStore.UpdateUser(ctx, existing); err != nil {
+		if err := h.scimPersistUserChange(ctx, &prev, existing); err != nil {
 			if scimIsUniqueViolation(err) {
 				scimError(ctx, fasthttp.StatusConflict, "userName or email is already used by another user", "uniqueness")
 				return
@@ -454,9 +463,17 @@ func (h *WorkspaceHandler) scimCreateUser(ctx *fasthttp.RequestCtx) {
 			scimError(ctx, fasthttp.StatusInternalServerError, "failed to update user")
 			return
 		}
-		h.scimAfterUserChange(ctx, &prev, existing)
+		if err := h.scimAfterUserChange(ctx, &prev, existing); err != nil {
+			logger.Error("SCIM user update persisted but governance sync failed id=%s: %v", existing.ID, err)
+			scimError(ctx, fasthttp.StatusInternalServerError, "user was updated but session or Prompt Repository sync failed")
+			return
+		}
 		if existing.IsApproved() {
-			h.scimAssignDefaultTeam(ctx, existing.ID)
+			if err := h.scimAssignDefaultTeam(ctx, existing.ID); err != nil {
+				logger.Error("SCIM user update persisted but default team assignment failed id=%s: %v", existing.ID, err)
+				scimError(ctx, fasthttp.StatusInternalServerError, "user was updated but default team assignment failed")
+				return
+			}
 		}
 		SendSCIMJSONWithStatus(ctx, scimUserResource(existing), fasthttp.StatusOK)
 		return
@@ -508,10 +525,18 @@ func (h *WorkspaceHandler) scimCreateUser(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	if h.promptLifecycle != nil && user.IsApproved() {
-		_ = h.promptLifecycle.OnUserCreated(ctx, user, true)
+		if err := h.promptLifecycle.OnUserCreated(ctx, user, true); err != nil {
+			logger.Error("SCIM user was created but Prompt Repository setup failed id=%s: %v", user.ID, err)
+			scimError(ctx, fasthttp.StatusInternalServerError, "user was created but Prompt Repository setup failed")
+			return
+		}
 	}
 	if user.IsApproved() {
-		h.scimAssignDefaultTeam(ctx, user.ID)
+		if err := h.scimAssignDefaultTeam(ctx, user.ID); err != nil {
+			logger.Error("SCIM user was created but default team assignment failed id=%s: %v", user.ID, err)
+			scimError(ctx, fasthttp.StatusInternalServerError, "user was created but default team assignment failed")
+			return
+		}
 		trySendProvisionedEmail(h.store.ConfigStore, ctx, user.Username, user.Email, tempPassword)
 	}
 	ctx.Response.Header.Set("Location", "/scim/v2/Users/"+user.ID)
@@ -670,30 +695,53 @@ func (h *WorkspaceHandler) scimUniquenessConflict(ctx context.Context, user *tab
 	return false
 }
 
-// scimAfterUserChange keeps sessions, prompt access and the prompt repository in step with
-// a SCIM update: deactivation signs the user out, role changes apply to live sessions, and
-// reactivation restores prompt access.
-func (h *WorkspaceHandler) scimAfterUserChange(ctx *fasthttp.RequestCtx, prev, user *tables.TableUser) {
+// scimPersistUserChange writes the user and applies session status/role changes atomically.
+func (h *WorkspaceHandler) scimPersistUserChange(ctx *fasthttp.RequestCtx, prev, user *tables.TableUser) error {
 	cs := h.store.ConfigStore
 	wasActive, isActive := prev.IsApproved(), user.IsApproved()
-	if wasActive && !isActive {
-		_ = cs.DeleteSessionsByUsername(ctx, prev.Username)
-		if user.Username != prev.Username {
-			_ = cs.DeleteSessionsByUsername(ctx, user.Username)
+	return cs.ExecuteTransaction(ctx, func(tx *gorm.DB) error {
+		if err := cs.UpdateUser(ctx, user, tx); err != nil {
+			return fmt.Errorf("update SCIM user: %w", err)
 		}
-	} else if isActive && !strings.EqualFold(prev.Role, user.Role) {
-		_ = cs.UpdateSessionsRoleByUsername(ctx, prev.Username, user.Role)
-		if user.Username != prev.Username {
-			_ = cs.UpdateSessionsRoleByUsername(ctx, user.Username, user.Role)
+		if wasActive && !isActive {
+			if err := cs.DeleteSessionsByUsername(ctx, prev.Username, tx); err != nil {
+				return fmt.Errorf("revoke sessions for deactivated SCIM user: %w", err)
+			}
+			if user.Username != prev.Username {
+				if err := cs.DeleteSessionsByUsername(ctx, user.Username, tx); err != nil {
+					return fmt.Errorf("revoke sessions for renamed SCIM user: %w", err)
+				}
+			}
+		} else if isActive && !strings.EqualFold(prev.Role, user.Role) {
+			if err := cs.UpdateSessionsRoleByUsername(ctx, prev.Username, user.Role, tx); err != nil {
+				return fmt.Errorf("update session role for SCIM user: %w", err)
+			}
+			if user.Username != prev.Username {
+				if err := cs.UpdateSessionsRoleByUsername(ctx, user.Username, user.Role, tx); err != nil {
+					return fmt.Errorf("update session role for renamed SCIM user: %w", err)
+				}
+			}
 		}
-	}
+		return nil
+	})
+}
+
+// scimAfterUserChange keeps prompt ownership and visibility in step with an already-persisted
+// SCIM user update. Session changes are handled inside scimPersistUserChange's transaction.
+func (h *WorkspaceHandler) scimAfterUserChange(ctx *fasthttp.RequestCtx, prev, user *tables.TableUser) error {
+	wasActive, isActive := prev.IsApproved(), user.IsApproved()
 	if h.promptLifecycle == nil {
-		return
+		return nil
 	}
-	_ = h.promptLifecycle.OnUserUpdated(ctx, user, prev.Email, prev.Username)
+	if err := h.promptLifecycle.OnUserUpdated(ctx, user, prev.Email, prev.Username); err != nil {
+		return fmt.Errorf("rename SCIM user's prompt: %w", err)
+	}
 	if !wasActive && isActive {
-		_ = h.promptLifecycle.OnUserCreated(ctx, user, true)
+		if err := h.promptLifecycle.OnUserCreated(ctx, user, true); err != nil {
+			return fmt.Errorf("restore SCIM user's prompt: %w", err)
+		}
 	}
+	return nil
 }
 
 func (h *WorkspaceHandler) scimPutUser(ctx *fasthttp.RequestCtx) {
@@ -784,7 +832,7 @@ func (h *WorkspaceHandler) scimSaveUser(ctx *fasthttp.RequestCtx, prev, user *ta
 		}
 	}
 	user.UpdatedAt = time.Now().UTC()
-	if err := h.store.ConfigStore.UpdateUser(ctx, user); err != nil {
+	if err := h.scimPersistUserChange(ctx, prev, user); err != nil {
 		if scimIsUniqueViolation(err) {
 			scimError(ctx, fasthttp.StatusConflict, "userName or email is already used by another user", "uniqueness")
 			return
@@ -792,7 +840,11 @@ func (h *WorkspaceHandler) scimSaveUser(ctx *fasthttp.RequestCtx, prev, user *ta
 		scimError(ctx, fasthttp.StatusInternalServerError, "failed to update user")
 		return
 	}
-	h.scimAfterUserChange(ctx, prev, user)
+	if err := h.scimAfterUserChange(ctx, prev, user); err != nil {
+		logger.Error("SCIM user update persisted but governance sync failed id=%s: %v", user.ID, err)
+		scimError(ctx, fasthttp.StatusInternalServerError, "user was updated but session or Prompt Repository sync failed")
+		return
+	}
 	SendSCIMJSON(ctx, scimUserResource(user))
 }
 

@@ -2047,14 +2047,8 @@ def send_to_backend(platform: str, domain: str, prompt: str, client_ip: str, url
     Returns (allowed, rule_triggered, action, redacted_prompt, reply_text, eval_error)
     """
     if not GATEWAY_BACKEND_URL:
-        return (
-            False,
-            "Gateway Backend Unavailable",
-            "Blocked",
-            prompt,
-            "Gateway Guard cannot reach the security backend. Prompt blocked for safety.",
-            "backend url not configured",
-        )
+        # Fail-open / fallback to local rules if backend url is unconfigured
+        pass
     try:
         metadata = {
             "domain": domain,
@@ -2088,13 +2082,10 @@ def send_to_backend(platform: str, domain: str, prompt: str, client_ip: str, url
                     method="POST"
                 )
                 try:
-                    default_to = "25" if evaluation_only and not upload_images else "35"
-                    eval_timeout = float(
-                        os.getenv("GATEWAY_EVAL_TIMEOUT") or os.getenv("GATEWAY_EVAL_TIMEOUT", default_to) or default_to
-                    )
+                    eval_timeout = float(os.getenv("GATEWAY_EVAL_TIMEOUT", "2.5"))
                 except Exception:
-                    eval_timeout = 25.0 if evaluation_only else 35.0
-                eval_timeout = max(5.0, min(eval_timeout, 45.0 if evaluation_only else 95.0))
+                    eval_timeout = 2.5
+                eval_timeout = max(1.0, min(eval_timeout, 3.5))
                 with urllib.request.urlopen(req, timeout=eval_timeout) as response:
                     if response.status == 200:
                         res_data = json.loads(response.read().decode("utf-8"))

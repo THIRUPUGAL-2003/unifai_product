@@ -2488,7 +2488,11 @@ func (h *SessionHandler) updateUser(ctx *fasthttp.RequestCtx) {
 	}
 
 	if h.promptLifecycle != nil {
-		_ = h.promptLifecycle.OnUserUpdated(ctx, existingUser, prevEmail, prevUsername)
+		if err := h.promptLifecycle.OnUserUpdated(ctx, existingUser, prevEmail, prevUsername); err != nil {
+			logger.Error("user update persisted but Prompt Repository sync failed id=%s: %v", existingUser.ID, err)
+			SendError(ctx, fasthttp.StatusInternalServerError, "User was updated, but Prompt Repository sync failed: "+err.Error())
+			return
+		}
 	}
 
 	existingUser.Password = ""

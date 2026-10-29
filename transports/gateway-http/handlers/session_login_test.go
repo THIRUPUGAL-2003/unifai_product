@@ -21,28 +21,28 @@ import (
 
 type testMockLogger struct{}
 
-func (l *testMockLogger) Debug(msg string, args ...any)                                {}
-func (l *testMockLogger) Info(msg string, args ...any)                                 {}
-func (l *testMockLogger) Warn(msg string, args ...any)                                 {}
-func (l *testMockLogger) Error(msg string, args ...any)                                {}
-func (l *testMockLogger) Fatal(msg string, args ...any)                                {}
-func (l *testMockLogger) SetLevel(level schemas.LogLevel)                              {}
-func (l *testMockLogger) SetOutputType(outputType schemas.LoggerOutputType)            {}
+func (l *testMockLogger) Debug(msg string, args ...any)                     {}
+func (l *testMockLogger) Info(msg string, args ...any)                      {}
+func (l *testMockLogger) Warn(msg string, args ...any)                      {}
+func (l *testMockLogger) Error(msg string, args ...any)                     {}
+func (l *testMockLogger) Fatal(msg string, args ...any)                     {}
+func (l *testMockLogger) SetLevel(level schemas.LogLevel)                   {}
+func (l *testMockLogger) SetOutputType(outputType schemas.LoggerOutputType) {}
 func (l *testMockLogger) LogHTTPRequest(level schemas.LogLevel, msg string) schemas.LogEventBuilder {
 	return schemas.NoopLogEvent
 }
 
 type memoryConfigStore struct {
 	configstore.ConfigStore // satisfies any uncalled methods of ConfigStore interface
-	mu         sync.RWMutex
-	authConfig *configstore.AuthConfig
-	users      map[string]*tables.TableUser
-	sessions   map[string]*tables.SessionsTable
-	lockouts   map[string]*tables.TableLoginLockout
-	devices    map[string]bool
-	smtpConfig *tables.TableSMTPConfig
-	otps       map[uint]*tables.TablePasswordResetOTP
-	nextOTPID  uint
+	mu                      sync.RWMutex
+	authConfig              *configstore.AuthConfig
+	users                   map[string]*tables.TableUser
+	sessions                map[string]*tables.SessionsTable
+	lockouts                map[string]*tables.TableLoginLockout
+	devices                 map[string]bool
+	smtpConfig              *tables.TableSMTPConfig
+	otps                    map[uint]*tables.TablePasswordResetOTP
+	nextOTPID               uint
 }
 
 func newMemoryConfigStore() *memoryConfigStore {
@@ -1074,4 +1074,3 @@ func TestLogin_FullLifecycle_RegisterApproveLogin(t *testing.T) {
 		t.Fatalf("Session was not created properly for approved user")
 	}
 }
-

@@ -6434,20 +6434,6 @@ export default function BrowserAiPage() {
 															</DropdownMenuItem>
 														)}
 
-
-
-														{/* Allow Reinstall when uninstalled */}
-														{agent.status === "uninstalled" && (
-															<DropdownMenuItem
-																onClick={() => handleAllowReinstall(agent)}
-																disabled={isAllowingReinstall}
-																className="text-emerald-400 focus:text-emerald-400 focus:bg-emerald-950/40 cursor-pointer gap-2 font-medium"
-															>
-																<RefreshCw className="h-4 w-4 text-emerald-400" />
-																Allow Reinstall / Re-enroll
-															</DropdownMenuItem>
-														)}
-
 														{/* Permanent Uninstall */}
 														{agent.status !== "uninstalled" && agent.status !== "uninstall_pending" && (
 															<DropdownMenuItem

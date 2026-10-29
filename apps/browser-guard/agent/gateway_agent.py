@@ -153,42 +153,53 @@ def main() -> None:
     print(f"[Gateway Guard] Listen: {LISTEN_HOST} / advertise PAC proxy: {agent_config.PAC_ADVERTISE_ADDR or PROXY_ADDR}")
     print(f"[Gateway Guard] Local proxy: {PROXY_ADDR}")
 
-    check_backend()
-    # Check for Guard update on startup (background — does not block)
-    check_and_update_if_needed()
-    hb = send_heartbeat(agent_id)
-    if heartbeat_wants_uninstall(hb):
-        apply_admin_uninstall(agent_id)
-        return
-
-    pac = fetch_proxy_pac()
-    if pac:
-        write_local_pac(pac)
-    else:
-        pac_file = local_pac_path()
-        existing_pac = ""
-        if os.path.isfile(pac_file):
-            try:
-                with open(pac_file, "r", encoding="utf-8") as f:
-                    existing_pac = f.read()
-            except Exception:
-                existing_pac = ""
-        if existing_pac and "FindProxyForURL" in existing_pac and 'return "DIRECT";' not in existing_pac.replace(" ", ""):
-            print("[Gateway Guard] Backend offline on boot — preserving existing local proxy.pac.")
+    # 1. Immediately ensure local PAC exists and start local PAC HTTP server on port 18195 (< 5ms)
+    pac_file = local_pac_path()
+    existing_pac = ""
+    if os.path.isfile(pac_file):
+        try:
+            with open(pac_file, "r", encoding="utf-8") as f:
+                existing_pac = f.read()
+        except Exception:
+            existing_pac = ""
+    if not existing_pac:
+        built = build_pac_from_targets(PROXY_ADDR)
+        if built:
+            write_local_pac(built)
         else:
-            built = build_pac_from_targets(PROXY_ADDR)
-            if built:
-                write_local_pac(built)
-                print("[Gateway Guard] Backend offline on boot — built proxy.pac from cached targets.")
-            else:
-                write_local_pac(
-                    "// Gateway — waiting for backend Target Websites\n"
-                    'function FindProxyForURL(url, host) { return "DIRECT"; }\n'
-                )
+            write_local_pac(
+                "// Gateway — waiting for backend Target Websites\n"
+                'function FindProxyForURL(url, host) { return "DIRECT"; }\n'
+            )
+
+    if not SERVER_MODE:
+        start_local_pac_http_server()
+        set_browser_quic(enable_quic=False)
+        if IS_WIN:
+            print("[Gateway Guard] Browser HTTP/3 (QUIC) disabled for Chromium browsers so Target Websites use the proxy.")
+            print("[Gateway Guard] PAC policies: Chrome, Edge, Brave, Opera, Vivaldi + Firefox.")
+        elif IS_MAC:
+            print("[Gateway Guard] macOS system Auto Proxy URL set; Safari/Chrome/Firefox follow system proxy.")
+
+    # 2. Asynchronous background bootstrap (Backend check, update, heartbeat, PAC refresh)
+    # Instant startup: prevents any boot lag or network hangs when Windows/macOS starts up!
+    def _async_bootstrap() -> None:
+        try:
+            check_backend()
+            check_and_update_if_needed()
+            hb = send_heartbeat(agent_id)
+            if heartbeat_wants_uninstall(hb):
+                apply_admin_uninstall(agent_id)
+                return
+            new_pac = fetch_proxy_pac()
+            if new_pac:
+                write_local_pac(new_pac)
+        except Exception as ex:
+            print(f"[Gateway Guard WARNING] Background bootstrap: {ex}")
+
+    threading.Thread(target=_async_bootstrap, daemon=True, name="GuardAsyncBootstrap").start()
 
     if SERVER_MODE:
-        # Network proxy: do NOT rewrite this machine's browser PAC. IT points
-        # employee browsers at the company PAC URL advertising this host.
         corp_pac = f"{GATEWAY_BACKEND_URL}/api/browser-ai/pac?proxy={agent_config.PAC_ADVERTISE_ADDR or PROXY_ADDR}"
         print("[Gateway Guard] SERVER MODE — shared network proxy (same Gateway dashboard as laptop Guard).")
         print(f"[Gateway Guard] Point office browsers / GPO PAC to: {corp_pac}")
@@ -197,15 +208,6 @@ def main() -> None:
             print(f"[Gateway Guard ERROR] CA trust failed — open {log_hint_path()}/ca_install_status.txt")
             print("[Gateway Guard ERROR] Distribute this CA to employee machines for HTTPS MITM.")
     else:
-        start_local_pac_http_server()
-        # Do NOT apply PAC until local mitmproxy is listening — otherwise browsers
-        # hit PROXY;DIRECT, fail once, and stick on DIRECT (Claude works, logs stay 0).
-        set_browser_quic(enable_quic=False)
-        if IS_WIN:
-            print("[Gateway Guard] Browser HTTP/3 (QUIC) disabled for Chromium browsers so Target Websites use the proxy.")
-            print("[Gateway Guard] PAC policies: Chrome, Edge, Brave, Opera, Vivaldi + Firefox.")
-        elif IS_MAC:
-            print("[Gateway Guard] macOS system Auto Proxy URL set; Safari/Chrome/Firefox follow system proxy.")
         if not install_ca_certificate():
             print(f"[Gateway Guard ERROR] CA trust failed — open {log_hint_path()}/ca_install_status.txt")
             print("[Gateway Guard ERROR] Without CA trust, browsers will not accept MITM HTTPS. Fix cert then restart Guard.")

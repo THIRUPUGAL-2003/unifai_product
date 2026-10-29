@@ -300,7 +300,6 @@ type ConfigStore interface {
 	UpdateUser(ctx context.Context, user *tables.TableUser, tx ...*gorm.DB) error
 	DeleteUser(ctx context.Context, id string, tx ...*gorm.DB) error
 
-
 	// Plugins CRUD
 	GetPlugins(ctx context.Context) ([]*tables.TablePlugin, error)
 	GetPlugin(ctx context.Context, name string) (*tables.TablePlugin, error)

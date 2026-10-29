@@ -892,9 +892,10 @@
   }
 
   // Safe CSP-Compliant Dynamic Styles (Zero CSP Violations on strict default-src 'none' sites like ChatGPT)
+  var _ypInjectedSheets = {};
   function safeInjectStyle(id, cssText) {
     if (!id || !cssText) return;
-    if (document.getElementById(id)) return;
+    if (_ypInjectedSheets[id] || document.getElementById(id)) return;
 
     // 1. Constructable Stylesheets (W3C CSSOM standard, Chrome 73+, Edge 79+, Safari 16.4+, Firefox 101+)
     // Constructable Stylesheets do NOT trigger Content Security Policy (CSP) inline execution errors.
@@ -903,28 +904,21 @@
         var sheet = new CSSStyleSheet();
         sheet.replaceSync(cssText);
         sheet._ypStyleId = id;
+        _ypInjectedSheets[id] = sheet;
         document.adoptedStyleSheets = document.adoptedStyleSheets.concat([sheet]);
-
-        var marker = document.createElement("span");
-        marker.id = id;
-        marker.setAttribute("hidden", "true");
-        marker.setAttribute("data-yp-sheet", "1");
-        (document.head || document.documentElement).appendChild(marker);
         return;
       } catch (_) {}
     }
 
-    // 2. Fallback: <style> element with page CSP Nonce and safe error boundary
+    // 2. Fallback: <style> element with page CSP Nonce
     try {
+      var nonceHolder = document.querySelector("style[nonce], script[nonce], link[nonce]");
+      var n = nonceHolder ? (nonceHolder.nonce || nonceHolder.getAttribute("nonce")) : null;
       var style = document.createElement("style");
       style.id = id;
-      try {
-        var nonceHolder = document.querySelector("style[nonce], script[nonce], link[nonce]");
-        if (nonceHolder) {
-          var n = nonceHolder.nonce || nonceHolder.getAttribute("nonce");
-          if (n) style.setAttribute("nonce", n);
-        }
-      } catch (_) {}
+      if (n) {
+        style.setAttribute("nonce", n);
+      }
       style.textContent = cssText;
       (document.head || document.documentElement).appendChild(style);
     } catch (_) {}
@@ -932,22 +926,26 @@
 
   function safeRemoveStyle(id) {
     if (!id) return;
+    if (_ypInjectedSheets[id]) {
+      try {
+        var targetSheet = _ypInjectedSheets[id];
+        delete _ypInjectedSheets[id];
+        if (typeof CSSStyleSheet !== "undefined" && "adoptedStyleSheets" in document && Array.isArray(document.adoptedStyleSheets)) {
+          document.adoptedStyleSheets = document.adoptedStyleSheets.filter(function (s) {
+            return s !== targetSheet && (!s || s._ypStyleId !== id);
+          });
+        }
+      } catch (_) {}
+    }
     try {
       var el = document.getElementById(id);
       if (el) el.remove();
     } catch (_) {}
-    if (typeof CSSStyleSheet !== "undefined" && "adoptedStyleSheets" in document && Array.isArray(document.adoptedStyleSheets)) {
-      try {
-        document.adoptedStyleSheets = document.adoptedStyleSheets.filter(function (s) {
-          return !s || s._ypStyleId !== id;
-        });
-      } catch (_) {}
-    }
   }
 
   function applyScreenshotProtection() {
     var printStyleId = "yp-print-shield-style";
-    var existingPrintStyle = document.getElementById(printStyleId);
+    var existingPrintStyle = _ypInjectedSheets[printStyleId] || document.getElementById(printStyleId);
     if (govBlockScreenshot && isControlActiveForSite(govScreenshotTargetWebsites)) {
       if (!existingPrintStyle) {
         safeInjectStyle(printStyleId, "@media print { body, html { display: none !important; visibility: hidden !important; } }");
@@ -967,17 +965,45 @@
   function applyScreenshotBlur() {
     if (!armed || !govBlockScreenshot || !isControlActiveForSite(govScreenshotTargetWebsites)) return;
     dismissAllClipboardNotices();
-    if (!document.getElementById(_blurShieldStyleId)) {
+    if (!_ypInjectedSheets[_blurShieldStyleId] && !document.getElementById(_blurShieldStyleId)) {
       safeInjectStyle(_blurShieldStyleId, "body, html { filter: blur(35px) !important; -webkit-filter: blur(35px) !important; user-select: none !important; }");
     }
     if (!document.getElementById(_blurCurtainId)) {
       var curtain = document.createElement("div");
       curtain.id = _blurCurtainId;
-      curtain.style.cssText =
-        "position:fixed;inset:0;width:100vw;height:100vh;background:#0a0f1d;opacity:0.98;backdrop-filter:blur(30px);" +
-        "-webkit-backdrop-filter:blur(30px);z-index:2147483646;pointer-events:none;display:flex;align-items:center;" +
-        "justify-content:center;color:#f87171;font-family:-apple-system,BlinkMacSystemFont,sans-serif;font-size:20px;font-weight:700;";
-      curtain.innerHTML = '<div style="display:flex;align-items:center;gap:10px;"><span style="font-size:28px;">🛡️</span><span>SCREEN CAPTURE RESTRICTED</span></div>';
+      curtain.style.position = "fixed";
+      curtain.style.inset = "0";
+      curtain.style.width = "100vw";
+      curtain.style.height = "100vh";
+      curtain.style.background = "#0a0f1d";
+      curtain.style.opacity = "0.98";
+      curtain.style.backdropFilter = "blur(30px)";
+      curtain.style.webkitBackdropFilter = "blur(30px)";
+      curtain.style.zIndex = "2147483646";
+      curtain.style.pointerEvents = "none";
+      curtain.style.display = "flex";
+      curtain.style.alignItems = "center";
+      curtain.style.justifyContent = "center";
+      curtain.style.color = "#f87171";
+      curtain.style.fontFamily = "-apple-system,BlinkMacSystemFont,sans-serif";
+      curtain.style.fontSize = "20px";
+      curtain.style.fontWeight = "700";
+
+      var innerBox = document.createElement("div");
+      innerBox.style.display = "flex";
+      innerBox.style.alignItems = "center";
+      innerBox.style.gap = "10px";
+
+      var iconSpan = document.createElement("span");
+      iconSpan.style.fontSize = "28px";
+      iconSpan.textContent = "🛡️";
+
+      var textSpan = document.createElement("span");
+      textSpan.textContent = "SCREEN CAPTURE RESTRICTED";
+
+      innerBox.appendChild(iconSpan);
+      innerBox.appendChild(textSpan);
+      curtain.appendChild(innerBox);
       (document.body || document.documentElement).appendChild(curtain);
     }
   }

@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/gateway/gateway/framework/configstore"
 	"github.com/gateway/gateway/framework/configstore/tables"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -305,18 +305,60 @@ func (m *PromptLifecycleManager) OnUserCreated(ctx context.Context, user *tables
 
 	// Matching is case-insensitive on email or username, so a differently cased email or a
 	// prompt still named after the username never produces a second prompt for the same user.
-	if existing := m.findUserPrompt(ctx, user); existing != nil {
-		if existing.FolderID != nil && m.folderIsArchived(ctx, *existing.FolderID) {
-			if home := m.userHomeFolderID(ctx, user); home != "" {
-				_ = db.Model(&tables.TablePrompt{}).Where("id = ?", existing.ID).Update("folder_id", home).Error
+	var ownedPrompts []tables.TablePrompt
+	if err := ownPromptsQuery(db, user).Order("created_at asc").Find(&ownedPrompts).Error; err != nil {
+		return fmt.Errorf("find existing prompt for user %s: %w", user.ID, err)
+	}
+	var existing *tables.TablePrompt
+	for i := range ownedPrompts {
+		archived := false
+		if ownedPrompts[i].FolderID != nil && *ownedPrompts[i].FolderID != "" {
+			var err error
+			archived, err = m.promptFolderIsArchived(ctx, *ownedPrompts[i].FolderID)
+			if err != nil {
+				return fmt.Errorf("check existing prompt folder for user %s: %w", user.ID, err)
 			}
 		}
-		m.ensureUserAllowedPrompt(ctx, user, existing.ID)
+		if !archived {
+			existing = &ownedPrompts[i]
+			break
+		}
+	}
+	if existing == nil && len(ownedPrompts) > 0 {
+		existing = &ownedPrompts[0]
+	}
+	if existing != nil {
+		if existing.FolderID != nil {
+			archived, err := m.promptFolderIsArchived(ctx, *existing.FolderID)
+			if err != nil {
+				return fmt.Errorf("check archived prompt for user %s: %w", user.ID, err)
+			}
+			if archived {
+				home, err := m.userHomeFolderIDWithError(ctx, user)
+				if err != nil {
+					return fmt.Errorf("resolve home folder for user %s: %w", user.ID, err)
+				}
+				result := db.Model(&tables.TablePrompt{}).Where("id = ?", existing.ID).Update("folder_id", home)
+				if result.Error != nil {
+					return fmt.Errorf("restore prompt %s for user %s: %w", existing.ID, user.ID, result.Error)
+				}
+				if result.RowsAffected == 0 {
+					return fmt.Errorf("restore prompt %s for user %s: prompt no longer exists", existing.ID, user.ID)
+				}
+			}
+		}
+		if err := m.ensureUserAllowedPrompt(ctx, user, existing.ID); err != nil {
+			return fmt.Errorf("grant user %s access to prompt %s: %w", user.ID, existing.ID, err)
+		}
 		return nil
 	}
 	// A user created again with the same email or username gets the prompt that was
 	// moved to Removed, instead of a second prompt. A different name stays a new prompt.
-	if claimed := m.claimArchivedPromptByName(ctx, user, promptName); claimed != nil {
+	claimed, err := m.claimArchivedPromptByName(ctx, user, promptName)
+	if err != nil {
+		return fmt.Errorf("restore archived prompt for user %s: %w", user.ID, err)
+	}
+	if claimed != nil {
 		return nil
 	}
 	if !autoCreatePrompt {
@@ -359,10 +401,12 @@ func (m *PromptLifecycleManager) OnUserCreated(ctx context.Context, user *tables
 		UpdatedAt: now,
 	}
 	if err := m.store.CreatePromptSession(ctx, session); err != nil {
-		logger.Warn("PromptLifecycle: failed to create default session: %v", err)
+		return fmt.Errorf("create default prompt session for user %s: %w", user.ID, err)
 	}
 
-	m.ensureUserAllowedPrompt(ctx, user, prompt.ID)
+	if err := m.ensureUserAllowedPrompt(ctx, user, prompt.ID); err != nil {
+		return fmt.Errorf("grant user %s access to new prompt %s: %w", user.ID, prompt.ID, err)
+	}
 	return nil
 }
 
@@ -400,20 +444,63 @@ func (m *PromptLifecycleManager) findUserPrompt(ctx context.Context, user *table
 
 // userHomeFolderID is where the user's own prompt belongs: their first team's folder, else "Users/".
 func (m *PromptLifecycleManager) userHomeFolderID(ctx context.Context, user *tables.TableUser) string {
+	id, err := m.userHomeFolderIDWithError(ctx, user)
+	if err != nil {
+		logger.Error("PromptLifecycle: failed to resolve user home folder: %v", err)
+		return ""
+	}
+	return id
+}
+
+func (m *PromptLifecycleManager) userHomeFolderIDWithError(ctx context.Context, user *tables.TableUser) (string, error) {
+	if m == nil || m.store == nil || m.store.DB() == nil || user == nil {
+		return "", errors.New("database or user is unavailable")
+	}
 	db := m.store.DB().WithContext(ctx)
 	var memberships []tables.TableTeamMember
-	_ = db.Where("user_id = ?", user.ID).Order("created_at asc").Find(&memberships).Error
+	if err := db.Where("user_id = ?", user.ID).Order("created_at asc").Find(&memberships).Error; err != nil {
+		return "", fmt.Errorf("list user team memberships: %w", err)
+	}
 	for _, ms := range memberships {
 		if f, err := findEntityFolder(db, ms.TeamID, "", "team"); err == nil {
-			return f.ID
+			return f.ID, nil
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", fmt.Errorf("find team folder %s: %w", ms.TeamID, err)
 		}
 	}
 	usersFolder, err := m.EnsureSystemFolder(ctx, "Users", "system_users_root", nil)
 	if err != nil || usersFolder == nil {
-		logger.Error("PromptLifecycle: failed to ensure 'Users' folder: %v", err)
-		return ""
+		if err == nil {
+			err = errors.New("Users root folder is unavailable")
+		}
+		return "", fmt.Errorf("ensure Users folder: %w", err)
 	}
-	return usersFolder.ID
+	return usersFolder.ID, nil
+}
+
+func (m *PromptLifecycleManager) promptFolderIsArchived(ctx context.Context, folderID string) (bool, error) {
+	if folderID == "" || m == nil || m.store == nil || m.store.DB() == nil {
+		return false, errors.New("folder ID or database is unavailable")
+	}
+	db := m.store.DB().WithContext(ctx)
+	currID := folderID
+	for i := 0; i < maxFolderDepth && currID != ""; i++ {
+		var folder tables.TableFolder
+		if err := db.Where("id = ?", currID).First(&folder).Error; err != nil {
+			return false, err
+		}
+		if strings.HasPrefix(folder.Type, "system_removed_") || strings.HasPrefix(folder.Type, "archived_") {
+			return true, nil
+		}
+		if folder.ParentID == nil {
+			return false, nil
+		}
+		currID = *folder.ParentID
+	}
+	if currID != "" {
+		return false, fmt.Errorf("folder ancestry exceeds maximum depth %d", maxFolderDepth)
+	}
+	return false, nil
 }
 
 // folderIsArchived reports whether the folder is a "Removed ..." root, an archived folder, or inside one.
@@ -451,13 +538,21 @@ func (m *PromptLifecycleManager) OnUserDeleted(ctx context.Context, user *tables
 	db := m.store.DB().WithContext(ctx)
 
 	var prompts []tables.TablePrompt
-	_ = ownPromptsQuery(db, user).Find(&prompts).Error
+	if err := ownPromptsQuery(db, user).Find(&prompts).Error; err != nil {
+		return fmt.Errorf("list prompts owned by user %s: %w", user.ID, err)
+	}
 	for _, p := range prompts {
 		// Teammates only had the prompt through its team folder; it must not stay visible to them.
 		if p.FolderID != nil && *p.FolderID != removedUsersFolder.ID {
 			m.revokePromptFromFolderAudience(ctx, p.ID, *p.FolderID, removedUsersFolder.ID)
 		}
-		_ = db.Model(&tables.TablePrompt{}).Where("id = ?", p.ID).Update("folder_id", removedUsersFolder.ID).Error
+		result := db.Model(&tables.TablePrompt{}).Where("id = ?", p.ID).Update("folder_id", removedUsersFolder.ID)
+		if result.Error != nil {
+			return fmt.Errorf("move prompt %s to Removed Users: %w", p.ID, result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return fmt.Errorf("move prompt %s to Removed Users: prompt no longer exists", p.ID)
+		}
 	}
 	return nil
 }
@@ -491,7 +586,9 @@ func (m *PromptLifecycleManager) OnUserUpdated(ctx context.Context, user *tables
 	// Only rename owned prompts still named after the old email/username; a name someone
 	// chose manually is kept.
 	var owned []tables.TablePrompt
-	_ = ownPromptsQuery(db, user).Find(&owned).Error
+	if err := ownPromptsQuery(db, user).Find(&owned).Error; err != nil {
+		return fmt.Errorf("list prompts owned by user %s for rename: %w", user.ID, err)
+	}
 	for _, p := range owned {
 		if !slices.Contains(oldIdentifiers, strings.ToLower(strings.TrimSpace(p.Name))) {
 			continue
@@ -1290,14 +1387,14 @@ func (m *PromptLifecycleManager) memberLeftTeam(ctx context.Context, teamID stri
 }
 
 // ensureUserAllowedPrompt appends promptID to user.AllowedPromptRepos if not already present.
-func (m *PromptLifecycleManager) ensureUserAllowedPrompt(ctx context.Context, user *tables.TableUser, promptID string) {
+func (m *PromptLifecycleManager) ensureUserAllowedPrompt(ctx context.Context, user *tables.TableUser, promptID string) error {
 	if user == nil || promptID == "" {
-		return
+		return nil
 	}
 	repos := strings.Split(user.AllowedPromptRepos, ",")
 	for _, r := range repos {
 		if strings.TrimSpace(r) == promptID {
-			return
+			return nil
 		}
 	}
 
@@ -1309,7 +1406,10 @@ func (m *PromptLifecycleManager) ensureUserAllowedPrompt(ctx context.Context, us
 	}
 
 	user.AllowedPromptRepos = newRepos
-	_ = m.store.UpdateUser(ctx, user)
+	if err := m.store.UpdateUser(ctx, user); err != nil {
+		return fmt.Errorf("update allowed prompt repositories for user %s: %w", user.ID, err)
+	}
+	return nil
 }
 
 // removeUserAllowedPrompt removes promptID from user.AllowedPromptRepos.
@@ -2308,45 +2408,59 @@ func (m *PromptLifecycleManager) restoreArchivedFolder(ctx context.Context, name
 
 // claimArchivedPromptByName gives a newly created user the Removed prompt that still has
 // their email or username, when that prompt no longer belongs to a living user.
-func (m *PromptLifecycleManager) claimArchivedPromptByName(ctx context.Context, user *tables.TableUser, promptName string) *tables.TablePrompt {
+func (m *PromptLifecycleManager) claimArchivedPromptByName(ctx context.Context, user *tables.TableUser, promptName string) (*tables.TablePrompt, error) {
 	if user == nil || strings.TrimSpace(promptName) == "" {
-		return nil
+		return nil, nil
 	}
 	db := m.store.DB().WithContext(ctx)
 	var prompts []tables.TablePrompt
 	if err := db.Where("LOWER(name) = ?", strings.ToLower(strings.TrimSpace(promptName))).Order("updated_at desc, created_at desc").Find(&prompts).Error; err != nil {
-		return nil
+		return nil, fmt.Errorf("query archived prompts: %w", err)
 	}
 	for i := range prompts {
 		prompt := &prompts[i]
-		if prompt.FolderID == nil || !m.folderIsArchived(ctx, *prompt.FolderID) {
+		if prompt.FolderID == nil || *prompt.FolderID == "" {
+			continue
+		}
+		archived, err := m.promptFolderIsArchived(ctx, *prompt.FolderID)
+		if err != nil {
+			return nil, fmt.Errorf("check folder for archived prompt %s: %w", prompt.ID, err)
+		}
+		if !archived {
 			continue
 		}
 		if prompt.OwnerUserID != nil && *prompt.OwnerUserID != "" && *prompt.OwnerUserID != user.ID {
 			if owner, err := m.store.GetUserByID(ctx, *prompt.OwnerUserID); err == nil && owner != nil {
 				continue
+			} else if err != nil && !errors.Is(err, configstore.ErrNotFound) {
+				return nil, fmt.Errorf("check owner %s of archived prompt %s: %w", *prompt.OwnerUserID, prompt.ID, err)
 			}
 		}
-		home := m.userHomeFolderID(ctx, user)
-		if home == "" {
-			return nil
+		home, err := m.userHomeFolderIDWithError(ctx, user)
+		if err != nil {
+			return nil, fmt.Errorf("resolve home folder for archived prompt %s: %w", prompt.ID, err)
 		}
-		if err := db.Model(&tables.TablePrompt{}).Where("id = ?", prompt.ID).Updates(map[string]any{
+		result := db.Model(&tables.TablePrompt{}).Where("id = ?", prompt.ID).Updates(map[string]any{
 			"folder_id":     home,
 			"owner_user_id": user.ID,
 			"name":          strings.TrimSpace(promptName),
 			"updated_at":    time.Now(),
-		}).Error; err != nil {
-			logger.Error("PromptLifecycle: failed to restore prompt %q: %v", promptName, err)
-			return nil
+		})
+		if result.Error != nil {
+			return nil, fmt.Errorf("restore archived prompt %s: %w", prompt.ID, result.Error)
 		}
-		m.ensureUserAllowedPrompt(ctx, user, prompt.ID)
+		if result.RowsAffected == 0 {
+			return nil, fmt.Errorf("restore archived prompt %s: prompt no longer exists", prompt.ID)
+		}
+		if err := m.ensureUserAllowedPrompt(ctx, user, prompt.ID); err != nil {
+			return nil, fmt.Errorf("grant access to restored prompt %s: %w", prompt.ID, err)
+		}
 		prompt.FolderID = &home
 		ownerID := user.ID
 		prompt.OwnerUserID = &ownerID
-		return prompt
+		return prompt, nil
 	}
-	return nil
+	return nil, nil
 }
 
 // findEntityFolder returns the folder linked to an entity, preferring the entity_id link and

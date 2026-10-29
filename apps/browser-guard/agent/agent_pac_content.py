@@ -21,18 +21,18 @@ def check_backend() -> bool:
     targets = _http_get_text(
         f"{GATEWAY_BACKEND_URL}/api/browser-ai/targets?for=agent",
         "application/json",
-        timeout=45,
+        timeout=3,
     )
     if not (targets and ("targets" in targets or targets.strip().startswith("{"))):
         targets = _http_get_text(
             f"{GATEWAY_BACKEND_URL}/api/browser-ai/targets",
             "application/json",
-            timeout=45,
+            timeout=3,
         )
     if targets and ("targets" in targets or targets.strip().startswith("{")):
         print(f"[Gateway Guard] Backend Browser AI API OK: {GATEWAY_BACKEND_URL}")
         return True
-    health = _http_get_text(f"{GATEWAY_BACKEND_URL}/health", "application/json", timeout=8)
+    health = _http_get_text(f"{GATEWAY_BACKEND_URL}/health", "application/json", timeout=3)
     if health and '"status"' in health:
         print("[Gateway Guard WARNING] /health OK but /api/browser-ai/targets failed — Browser AI may be missing on this deploy.")
     print(f"[Gateway Guard ERROR] Cannot reach Browser AI API at {GATEWAY_BACKEND_URL}")

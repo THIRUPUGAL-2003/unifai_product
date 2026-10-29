@@ -547,7 +547,7 @@ func (s *RDBConfigStore) ensureVirtualKeyUsersTable(ctx context.Context) error {
 	return s.ensureTableOnce("vk_users", func() error {
 		db := s.DB().WithContext(ctx)
 		if !db.Migrator().HasTable(&tables.TableVirtualKeyUser{}) {
-			return db.AutoMigrate(&tables.TableVirtualKeyUser{}).Error
+			return db.AutoMigrate(&tables.TableVirtualKeyUser{})
 		}
 		// Drop old unique index on virtual_key_id alone if it exists so multiple users can share the same virtual key.
 		for _, index := range []string{
@@ -561,7 +561,7 @@ func (s *RDBConfigStore) ensureVirtualKeyUsersTable(ctx context.Context) error {
 				}
 			}
 		}
-		return db.AutoMigrate(&tables.TableVirtualKeyUser{}).Error
+		return db.AutoMigrate(&tables.TableVirtualKeyUser{})
 	})
 }
 
@@ -648,7 +648,7 @@ func (s *RDBConfigStore) ensureVirtualKeyTeamsTable(ctx context.Context) error {
 	return s.ensureTableOnce("vk_teams", func() error {
 		db := s.DB().WithContext(ctx)
 		if !db.Migrator().HasTable(&tables.TableVirtualKeyTeam{}) {
-			return db.AutoMigrate(&tables.TableVirtualKeyTeam{}).Error
+			return db.AutoMigrate(&tables.TableVirtualKeyTeam{})
 		}
 		return nil
 	})
@@ -702,7 +702,7 @@ func (s *RDBConfigStore) ensureVirtualKeyBusinessUnitsTable(ctx context.Context)
 	return s.ensureTableOnce("vk_business_units", func() error {
 		db := s.DB().WithContext(ctx)
 		if !db.Migrator().HasTable(&tables.TableVirtualKeyBusinessUnit{}) {
-			return db.AutoMigrate(&tables.TableVirtualKeyBusinessUnit{}).Error
+			return db.AutoMigrate(&tables.TableVirtualKeyBusinessUnit{})
 		}
 		return nil
 	})
@@ -714,7 +714,7 @@ func (s *RDBConfigStore) EnsureWorkspaceTables(ctx context.Context) error {
 		db := s.DB().WithContext(ctx)
 		for _, model := range tables.WorkspaceModels() {
 			if !db.Migrator().HasTable(model) {
-				if err := db.AutoMigrate(model).Error; err != nil {
+				if err := db.AutoMigrate(model); err != nil {
 					return fmt.Errorf("ensure workspace table for %T: %w", model, err)
 				}
 			}
@@ -813,7 +813,7 @@ func (s *RDBConfigStore) ensureVirtualKeyCustomersTable(ctx context.Context) err
 	return s.ensureTableOnce("vk_customers", func() error {
 		db := s.DB().WithContext(ctx)
 		if !db.Migrator().HasTable(&tables.TableVirtualKeyCustomer{}) {
-			return db.AutoMigrate(&tables.TableVirtualKeyCustomer{}).Error
+			return db.AutoMigrate(&tables.TableVirtualKeyCustomer{})
 		}
 		return nil
 	})
