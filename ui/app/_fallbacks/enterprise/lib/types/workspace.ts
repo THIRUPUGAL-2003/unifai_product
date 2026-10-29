@@ -116,6 +116,8 @@ export interface AuditLogFilters {
 export interface AuditSettings {
 	disabled: boolean;
 	retention_days: number;
+	auto_delete?: boolean;
+	retention_period?: string;
 	hmac_key?: string;
 }
 

@@ -1,15 +1,42 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+	AlertDialog,
+	AlertDialogAction,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogTitle,
+} from "@/components/ui/alertDialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
 import { ExportFormatsDropdown } from "@/components/exportFormatsDropdown";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { getErrorMessage, useIsAuthEnabledQuery } from "@/lib/store";
 import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
-import { useGetAuditLogsQuery, useLazyExportAuditLogsQuery } from "@enterprise/lib/store/apis/auditLogsApi";
+import { Switch } from "@/components/ui/switch";
+import {
+	useGetAuditLogsQuery,
+	useLazyExportAuditLogsQuery,
+	useGetAuditSettingsQuery,
+	useUpdateAuditSettingsMutation,
+	useBulkDeleteAuditLogsMutation,
+	useDeleteAuditLogMutation,
+} from "@enterprise/lib/store/apis/auditLogsApi";
 import type { AuditLog } from "@enterprise/lib/types/workspace";
-import { Check, Copy, Eye, RefreshCw, ScrollText, Search, X } from "lucide-react";
+import { Check, Clock, Copy, Eye, Loader2, RefreshCw, ScrollText, Search, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { DataTablePagination } from "@/components/table/dataTablePagination";
 import { toast } from "sonner";
@@ -84,6 +111,11 @@ export default function AuditLogsView() {
 	const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null);
 	const [copied, setCopied] = useState(false);
 
+	// Deletion & selection states
+	const [selectedLogIds, setSelectedLogIds] = useState<Set<number | string>>(new Set());
+	const [logToDelete, setLogToDelete] = useState<AuditLog | null>(null);
+	const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
+
 	const filters = useMemo(
 		() => ({ search: search.trim() || undefined, action: action || undefined, outcome: outcome || undefined }),
 		[search, action, outcome],
@@ -104,12 +136,46 @@ export default function AuditLogsView() {
 	);
 
 	const [exportAuditLogs] = useLazyExportAuditLogsQuery();
+	const { data: auditSettings, refetch: refetchSettings } = useGetAuditSettingsQuery();
+	const [updateAuditSettings, { isLoading: isUpdatingSettings }] = useUpdateAuditSettingsMutation();
+	const [bulkDeleteAuditLogs, { isLoading: isBulkDeleting }] = useBulkDeleteAuditLogsMutation();
+	const [deleteAuditLog, { isLoading: isSingleDeleting }] = useDeleteAuditLogMutation();
+
 	const { data: authStatus } = useIsAuthEnabledQuery();
 	const isSuperAdmin = authStatus?.role === "admin";
 	const hasDownloadAccess = useRbac(RbacResource.AuditLogs, RbacOperation.Download) || isSuperAdmin;
+	const hasDeleteAccess = useRbac(RbacResource.AuditLogs, RbacOperation.Delete) || isSuperAdmin;
 
 	const logs = data?.logs || [];
 	const total = data?.total_count ?? 0;
+
+	// Reset selection when logs change
+	useEffect(() => {
+		setSelectedLogIds(new Set());
+	}, [page, filters]);
+
+	const allPageSelected = logs.length > 0 && logs.every((l) => selectedLogIds.has(l.id));
+
+	const toggleSelectAll = () => {
+		const next = new Set(selectedLogIds);
+		if (allPageSelected) {
+			for (const l of logs) next.delete(l.id);
+		} else {
+			for (const l of logs) next.add(l.id);
+		}
+		setSelectedLogIds(next);
+	};
+
+	const toggleSelectLog = (id: number | string, e: React.MouseEvent) => {
+		e.stopPropagation();
+		const next = new Set(selectedLogIds);
+		if (next.has(id)) {
+			next.delete(id);
+		} else {
+			next.add(id);
+		}
+		setSelectedLogIds(next);
+	};
 
 	const handleCopyDetail = () => {
 		if (!selectedLog?.detail) return;
@@ -117,6 +183,72 @@ export default function AuditLogsView() {
 		setCopied(true);
 		toast.success("Audit detail payload copied to clipboard");
 		setTimeout(() => setCopied(false), 2000);
+	};
+
+	const handleToggleAutoDelete = async (checked: boolean) => {
+		try {
+			await updateAuditSettings({
+				disabled: auditSettings?.disabled ?? false,
+				auto_delete: checked,
+				retention_period: auditSettings?.retention_period || "30d",
+				retention_days: auditSettings?.retention_days || 30,
+			}).unwrap();
+			toast.success(checked ? "Audit log auto-delete enabled" : "Audit log auto-delete disabled");
+			refetchSettings();
+			refetch();
+		} catch (err) {
+			toast.error(getErrorMessage(err) || "Failed to update auto-delete setting");
+		}
+	};
+
+	const handleRetentionPeriodChange = async (period: string) => {
+		const daysMap: Record<string, number> = {
+			"1d": 1,
+			"7d": 7,
+			"30d": 30,
+			"90d": 90,
+			"180d": 180,
+			"365d": 365,
+		};
+		try {
+			await updateAuditSettings({
+				disabled: auditSettings?.disabled ?? false,
+				auto_delete: true,
+				retention_period: period,
+				retention_days: daysMap[period] ?? 30,
+			}).unwrap();
+			toast.success(`Auto-delete retention set to ${period}`);
+			refetchSettings();
+			refetch();
+		} catch (err) {
+			toast.error(getErrorMessage(err) || "Failed to update retention period");
+		}
+	};
+
+	const handleBulkDelete = async () => {
+		if (selectedLogIds.size === 0) return;
+		try {
+			const res = await bulkDeleteAuditLogs({ ids: Array.from(selectedLogIds) }).unwrap();
+			toast.success(`${res.deleted} audit log${res.deleted === 1 ? "" : "s"} deleted successfully`);
+			setBulkDeleteDialogOpen(false);
+			setSelectedLogIds(new Set());
+		} catch (err) {
+			toast.error(getErrorMessage(err) || "Failed to delete selected audit logs");
+		}
+	};
+
+	const handleSingleDelete = async () => {
+		if (!logToDelete) return;
+		try {
+			await deleteAuditLog(logToDelete.id).unwrap();
+			toast.success("Audit log entry deleted successfully");
+			if (selectedLog?.id === logToDelete.id) {
+				setSelectedLog(null);
+			}
+			setLogToDelete(null);
+		} catch (err) {
+			toast.error(getErrorMessage(err) || "Failed to delete audit log");
+		}
 	};
 
 	const getExportPayload = useCallback(async () => {
@@ -171,7 +303,58 @@ export default function AuditLogsView() {
 						Live recording of every administrative mutation across the workspace — roles, permissions, access profiles, virtual keys, users, and logins.
 					</p>
 				</div>
-				<div className="flex items-center gap-2">
+				<div className="flex items-center gap-2 flex-wrap">
+					{/* Bulk Delete Selected Button */}
+					{hasDeleteAccess && selectedLogIds.size > 0 && (
+						<Button
+							variant="destructive"
+							size="sm"
+							onClick={() => setBulkDeleteDialogOpen(true)}
+							disabled={isBulkDeleting}
+							className="h-8 gap-1.5 text-xs font-medium"
+						>
+							<Trash2 className="h-3.5 w-3.5" />
+							Delete Selected ({selectedLogIds.size})
+						</Button>
+					)}
+
+					{/* Auto-delete Setting Control */}
+					{hasDeleteAccess && (
+						<div
+							className="flex items-center gap-2 rounded-lg border border-border/80 bg-muted/40 px-2.5 py-1 text-xs"
+							title="Automatically purge audit logs older than the configured retention period"
+						>
+							<Clock className="h-3.5 w-3.5 text-muted-foreground" />
+							<span className="font-medium text-foreground text-xs whitespace-nowrap">Auto-delete:</span>
+							<Switch
+								checked={auditSettings?.auto_delete ?? false}
+								disabled={isUpdatingSettings}
+								onCheckedChange={handleToggleAutoDelete}
+								aria-label="Toggle auto delete audit logs"
+								className="scale-75 data-[state=checked]:bg-emerald-600"
+							/>
+							{auditSettings?.auto_delete && (
+								<Select
+									value={auditSettings?.retention_period || "30d"}
+									disabled={isUpdatingSettings}
+									onValueChange={handleRetentionPeriodChange}
+								>
+									<SelectTrigger className="h-6 w-[92px] text-[11px] px-1.5 py-0 border-border bg-background">
+										<SelectValue />
+									</SelectTrigger>
+									<SelectContent>
+										<SelectItem value="1d">1 day</SelectItem>
+										<SelectItem value="7d">7 days</SelectItem>
+										<SelectItem value="30d">30 days</SelectItem>
+										<SelectItem value="90d">90 days</SelectItem>
+										<SelectItem value="180d">180 days</SelectItem>
+										<SelectItem value="365d">365 days</SelectItem>
+									</SelectContent>
+								</Select>
+							)}
+						</div>
+					)}
+
 					<button
 						type="button"
 						onClick={() => setIsLive(!isLive)}
@@ -272,6 +455,15 @@ export default function AuditLogsView() {
 					<Table>
 						<TableHeader>
 							<TableRow>
+								{hasDeleteAccess && (
+									<TableHead className="w-[40px] px-2 text-center">
+										<Checkbox
+											checked={allPageSelected}
+											onCheckedChange={toggleSelectAll}
+											aria-label="Select all logs on current page"
+										/>
+									</TableHead>
+								)}
 								<TableHead className="w-[100px]">Date</TableHead>
 								<TableHead className="w-[100px]">Time</TableHead>
 								<TableHead className="w-[100px]">Action</TableHead>
@@ -281,62 +473,85 @@ export default function AuditLogsView() {
 								<TableHead className="min-w-[180px]">Path</TableHead>
 								<TableHead className="w-[110px]">IP</TableHead>
 								<TableHead className="w-[85px]">Duration</TableHead>
-								<TableHead className="w-[50px] text-center">Inspect</TableHead>
+								<TableHead className="w-[80px] text-center">Actions</TableHead>
 							</TableRow>
 						</TableHeader>
 						<TableBody>
 							{logs.length === 0 ? (
 								<TableRow>
-									<TableCell colSpan={10} className="text-muted-foreground h-28 text-center text-sm">
+									<TableCell colSpan={hasDeleteAccess ? 11 : 10} className="text-muted-foreground h-28 text-center text-sm">
 										No audit entries match the current filter. Perform actions in Roles & Permissions or Access Profiles to see live events.
 									</TableCell>
 								</TableRow>
 							) : (
-								logs.map((log) => (
-									<TableRow
-										key={log.id}
-										onClick={() => setSelectedLog(log)}
-										className="cursor-pointer transition-colors hover:bg-muted/50"
-										title="Click to inspect audit payload & details"
-									>
-										<TableCell className="font-mono text-xs whitespace-nowrap text-muted-foreground">
-											{formatAuditDate(log.created_at)}
-										</TableCell>
-										<TableCell className="font-mono text-xs whitespace-nowrap text-muted-foreground">
-											{formatAuditTime(log.created_at)}
-										</TableCell>
-										<TableCell>{getActionBadge(log.action)}</TableCell>
-										<TableCell>
-											<Badge variant={log.outcome === "success" ? "secondary" : "destructive"}>
-												{log.outcome}
-											</Badge>
-										</TableCell>
-										<TableCell className="font-medium text-xs truncate max-w-[130px]" title={log.initiator}>
-											{log.initiator || "system"}
-										</TableCell>
-										<TableCell className="font-medium text-xs max-w-[180px] truncate" title={log.target}>
-											{log.target || "—"}
-										</TableCell>
-										<TableCell className="font-mono text-xs max-w-[220px] truncate text-muted-foreground" title={`${log.method} ${log.path}`}>
-											<span className="font-semibold text-foreground/80">{log.method}</span> {log.path}
-										</TableCell>
-										<TableCell className="font-mono text-xs text-muted-foreground">{log.ip || "—"}</TableCell>
-										<TableCell className="text-xs text-muted-foreground whitespace-nowrap">{log.duration_ms ?? 0}ms</TableCell>
-										<TableCell className="text-center">
-											<Button
-												variant="ghost"
-												size="icon"
-												className="h-7 w-7 text-muted-foreground hover:text-foreground"
-												onClick={(e) => {
-													e.stopPropagation();
-													setSelectedLog(log);
-												}}
-											>
-												<Eye className="h-3.5 w-3.5" />
-											</Button>
-										</TableCell>
-									</TableRow>
-								))
+								logs.map((log) => {
+									const isSelected = selectedLogIds.has(log.id);
+									return (
+										<TableRow
+											key={log.id}
+											onClick={() => setSelectedLog(log)}
+											className={`cursor-pointer transition-colors hover:bg-muted/50 ${isSelected ? "bg-muted/40" : ""}`}
+											title="Click to inspect audit payload & details"
+										>
+											{hasDeleteAccess && (
+												<TableCell className="w-[40px] px-2 text-center" onClick={(e) => toggleSelectLog(log.id, e)}>
+													<Checkbox
+														checked={isSelected}
+														onCheckedChange={() => {}}
+														aria-label={`Select audit log ${log.id}`}
+													/>
+												</TableCell>
+											)}
+											<TableCell className="font-mono text-xs whitespace-nowrap text-muted-foreground">
+												{formatAuditDate(log.created_at)}
+											</TableCell>
+											<TableCell className="font-mono text-xs whitespace-nowrap text-muted-foreground">
+												{formatAuditTime(log.created_at)}
+											</TableCell>
+											<TableCell>{getActionBadge(log.action)}</TableCell>
+											<TableCell>
+												<Badge variant={log.outcome === "success" ? "secondary" : "destructive"}>
+													{log.outcome}
+												</Badge>
+											</TableCell>
+											<TableCell className="font-medium text-xs truncate max-w-[130px]" title={log.initiator}>
+												{log.initiator || "system"}
+											</TableCell>
+											<TableCell className="font-medium text-xs max-w-[180px] truncate" title={log.target}>
+												{log.target || "—"}
+											</TableCell>
+											<TableCell className="font-mono text-xs max-w-[220px] truncate text-muted-foreground" title={`${log.method} ${log.path}`}>
+												<span className="font-semibold text-foreground/80">{log.method}</span> {log.path}
+											</TableCell>
+											<TableCell className="font-mono text-xs text-muted-foreground">{log.ip || "—"}</TableCell>
+											<TableCell className="text-xs text-muted-foreground whitespace-nowrap">{log.duration_ms ?? 0}ms</TableCell>
+											<TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
+												<div className="inline-flex items-center gap-1">
+													<Button
+														variant="ghost"
+														size="icon"
+														className="h-7 w-7 text-muted-foreground hover:text-foreground"
+														onClick={() => setSelectedLog(log)}
+														title="Inspect details"
+													>
+														<Eye className="h-3.5 w-3.5" />
+													</Button>
+													{hasDeleteAccess && (
+														<Button
+															variant="ghost"
+															size="icon"
+															className="h-7 w-7 text-muted-foreground hover:text-rose-500"
+															onClick={() => setLogToDelete(log)}
+															title="Delete this audit log"
+														>
+															<Trash2 className="h-3.5 w-3.5" />
+														</Button>
+													)}
+												</div>
+											</TableCell>
+										</TableRow>
+									);
+								})
 							)}
 						</TableBody>
 					</Table>
@@ -358,7 +573,7 @@ export default function AuditLogsView() {
 				dataTestId="audit-logs-pagination"
 			/>
 
-			{/* Detail Dialog */}
+			{/* Inspect Detail Dialog */}
 			<Dialog open={!!selectedLog} onOpenChange={(open) => !open && setSelectedLog(null)}>
 				<DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
 					<DialogHeader>
@@ -444,13 +659,95 @@ export default function AuditLogsView() {
 						</div>
 					)}
 
-					<DialogFooter>
-						<Button variant="outline" size="sm" onClick={() => setSelectedLog(null)}>
+					<DialogFooter className="flex items-center justify-between sm:justify-between w-full">
+						{hasDeleteAccess && selectedLog && (
+							<Button
+								variant="destructive"
+								size="sm"
+								onClick={() => {
+									const target = selectedLog;
+									setLogToDelete(target);
+								}}
+								className="gap-1.5 text-xs"
+							>
+								<Trash2 className="h-3.5 w-3.5" />
+								Delete Event
+							</Button>
+						)}
+						<Button variant="outline" size="sm" onClick={() => setSelectedLog(null)} className="ml-auto">
 							Close
 						</Button>
 					</DialogFooter>
 				</DialogContent>
 			</Dialog>
+
+{/* Bulk Delete Selected Dialog */}
+			<AlertDialog open={bulkDeleteDialogOpen} onOpenChange={setBulkDeleteDialogOpen}>
+				<AlertDialogContent className="bg-card border-border text-foreground">
+					<AlertDialogHeader>
+						<AlertDialogTitle className="flex items-center gap-2 text-destructive">
+							<Trash2 className="h-5 w-5" /> Delete Selected Audit Logs
+						</AlertDialogTitle>
+						<AlertDialogDescription>
+							{selectedLogIds.size} selected audit log{selectedLogIds.size === 1 ? "" : "s"} will be permanently removed from the database. This action cannot be undone.
+						</AlertDialogDescription>
+					</AlertDialogHeader>
+					<AlertDialogFooter>
+						<AlertDialogCancel disabled={isBulkDeleting}>Cancel</AlertDialogCancel>
+						<AlertDialogAction
+							onClick={(e) => {
+								e.preventDefault();
+								handleBulkDelete();
+							}}
+							disabled={isBulkDeleting}
+							className="bg-destructive hover:bg-destructive/90 text-destructive-foreground font-medium"
+						>
+							{isBulkDeleting ? (
+								<>
+									<Loader2 className="mr-2 h-4 w-4 animate-spin" />
+									Deleting...
+								</>
+							) : (
+								"Delete"
+							)}
+						</AlertDialogAction>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
+
+			{/* Single Log Delete Dialog */}
+			<AlertDialog open={!!logToDelete} onOpenChange={(open) => !open && setLogToDelete(null)}>
+				<AlertDialogContent className="bg-card border-border text-foreground">
+					<AlertDialogHeader>
+						<AlertDialogTitle className="flex items-center gap-2 text-destructive">
+							<Trash2 className="h-5 w-5" /> Delete Audit Log Entry
+						</AlertDialogTitle>
+						<AlertDialogDescription>
+							Are you sure you want to delete the audit log for action &quot;{logToDelete?.action}&quot; on &quot;{logToDelete?.target}&quot; recorded at {logToDelete ? `${formatAuditDate(logToDelete.created_at)} ${formatAuditTime(logToDelete.created_at)}` : ""}? This action cannot be undone.
+						</AlertDialogDescription>
+					</AlertDialogHeader>
+					<AlertDialogFooter>
+						<AlertDialogCancel disabled={isSingleDeleting}>Cancel</AlertDialogCancel>
+						<AlertDialogAction
+							onClick={(e) => {
+								e.preventDefault();
+								handleSingleDelete();
+							}}
+							disabled={isSingleDeleting}
+							className="bg-destructive hover:bg-destructive/90 text-destructive-foreground font-medium"
+						>
+							{isSingleDeleting ? (
+								<>
+									<Loader2 className="mr-2 h-4 w-4 animate-spin" />
+									Deleting...
+								</>
+							) : (
+								"Delete Entry"
+							)}
+						</AlertDialogAction>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
 		</div>
 	);
 }

@@ -31,6 +31,9 @@ func NewWorkspaceHandler(store *lib.Config, governanceManager ...GovernanceManag
 		if store.ConfigStore != nil {
 			h.promptLifecycle = NewPromptLifecycleManager(store.ConfigStore)
 		}
+		if h.workspace != nil {
+			StartAuditLogRetentionCleanup(h.workspace)
+		}
 	}
 	if len(governanceManager) > 0 {
 		h.governanceManager = governanceManager[0]

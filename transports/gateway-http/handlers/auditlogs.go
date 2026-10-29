@@ -1,9 +1,12 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gateway/gateway/framework/configstore"
@@ -12,9 +15,90 @@ import (
 )
 
 type auditSettingsPayload struct {
-	Disabled      bool   `json:"disabled"`
-	RetentionDays int    `json:"retention_days"`
-	HMACKey       string `json:"hmac_key,omitempty"`
+	Disabled        bool   `json:"disabled"`
+	RetentionDays   int    `json:"retention_days"`
+	AutoDelete      bool   `json:"auto_delete"`
+	RetentionPeriod string `json:"retention_period"`
+	HMACKey         string `json:"hmac_key,omitempty"`
+}
+
+var (
+	auditLogRetentionOnce sync.Once
+	auditLogRetentionStop chan struct{}
+)
+
+// StartAuditLogRetentionCleanup runs background auto-delete for Audit Logs
+// when auto_delete is enabled (e.g. 1d|7d|30d|90d|180d|365d).
+func StartAuditLogRetentionCleanup(store configstore.WorkspaceStore) {
+	if store == nil {
+		return
+	}
+	auditLogRetentionOnce.Do(func() {
+		auditLogRetentionStop = make(chan struct{})
+		go func() {
+			initCtx, initCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			_ = RunAuditLogRetentionSweep(initCtx, store)
+			initCancel()
+
+			ticker := time.NewTicker(5 * time.Minute)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ticker.C:
+					sweepCtx, sweepCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+					_ = RunAuditLogRetentionSweep(sweepCtx, store)
+					sweepCancel()
+				case <-auditLogRetentionStop:
+					return
+				}
+			}
+		}()
+	})
+}
+
+func parseAuditRetentionDuration(period string, days int) time.Duration {
+	p := strings.ToLower(strings.TrimSpace(period))
+	switch p {
+	case "24h", "1d":
+		return 24 * time.Hour
+	case "7d", "1w":
+		return 7 * 24 * time.Hour
+	case "30d", "1m":
+		return 30 * 24 * time.Hour
+	case "90d", "3m":
+		return 90 * 24 * time.Hour
+	case "180d", "6m":
+		return 180 * 24 * time.Hour
+	case "365d", "1y":
+		return 365 * 24 * time.Hour
+	}
+	if days > 0 {
+		return time.Duration(days) * 24 * time.Hour
+	}
+	return 30 * 24 * time.Hour
+}
+
+func RunAuditLogRetentionSweep(ctx context.Context, store configstore.WorkspaceStore) error {
+	if store == nil {
+		return nil
+	}
+	row, err := store.GetWorkspaceSetting(ctx, configstore.WorkspaceSettingAudit)
+	if err != nil || row == nil || row.Data == "" {
+		return nil
+	}
+	var settings auditSettingsPayload
+	if err := json.Unmarshal([]byte(row.Data), &settings); err != nil {
+		return nil
+	}
+	if !settings.AutoDelete {
+		return nil
+	}
+	dur := parseAuditRetentionDuration(settings.RetentionPeriod, settings.RetentionDays)
+	if dur <= 0 {
+		return nil
+	}
+	cutoff := time.Now().UTC().Add(-dur)
+	return store.ClearAuditLogsInRange(ctx, nil, &cutoff)
 }
 
 const (
@@ -190,7 +274,12 @@ func (h *WorkspaceHandler) getAuditSettings(ctx *fasthttp.RequestCtx) {
 	}
 	row, err := store.GetWorkspaceSetting(ctx, configstore.WorkspaceSettingAudit)
 	if isStoreNotFound(err) {
-		SendJSON(ctx, auditSettingsPayload{RetentionDays: 365})
+		SendJSON(ctx, auditSettingsPayload{
+			Disabled:        false,
+			AutoDelete:      false,
+			RetentionPeriod: "30d",
+			RetentionDays:   30,
+		})
 		return
 	}
 	if err != nil {
@@ -201,6 +290,16 @@ func (h *WorkspaceHandler) getAuditSettings(ctx *fasthttp.RequestCtx) {
 	if err := json.Unmarshal([]byte(row.Data), &settings); err != nil {
 		SendError(ctx, fasthttp.StatusInternalServerError, "failed to parse audit settings")
 		return
+	}
+	if settings.RetentionPeriod == "" {
+		if settings.RetentionDays > 0 {
+			settings.RetentionPeriod = fmt.Sprintf("%dd", settings.RetentionDays)
+		} else {
+			settings.RetentionPeriod = "30d"
+		}
+	}
+	if settings.AutoDelete {
+		_ = RunAuditLogRetentionSweep(ctx, store)
 	}
 	SendJSON(ctx, settings)
 }
@@ -219,6 +318,24 @@ func (h *WorkspaceHandler) updateAuditSettings(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusBadRequest, "retention_days cannot be negative")
 		return
 	}
+	if payload.RetentionPeriod != "" {
+		switch strings.ToLower(strings.TrimSpace(payload.RetentionPeriod)) {
+		case "1d", "24h":
+			payload.RetentionDays = 1
+		case "7d", "1w":
+			payload.RetentionDays = 7
+		case "30d", "1m":
+			payload.RetentionDays = 30
+		case "90d", "3m":
+			payload.RetentionDays = 90
+		case "180d", "6m":
+			payload.RetentionDays = 180
+		case "365d", "1y":
+			payload.RetentionDays = 365
+		}
+	} else if payload.RetentionDays > 0 {
+		payload.RetentionPeriod = fmt.Sprintf("%dd", payload.RetentionDays)
+	}
 	raw, err := json.Marshal(payload)
 	if err != nil {
 		SendError(ctx, fasthttp.StatusInternalServerError, "failed to save audit settings")
@@ -229,5 +346,8 @@ func (h *WorkspaceHandler) updateAuditSettings(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	ReloadAuditSettingsFromStore(store)
+	if payload.AutoDelete {
+		_ = RunAuditLogRetentionSweep(ctx, store)
+	}
 	SendJSON(ctx, payload)
 }

@@ -335,6 +335,36 @@ function isTextBytes(bytes: Uint8Array): boolean {
 	return nonPrintable / checkLen < 0.05;
 }
 
+function decodeTextBytes(bytes: Uint8Array): string {
+	if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
+		return new TextDecoder("utf-8").decode(bytes.subarray(3));
+	}
+	if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe) {
+		return new TextDecoder("utf-16le").decode(bytes.subarray(2));
+	}
+	if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) {
+		return new TextDecoder("utf-16be").decode(bytes.subarray(2));
+	}
+
+	// Many Windows text files omit their UTF-16 BOM. Infer byte order from the
+	// alternating NUL pattern, but leave other binary data to its format reader.
+	const sampleLength = Math.min(bytes.length - (bytes.length % 2), 8192);
+	let evenNuls = 0;
+	let oddNuls = 0;
+	for (let i = 0; i < sampleLength; i += 2) {
+		if (bytes[i] === 0) evenNuls++;
+		if (bytes[i + 1] === 0) oddNuls++;
+	}
+	const pairs = Math.max(1, sampleLength / 2);
+	if (oddNuls / pairs > 0.25 && evenNuls / pairs < 0.05) {
+		return new TextDecoder("utf-16le").decode(bytes);
+	}
+	if (evenNuls / pairs > 0.25 && oddNuls / pairs < 0.05) {
+		return new TextDecoder("utf-16be").decode(bytes);
+	}
+	return new TextDecoder("utf-8").decode(bytes);
+}
+
 function extractJupyterNotebookText(raw: string): string {
 	try {
 		const nb = JSON.parse(raw);
@@ -481,7 +511,9 @@ const TEXT_STANDALONE_NAMES = new Set([
 function clipExtract(text: string | null | undefined): string | null {
 	const t = (text || "").trim();
 	if (!t) return null;
-	return t.slice(0, MAX_EXTRACT_CHARS);
+	if (t.length <= MAX_EXTRACT_CHARS) return t;
+	const notice = `\n\n[Truncated: only the first ${MAX_EXTRACT_CHARS.toLocaleString()} characters were extracted; the rest was not included.]`;
+	return `${t.slice(0, MAX_EXTRACT_CHARS - notice.length).trimEnd()}${notice}`;
 }
 
 /** Try each reader. One failure must not skip the readers after it. */
@@ -580,7 +612,7 @@ export async function extractPromptFileText(file: File, mimeType: string): Promi
 			mime.includes("tab-separated")
 		) {
 			if (name.endsWith(".csv") || name.endsWith(".tsv") || mime.includes("csv") || mime.includes("tab-separated")) {
-				steps.push(async () => new TextDecoder().decode(bytes));
+				steps.push(async () => decodeTextBytes(bytes));
 			} else {
 				steps.push(() => extractSpreadsheetText(buf));
 			}
@@ -588,12 +620,12 @@ export async function extractPromptFileText(file: File, mimeType: string): Promi
 
 		// Jupyter Notebook (.ipynb)
 		if (name.endsWith(".ipynb")) {
-			steps.push(async () => extractJupyterNotebookText(new TextDecoder().decode(bytes)));
+			steps.push(async () => extractJupyterNotebookText(decodeTextBytes(bytes)));
 		}
 
 		// Rich Text Format (.rtf)
 		if (name.endsWith(".rtf") || mime.includes("rtf") || (bytes.length >= 5 && new TextDecoder().decode(bytes.slice(0, 5)) === "{\\rtf")) {
-			steps.push(async () => extractRtfText(new TextDecoder().decode(bytes)));
+			steps.push(async () => extractRtfText(decodeTextBytes(bytes)));
 		}
 
 		// EPUB is a zip of HTML/XHTML chapters.
@@ -628,9 +660,15 @@ export async function extractPromptFileText(file: File, mimeType: string): Promi
 			mime.includes("markdown");
 
 		const hasNul = bytes.subarray(0, Math.min(bytes.length, 8192)).includes(0);
-		if (!hasNul && (isKnownTextExt || isTextMime || isTextBytes(bytes))) {
+		const hasUnicodeBom =
+			(bytes.length >= 2 && ((bytes[0] === 0xff && bytes[1] === 0xfe) || (bytes[0] === 0xfe && bytes[1] === 0xff))) ||
+			(bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf);
+		if (
+			(!hasNul || hasUnicodeBom || isKnownTextExt || isTextMime) &&
+			(isKnownTextExt || isTextMime || hasUnicodeBom || isTextBytes(bytes))
+		) {
 			steps.push(async () => {
-				let text = new TextDecoder().decode(bytes);
+				let text = decodeTextBytes(bytes);
 				if (name.endsWith(".json") || name.endsWith(".jsonc") || mime.includes("json")) {
 					try {
 						text = JSON.stringify(JSON.parse(text), null, 2);

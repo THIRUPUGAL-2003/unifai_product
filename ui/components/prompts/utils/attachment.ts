@@ -736,6 +736,13 @@ async function detectFileMimeType(file: File): Promise<string> {
 	let detected: string | undefined;
 
 	if (ascii(0, 5) === "%PDF-") detected = "application/pdf";
+	else if (
+		startsWith(0xff, 0xfe) ||
+		startsWith(0xfe, 0xff) ||
+		startsWith(0xef, 0xbb, 0xbf)
+	) {
+		detected = "text/plain";
+	}
 	else if (startsWith(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)) detected = "image/png";
 	else if (startsWith(0xff, 0xd8, 0xff)) detected = "image/jpeg";
 	else if (["GIF87a", "GIF89a"].includes(ascii(0, 6))) detected = "image/gif";
@@ -948,7 +955,9 @@ export async function filesToAttachments(files: FileList | File[], opts?: Attach
 	let completedCount = 0;
 	const failedFiles: { name: string; error: string }[] = [];
 
-	const perFileResults = await runConcurrentPool(filesList, 6, async (file) => {
+	const largestFileBytes = filesList.reduce((largest, file) => Math.max(largest, file.size), 0);
+	const importConcurrency = largestFileBytes >= 64 * 1024 * 1024 ? 1 : largestFileBytes >= 16 * 1024 * 1024 ? 2 : 4;
+	const perFileResults = await runConcurrentPool(filesList, importConcurrency, async (file) => {
 		const error = validatePromptAttachmentFile(file);
 		if (error) {
 			if (!effectiveOpts.silent) toast.error(error);
@@ -1389,12 +1398,28 @@ export async function fileToAttachment(file: File, opts?: AttachmentImportOption
 
 	if (extracted && extracted.trim()) {
 		const isBinaryStub = extracted.startsWith("[Binary File:") || extracted.startsWith("[File:");
+		const isSilent = Boolean(opts?.silent);
 		if (isBinaryStub) {
-			toast.message(`Attached "${file.name}" as binary metadata`, {
-				description: "Printable strings and file info were extracted for context.",
-			});
+			const lowerExtract = extracted.toLowerCase();
+			if (!isSilent && (lowerExtract.includes("no readable text content found") || lowerExtract.includes("extraction error:"))) {
+				toast.error(`Could not read the contents of "${file.name}"`, {
+					description: "Only file metadata is available, so answers about its contents may not be possible.",
+				});
+			} else if (!isSilent) {
+				toast.warning(`Only part of "${file.name}" could be read`, {
+					description: lowerExtract.includes("extracted strings & metadata")
+						? "This format only yielded readable text fragments; the full file contents are unavailable."
+						: "The extracted text is incomplete; ask only about the available portion.",
+				});
+			}
 		} else {
-			toast.success(`Extracted text from ${file.name}`);
+			if (!isSilent && extracted.includes("[Truncated:")) {
+				toast.warning(`Part of ${file.name} was extracted`, {
+					description: "The extracted text reached the processing limit; the assistant will be told that the file is incomplete.",
+				});
+			} else if (!isSilent) {
+				toast.success(`Extracted text from ${file.name}`);
+			}
 		}
 		return textAttachmentFromExtract(file.name, extracted);
 	}
