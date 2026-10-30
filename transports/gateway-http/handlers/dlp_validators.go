@@ -284,3 +284,4 @@ func validateRuleMatchGo(rule logstore.BrowserGuardRule, text string) bool {
 	// Standard rule: no specialized algorithm applies, trust the regex match
 	return true
 }
+
