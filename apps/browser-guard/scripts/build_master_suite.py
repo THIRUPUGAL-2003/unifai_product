@@ -66,6 +66,8 @@ required = {
 }
 optional = {
     f"{WINDOWS}/INSTALL_WINDOWS.txt": "INSTALL_WINDOWS.txt",
+    f"{WINDOWS}/Turn_Off_YP_Raksha.bat": "Turn_Off_YP_Raksha.bat",
+    f"{WINDOWS}/Uninstall_YP_Raksha.bat": "Uninstall_YP_Raksha.bat",
     f"{EXTENSION}/Unpacked_Extension_Chrome_Edge_Brave.zip": "yp-raksha.zip",
     f"{EXTENSION}/Whitelist_Extension_In_Browsers.bat": "Whitelist_Extension_In_Browsers.bat",
     f"{EXTENSION}/Safari_Extension_README.txt": "Safari_Extension_README.txt",

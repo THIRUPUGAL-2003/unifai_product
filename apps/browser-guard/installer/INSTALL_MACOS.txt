@@ -1,0 +1,30 @@
+YP Raksha — macOS Install (turn ON)
+===================================
+
+Company server: https://unifai.yespanchi.com
+(If IT gave you a different URL, use the config packaged in this ZIP.)
+
+Preferred: if IT gave you a YP_Raksha_Setup.pkg — double-click and follow prompts.
+Allow Keychain/admin prompts so the YP Raksha certificate is trusted.
+
+ZIP path
+--------
+1. Remove conflicting web content filters if present
+   (System Settings → Network → VPN & Filters → Filters).
+2. Unzip YP_Raksha_macOS.zip — keep ALL files in one folder.
+3. Double-click Install_YP_Raksha.command
+   - If blocked: Right-click → Open → Open
+   - Or: System Settings → Privacy & Security → Open Anyway
+4. Fully quit Safari / Chrome / Edge / Firefox / Brave (Cmd+Q), then reopen.
+5. Safari: System Settings → iCloud → Private Relay → Off (required for corp intercept).
+6. Open a monitored AI site and send a test prompt.
+
+Health check: http://127.0.0.1:18195/
+  → proxy_port must be OK (not FAIL).
+Logs: ~/Library/Application Support/Gateway/Guard/gateway_guard.log
+
+Optional update later
+---------------------
+Run Update_YP_Raksha_macOS.command from this package.
+
+See also: EMPLOYEE_README_MAC.txt and UNINSTALL_MACOS.txt in this ZIP.

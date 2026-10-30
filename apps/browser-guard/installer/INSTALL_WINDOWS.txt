@@ -1,0 +1,12 @@
+YP Raksha — Windows Install Guide
+=================================
+
+1. Extract this package completely.
+2. Run YP_Raksha_Setup.exe and leave “Launch YP Raksha” selected.
+3. YP Raksha starts in the background, connects to the configured server, and enables startup at login.
+4. Install the browser extension from 3_Browser_Extensions if it is not already managed by IT.
+
+Uninstall:
+----------
+Use Windows Settings > Apps > YP Raksha > Uninstall, the Start Menu uninstall shortcut, or Uninstall_YP_Raksha.bat.
+The app asks for the company/device uninstall key in a secure prompt. Canceling leaves YP Raksha installed.

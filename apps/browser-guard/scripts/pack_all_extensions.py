@@ -135,13 +135,8 @@ def pack_all():
                         shutil.copy2(os.path.join(staging_ext, fname), os.path.join(user_ext, fname))
                 except Exception:
                     pass
-    # Legacy alias for WebStore zip
-    shutil.copy2(store_zip, os.path.join(rel_dir, "YP_Raksha_WebStore.zip"))
-
-    # Keep an explicitly unsigned developer XPI; only publish .xpi after Mozilla signing.
-    unsigned_xpi = os.path.join(rel_dir, "yp-raksha-unsigned.xpi")
-    shutil.copy2(store_zip, unsigned_xpi)
     xpi_path = os.path.join(rel_dir, "yp-raksha.xpi")
+    unsigned_xpi = None
     signed_source = os.environ.get("GATEWAY_GUARD_SIGNED_XPI", "").strip()
     if signed_source:
         if not os.path.isfile(signed_source) or not is_signed_firefox_xpi(signed_source):
@@ -207,8 +202,6 @@ def pack_all():
     print(f"  - Chromium (.crx): {os.path.join(rel_dir, 'yp-raksha.crx')} ({os.path.getsize(os.path.join(rel_dir, 'yp-raksha.crx'))} bytes)")
     if os.path.isfile(xpi_path):
         print(f"  - Firefox  (.xpi, Mozilla-signed): {xpi_path} ({os.path.getsize(xpi_path)} bytes)")
-    else:
-        print(f"  - Firefox  (unsigned developer package only): {unsigned_xpi}")
     print(f"  - Store    (.zip): {store_zip} ({os.path.getsize(store_zip)} bytes)")
 
 if __name__ == "__main__":
