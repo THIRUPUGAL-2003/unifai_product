@@ -3923,6 +3923,9 @@ func (m *BrowserAIManager) UpsertAgentHeartbeat(ctx context.Context, incoming *B
 		// Trailing heartbeats during uninstall stay uninstalled. A later install of the
 		// same Guard ID (agent_id.txt survived) becomes active again after the grace window.
 		if existing.UninstalledAt == nil || now.Sub(*existing.UninstalledAt) > 15*time.Second {
+			if quotaErr := m.CheckSeatQuotaEnforcement(ctx, existing.ID, existing.Hostname, existing.MacAddress); quotaErr != nil {
+				return nil, quotaErr
+			}
 			existing.Status = AgentStatusActive
 			existing.UninstallRequested = false
 			existing.UninstalledAt = nil
@@ -4447,6 +4450,9 @@ func (m *BrowserAIManager) AllowReinstallAgent(ctx context.Context, agentID stri
 	var agent BrowserAIAgent
 	if err := db.WithContext(ctx).Where("id = ?", agentID).First(&agent).Error; err != nil {
 		return nil, fmt.Errorf("agent not found")
+	}
+	if quotaErr := m.CheckSeatQuotaEnforcement(ctx, agent.ID, agent.Hostname, agent.MacAddress); quotaErr != nil {
+		return nil, quotaErr
 	}
 	now := time.Now()
 	agent.Status = AgentStatusActive
