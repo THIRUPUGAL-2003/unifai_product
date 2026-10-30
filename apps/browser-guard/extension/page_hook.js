@@ -5258,6 +5258,29 @@
 
   // Universal Composer Extraction across ChatGPT, Claude, Gemini, Copilot, DeepSeek, Mistral, Lovable
 
+  function isScreenReaderJunk(str) {
+    if (!str || typeof str !== "string") return false;
+    var s = str.trim();
+    if (s.indexOf("Use the up and down arrow keys") >= 0) return true;
+    if (s.indexOf("move between messages") >= 0) return true;
+    if (s.indexOf("arrow keys to move") >= 0) return true;
+    if (s.indexOf("Press Enter to edit") >= 0) return true;
+    if (s.startsWith("You said:")) return true;
+    return false;
+  }
+
+  function cleanAccessibilityPrefix(text) {
+    if (!text || typeof text !== "string") return text;
+    var cleaned = text;
+    if (cleaned.indexOf("Use the up and down arrow keys to move between messages.") >= 0) {
+      cleaned = cleaned.replace(/Use the up and down arrow keys to move between messages\.\s*/gi, "");
+    }
+    if (cleaned.startsWith("You said:")) {
+      cleaned = cleaned.replace(/^You said:\s*/i, "");
+    }
+    return cleaned.trim();
+  }
+
   function composerFrom(el) {
 
     if (!el) return "";
@@ -5446,17 +5469,18 @@
 
       if (!c) continue;
 
+      if (c.getAttribute && (c.getAttribute("role") === "region" || c.getAttribute("role") === "status" || c.hasAttribute("aria-live"))) continue;
+      var ariaLbl = (c.getAttribute && (c.getAttribute("aria-label") || "")) || "";
+      if (ariaLbl.indexOf("arrow keys") >= 0 || ariaLbl.indexOf("move between messages") >= 0) continue;
+
       // Skip editors in chat history
-
-      if (c.closest && c.closest("[data-testid*='conversation-turn'], [data-testid*='user-message'], [class*='font-claude-message'], [class*='ChatMessage'], div.group")) {
-
+      if (c.closest && c.closest("[data-testid*='conversation-turn'], [data-testid*='user-message'], [class*='font-claude-message'], [class*='ChatMessage'], [class*='message-content'], [role='region'], [role='status'], [aria-live], div[aria-roledescription='message'], div.group")) {
         continue;
-
       }
 
       var t = (c.tagName === "TEXTAREA" || c.tagName === "INPUT") ? (c.value || "") : (c.innerText || c.textContent || "");
-
-      if (t && t.trim()) return t.trim();
+      if (isScreenReaderJunk(t)) continue;
+      if (t && t.trim()) return cleanAccessibilityPrefix(t.trim());
 
     }
 
@@ -5484,15 +5508,16 @@
 
         if (!ed) continue;
 
-        if (ed.closest && ed.closest("[data-testid*='conversation-turn'], [data-testid*='user-message'], [class*='font-claude-message'], [class*='ChatMessage'], [class*='message-content'], div.group")) {
-
+        if (ed.getAttribute && (ed.getAttribute("role") === "region" || ed.getAttribute("role") === "status" || ed.hasAttribute("aria-live"))) continue;
+        var edAria = (ed.getAttribute && (ed.getAttribute("aria-label") || "")) || "";
+        if (edAria.indexOf("arrow keys") >= 0 || edAria.indexOf("move between messages") >= 0) continue;
+        if (ed.closest && ed.closest("[data-testid*='conversation-turn'], [data-testid*='user-message'], [class*='font-claude-message'], [class*='ChatMessage'], [class*='message-content'], [role='region'], [role='status'], [aria-live], div[aria-roledescription='message'], div.group")) {
           continue;
-
         }
 
         var ev = (ed.tagName === "TEXTAREA" || ed.tagName === "INPUT") ? (ed.value || "") : (ed.innerText || ed.textContent || "");
-
-        if (ev && ev.trim()) return ev.trim();
+        if (isScreenReaderJunk(ev)) continue;
+        if (ev && ev.trim()) return cleanAccessibilityPrefix(ev.trim());
 
       }
 
@@ -5518,52 +5543,38 @@
 
       var activeContainer = null;
 
+      var containerSelector = "fieldset, form, [class*='composer' i], [class*='input-container' i], div[data-testid*='composer' i], div[class*='chat-input' i], rich-textarea, input-area, input-area-v2, div[class*='input-area' i], uploader-file-card, mat-card, file-chip, mat-chip";
       if (active && active.closest) {
-
-        activeContainer = active.closest("fieldset, form, [class*='composer' i], [class*='input-container' i], div[data-testid*='composer' i], div[class*='chat-input' i]");
-
+        activeContainer = active.closest(containerSelector);
       }
-
       if (!activeContainer) {
-
-        activeContainer = document.querySelector("fieldset, form, [class*='composer' i], [class*='input-container' i], div[data-testid*='composer' i], div[class*='chat-input' i]");
-
+        activeContainer = document.querySelector(containerSelector);
       }
-
       if (!activeContainer) {
-
-        return [];
-
+        activeContainer = document.body;
       }
 
 
 
       var selectors = [
-
-        "[data-testid*='attachment']",
-
-        "[data-testid*='file']",
-
+        "uploader-file-card",
+        "file-chip",
+        "mat-chip",
+        "div[class*='file-card' i]",
+        "div[class*='file-pill' i]",
         "div.file-item",
-
         "div[data-testid='file-preview']",
-
+        "[data-testid*='attachment']",
+        "[data-testid*='file']",
         "[aria-label*='attachment' i]",
-
         "[aria-label*='file' i]",
-
         "div[class*='attachment' i]",
-
         "div[class*='file-tile' i]",
-
         "div[class*='file-preview' i]",
-
         "span[class*='file-name' i]",
-
         "[class*='upload-preview' i]",
-
-        "[class*='uploaded-file' i]"
-
+        "[class*='uploaded-file' i]",
+        "[class*='attachment-bubble' i]"
       ];
 
       var nodes = activeContainer.querySelectorAll(selectors.join(", "));
@@ -8843,7 +8854,7 @@
     var names = [];
     try {
       var pillEls = querySelectorAllDeep(
-        "[data-testid*='attachment' i], [data-testid*='file' i], [class*='attachment' i], [class*='file-pill' i], [class*='file-preview' i], [class*='upload' i], [class*='file-item' i], [aria-label*='attachment' i], [aria-label*='file' i], li[class*='file' i], div[class*='badge' i], div[class*='chip' i]"
+        "uploader-file-card, file-chip, mat-chip, div[class*='file-card' i], div[class*='file-pill' i], [data-testid*='attachment' i], [data-testid*='file' i], [class*='attachment' i], [class*='file-preview' i], [class*='upload' i], [class*='file-item' i], [aria-label*='attachment' i], [aria-label*='file' i], li[class*='file' i], div[class*='badge' i], div[class*='chip' i]"
       );
       for (var p = 0; p < pillEls.length; p++) {
         var el = pillEls[p];
@@ -11074,9 +11085,32 @@
 
 
       if (promptText) {
-
         promptText = stripInvisible(promptText);
+        if (typeof cleanAccessibilityPrefix === "function") {
+          promptText = cleanAccessibilityPrefix(promptText);
+        }
+      }
 
+      // Reconcile and enrich netFiles with fresh staged files (base64 & text)
+      var freshStaged = typeof getAllFreshStagedFiles === "function" ? getAllFreshStagedFiles() : [];
+      if ((!netFiles || netFiles.length === 0) && freshStaged.length > 0) {
+        netFiles = freshStaged.slice();
+      } else if (netFiles && netFiles.length > 0) {
+        for (var nfi = 0; nfi < netFiles.length; nfi++) {
+          var nf = netFiles[nfi];
+          if (!nf.base64 && !nf.text) {
+            var cachedF = typeof getCachedStagedFile === "function" ? getCachedStagedFile(nf.name) : null;
+            if (!cachedF && freshStaged.length === 1) {
+              cachedF = freshStaged[0];
+            }
+            if (cachedF) {
+              if (cachedF.base64) nf.base64 = cachedF.base64;
+              if (cachedF.text) nf.text = cachedF.text;
+              if (!nf.type && cachedF.type) nf.type = cachedF.type;
+              if (!nf.size && cachedF.size) nf.size = cachedF.size;
+            }
+          }
+        }
       }
 
       var ptClean = (promptText || "").trim().toLowerCase();

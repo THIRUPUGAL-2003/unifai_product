@@ -1,11 +1,15 @@
 package handlers
 
 import (
+	"archive/zip"
+	"bytes"
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -1328,6 +1332,18 @@ func (h *BrowserAIHandler) interceptFile(ctx *fasthttp.RequestCtx) {
 		metadata["file_name"] = fileName
 	}
 
+	formExtractedText := getForm("extracted_text")
+	extractedText := strings.TrimSpace(getMetadataString(metadata, "extracted_text"))
+	if extractedText == "" && formExtractedText != "" {
+		extractedText = strings.TrimSpace(formExtractedText)
+	}
+	if extractedText == "" && len(uploadBytes) > 0 {
+		extractedText = extractFileTextFallback(uploadBytes, fileName)
+	}
+	if extractedText != "" {
+		metadata["extracted_text"] = extractedText
+	}
+
 	fileMetaDomain := strings.ToLower(strings.TrimSpace(getMetadataString(metadata, "domain")))
 	fileMetaURL := strings.ToLower(strings.TrimSpace(getMetadataString(metadata, "url")))
 	if strings.EqualFold(platform, "localhost") ||
@@ -1374,19 +1390,6 @@ func (h *BrowserAIHandler) interceptFile(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusInternalServerError, err.Error())
 		return
 	}
-
-	formExtractedText := getForm("extracted_text")
-	extractedText := strings.TrimSpace(getMetadataString(metadata, "extracted_text"))
-	if extractedText == "" && formExtractedText != "" {
-		extractedText = strings.TrimSpace(formExtractedText)
-		metadata["extracted_text"] = extractedText
-	}
-	if extractedText == "" && len(uploadBytes) > 0 {
-		extractedText = extractFileTextFallback(uploadBytes, fileName)
-		if extractedText != "" {
-			metadata["extracted_text"] = extractedText
-		}
-	}
 	uploadImages := parseUploadImagesMetadata(metadata)
 	if len(uploadImages) == 0 && len(uploadBytes) > 0 {
 		lowerFn := strings.ToLower(fileName)
@@ -1414,9 +1417,74 @@ func (h *BrowserAIHandler) interceptFile(ctx *fasthttp.RequestCtx) {
 		}
 	}
 	scanApplied := h.applyScanGuardFromMetadata(ctx, logEntry, metadata, &ruleWarning)
+	evalContent := buildGuardEvalContent(prompt, extractedText)
+
+	// Evaluate Regex & Mathematical Checksum Guard Rules on extracted file content
+	if logEntry.Action != "Blocked" && extractedText != "" {
+		rules, _ := h.getRulesCached(ctx)
+		for _, rule := range rules {
+			if strings.ToLower(rule.RuleType) == "ai_bot" || rule.Pattern == "" {
+				continue
+			}
+			if rulePatternMatches(rule, evalContent) {
+				ruleAction := logstore.NormalizeGuardRuleAction(rule.Action)
+				logEntry.RuleTriggered = rule.Name
+				ruleWarning = rule.WarningMessage
+				sevScore, sevLabel := logstore.GuardSeverityScore(rule.Severity)
+				if ruleAction == "BLOCK" {
+					logEntry.Action = "Blocked"
+					logEntry.Status = fmt.Sprintf("Blocked (%s)", rule.Name)
+					logEntry.RiskScore = sevScore
+					if logEntry.RiskScore < 70 {
+						logEntry.RiskScore = 85
+					}
+					logEntry.PredictiveRisk = sevLabel
+					if logEntry.PredictiveRisk == "LOW" || logEntry.PredictiveRisk == "MEDIUM" {
+						logEntry.PredictiveRisk = "HIGH"
+					}
+					logEntry.PredictedCategory = "SECURITY_POLICY_VIOLATION"
+					break
+				} else if ruleAction == "REDACT" {
+					logEntry.Action = "Redacted"
+					logEntry.Status = fmt.Sprintf("Redacted (%s)", rule.Name)
+					logEntry.RiskScore = sevScore
+					if logEntry.RiskScore > 70 {
+						logEntry.RiskScore = 60
+					}
+					if logEntry.RiskScore < 40 {
+						logEntry.RiskScore = 45
+					}
+					logEntry.PredictiveRisk = "MEDIUM"
+					logEntry.PredictedCategory = "SUSPICIOUS_CONTENT"
+					break
+				} else if ruleAction == "WARN" {
+					logEntry.Action = "Warned"
+					logEntry.Status = fmt.Sprintf("Warned (%s)", rule.Name)
+					logEntry.RiskScore = sevScore
+					logEntry.PredictiveRisk = "LOW"
+					logEntry.PredictedCategory = "SUSPICIOUS_CONTENT"
+					break
+				}
+			}
+		}
+	}
+
+	// Accurate Token & Cost Calculation for File Uploads
+	if extractedText != "" {
+		fileToks := logstore.CountAccurateTokens(extractedText)
+		if fileToks > 0 {
+			totalToks := logEntry.PromptTokens + fileToks
+			logEntry.PromptTokens = totalToks
+			logEntry.EstTokens = totalToks
+			logEntry.TotalTokens = totalToks + logEntry.CompletionTokens
+			logEntry.Cost = logstore.CalculateBrowserAICost(logEntry.Platform, "", totalToks, logEntry.CompletionTokens, logEntry.AudioDurationSec)
+			_ = h.manager.UpdateLogTokensAndCost(ctx, logEntry.ID, totalToks, logEntry.CompletionTokens, logEntry.TotalTokens, logEntry.AudioDurationSec, logEntry.Cost)
+		}
+	}
+	_ = h.manager.UpdateLogRuleViolation(ctx, logEntry.ID, logEntry.Action, logEntry.Status, logEntry.RuleTriggered, logEntry.RiskScore, logEntry.PredictiveRisk, logEntry.PredictedCategory)
+
 	// Never stamp AI Guard Bot "security OK" on filename-only prefixes with no extract/images.
 	if !scanApplied && logEntry.Action != "Blocked" && (extractedText != "" || len(uploadImages) > 0) {
-		evalContent := buildGuardEvalContent(prompt, extractedText)
 		h.runAIBotOnLogEntry(ctx, logEntry, evalContent, uploadImages, &ruleWarning)
 	} else if !scanApplied && logEntry.Action == "Allowed" && extractedText == "" && len(uploadImages) == 0 {
 		markUnscannedFilePrediction(logEntry)
@@ -1539,11 +1607,50 @@ func (h *BrowserAIHandler) getAttachment(ctx *fasthttp.RequestCtx) {
 	ctx.SetBody(data)
 }
 
+var xmlTagRegex = regexp.MustCompile(`<[^>]+>`)
+
+func stripXMLTags(xmlStr string) string {
+	cleaned := xmlTagRegex.ReplaceAllString(xmlStr, " ")
+	return strings.Join(strings.Fields(cleaned), " ")
+}
+
 // extractFileTextFallback pulls clean text or printable ASCII/UTF-16 strings from raw upload bytes
 // so AI Guard Bot always evaluates file contents even if proxy or agent did not pre-extract.
 func extractFileTextFallback(data []byte, filename string) string {
 	if len(data) == 0 {
 		return ""
+	}
+	// 0. Office OpenXML (.docx, .xlsx, .pptx)
+	lowerFn := strings.ToLower(filename)
+	if bytes.HasPrefix(data, []byte("PK\x03\x04")) || strings.HasSuffix(lowerFn, ".docx") || strings.HasSuffix(lowerFn, ".xlsx") || strings.HasSuffix(lowerFn, ".pptx") {
+		if zr, zErr := zip.NewReader(bytes.NewReader(data), int64(len(data))); zErr == nil {
+			var docText strings.Builder
+			for _, zf := range zr.File {
+				zName := strings.ToLower(zf.Name)
+				if (strings.HasPrefix(zName, "word/") && strings.HasSuffix(zName, ".xml")) ||
+					(strings.HasPrefix(zName, "xl/") && strings.HasSuffix(zName, ".xml")) ||
+					(strings.HasPrefix(zName, "ppt/slides/") && strings.HasSuffix(zName, ".xml")) {
+					if rc, err := zf.Open(); err == nil {
+						content, _ := io.ReadAll(io.LimitReader(rc, 4*1024*1024))
+						_ = rc.Close()
+						clean := stripXMLTags(string(content))
+						if clean != "" {
+							if docText.Len() > 0 {
+								docText.WriteString(" ")
+							}
+							docText.WriteString(clean)
+							if docText.Len() > 80000 {
+								break
+							}
+						}
+					}
+				}
+			}
+			resDoc := strings.TrimSpace(docText.String())
+			if len(resDoc) > 10 {
+				return resDoc
+			}
+		}
 	}
 	// 1. Plain text / UTF-8 decode
 	if utf8.Valid(data) {

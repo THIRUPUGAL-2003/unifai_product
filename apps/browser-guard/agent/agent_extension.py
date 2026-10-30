@@ -1,3 +1,198 @@
+from __future__ import annotations
+
+# --- Mathematical Checksum Algorithms for Guard Rules (DLP) ---
+
+def luhn_mod10_check(num_str: str) -> bool:
+    digits = [int(c) for c in num_str if c.isdigit()]
+    if len(digits) < 12:
+        return False
+    checksum = 0
+    reverse_digits = digits[::-1]
+    for i, d in enumerate(reverse_digits):
+        if i % 2 == 1:
+            d *= 2
+            if d > 9:
+                d -= 9
+        checksum += d
+    return checksum % 10 == 0
+
+_VERHOEFF_D = [
+    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+    [1, 2, 3, 4, 0, 6, 7, 8, 9, 5],
+    [2, 3, 4, 0, 1, 7, 8, 9, 5, 6],
+    [3, 4, 0, 1, 2, 8, 9, 5, 6, 7],
+    [4, 0, 1, 2, 3, 9, 5, 6, 7, 8],
+    [5, 9, 8, 7, 6, 0, 4, 3, 2, 1],
+    [6, 5, 9, 8, 7, 1, 0, 4, 3, 2],
+    [7, 6, 5, 9, 8, 2, 1, 0, 4, 3],
+    [8, 7, 6, 5, 9, 3, 2, 1, 0, 4],
+    [9, 8, 7, 6, 5, 4, 3, 2, 1, 0]
+]
+
+_VERHOEFF_P = [
+    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+    [1, 5, 7, 6, 2, 8, 3, 0, 9, 4],
+    [5, 8, 0, 3, 7, 9, 6, 1, 4, 2],
+    [8, 9, 1, 6, 0, 4, 3, 5, 2, 7],
+    [9, 4, 5, 3, 1, 2, 6, 8, 7, 0],
+    [4, 2, 8, 6, 5, 7, 3, 9, 0, 1],
+    [2, 7, 9, 3, 8, 0, 6, 4, 1, 5],
+    [7, 0, 4, 6, 9, 1, 3, 2, 5, 8]
+]
+
+def verhoeff_check(num_str: str) -> bool:
+    digits = [int(c) for c in num_str if c.isdigit()]
+    if len(digits) < 10:
+        return False
+    c = 0
+    for i, d in enumerate(digits[::-1]):
+        c = _VERHOEFF_D[c][_VERHOEFF_P[i % 8][d]]
+    return c == 0
+
+def mod97_iban_check(iban: str) -> bool:
+    s = re.sub(r'[^A-Za-z0-9]', '', iban).upper()
+    if len(s) < 15 or len(s) > 34:
+        return False
+    rearranged = s[4:] + s[:4]
+    numeric = ""
+    for ch in rearranged:
+        if ch.isdigit():
+            numeric += ch
+        else:
+            numeric += str(ord(ch) - 55)
+    try:
+        rem = 0
+        for i in range(0, len(numeric), 7):
+            part = str(rem) + numeric[i:i+7]
+            rem = int(part) % 97
+        return rem == 1
+    except Exception:
+        return False
+
+def gstin_mod36_check(gstin: str) -> bool:
+    s = re.sub(r'[^A-Za-z0-9]', '', gstin).upper()
+    if len(s) != 15:
+        return False
+    CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    factor = 1
+    sum_val = 0
+    for i in range(14):
+        code = CHARS.find(s[i])
+        if code == -1:
+            return False
+        product = code * factor
+        sum_val += product // 36 + product % 36
+        factor = 2 if factor == 1 else 1
+    check_code = (36 - (sum_val % 36)) % 36
+    return CHARS[check_code] == s[14]
+
+def pan_entity_check(pan: str) -> bool:
+    s = re.sub(r'[^A-Za-z0-9]', '', pan).upper()
+    if len(s) != 10:
+        return False
+    return s[3] in "CPHFATBLJG"
+
+def ssn_validity_check(ssn: str) -> bool:
+    digits = re.sub(r'\D', '', ssn)
+    if len(digits) != 9:
+        return False
+    area = int(digits[:3])
+    group = int(digits[3:5])
+    serial = int(digits[5:])
+    if area == 0 or area == 666 or (900 <= area <= 999):
+        return False
+    if group == 0 or serial == 0:
+        return False
+    return True
+
+def shannon_entropy_check(text: str, min_entropy: float = 3.6) -> bool:
+    tokens = re.findall(r'[A-Za-z0-9_\-\+=]{16,}', text)
+    if not tokens:
+        return False
+    for tok in tokens:
+        freq = {}
+        for ch in tok:
+            freq[ch] = freq.get(ch, 0) + 1
+        length = len(tok)
+        ent = 0.0
+        for count in freq.values():
+            p = count / length
+            ent -= p * math.log2(p)
+        if ent >= min_entropy:
+            return True
+    return False
+
+def validate_rule_match_py(rule: dict, text: str) -> bool:
+    """Enforces mathematical checksums on matched text ONLY when a matching Guard Rule is configured."""
+    r_name = str(rule.get("name") or "").lower()
+    r_pat = str(rule.get("pattern") or "").lower()
+    r_desc = str(rule.get("description") or "").lower()
+    combined = f"{r_name} {r_pat} {r_desc}"
+
+    # 1. Credit Cards & Luhn Check
+    if any(k in combined for k in ("credit card", "credit_card", "debit card", "luhn", "mod 10", "mod10", "card number", "visa", "mastercard", "amex", "discover")):
+        card_matches = re.findall(r'\b(?:\d[ -]?){13,19}\d\b', text)
+        if card_matches:
+            for cand in card_matches:
+                clean_num = re.sub(r'\D', '', cand)
+                if 13 <= len(clean_num) <= 19 and luhn_mod10_check(clean_num):
+                    return True
+            return False
+
+    # 2. Aadhaar & Verhoeff
+    if any(k in combined for k in ("aadhaar", "aadhar", "verhoeff")):
+        a_matches = re.findall(r'\b\d{4}[ -]?\d{4}[ -]?\d{4}\b', text)
+        if a_matches:
+            for cand in a_matches:
+                clean_a = re.sub(r'\D', '', cand)
+                if len(clean_a) == 12 and verhoeff_check(clean_a):
+                    return True
+            return False
+
+    # 3. IBAN & Mod 97
+    if any(k in combined for k in ("iban", "mod 97", "mod97", "international bank")):
+        iban_matches = re.findall(r'\b[A-Za-z]{2}\d{2}[A-Za-z0-9]{11,30}\b', text)
+        if iban_matches:
+            for cand in iban_matches:
+                if mod97_iban_check(cand):
+                    return True
+            return False
+
+    # 4. GSTIN & Mod 36
+    if any(k in combined for k in ("gstin", "gst", "mod 36", "mod36")):
+        gst_matches = re.findall(r'\b\d{2}[A-Za-z]{5}\d{4}[A-Za-z]{1}[A-Za-z0-9]{3}\b', text)
+        if gst_matches:
+            for cand in gst_matches:
+                if gstin_mod36_check(cand):
+                    return True
+            return False
+
+    # 5. PAN & Entity Status
+    if any(k in combined for k in ("pan card", "pan_card", "permanent account number", "pan entity")):
+        pan_matches = re.findall(r'\b[A-Za-z]{5}\d{4}[A-Za-z]\b', text)
+        if pan_matches:
+            for cand in pan_matches:
+                if pan_entity_check(cand):
+                    return True
+            return False
+
+    # 6. US SSN
+    if any(k in combined for k in ("ssn", "social security", "social_security")):
+        ssn_matches = re.findall(r'\b\d{3}[ -]?\d{2}[ -]?\d{4}\b', text)
+        if ssn_matches:
+            for cand in ssn_matches:
+                if ssn_validity_check(cand):
+                    return True
+            return False
+
+    # 7. Entropy for Secrets/API Keys
+    if any(k in combined for k in ("api_key", "api key", "secret", "private_key", "private key", "token", "password", "credential")):
+        if shannon_entropy_check(text, 3.8):
+            return True
+
+    # Standard regex matched
+    return True
+
 """Browser extension that paints a blocked prompt inside the chat page.
 
 The EXE packs this extension, serves it on the local PAC port, and force-installs
@@ -6,7 +201,6 @@ reaches the site, so the site stream does not have to be faked. The proxy remain
 the backstop when the extension is not installed.
 """
 
-from __future__ import annotations
 
 import hashlib
 import json
@@ -1571,13 +1765,16 @@ def check_prompt(
                 continue
             try:
                 rx = _compile_rule_pattern(pat)
-                p_match = bool(raw_prompt_text and rx.search(raw_prompt_text))
+                p_match = bool(raw_prompt_text and rx.search(raw_prompt_text) and validate_rule_match_py(r, raw_prompt_text))
                 f_matches = []
                 for fn, fcontent in file_text_map.items():
-                    if (fcontent and rx.search(fcontent)) or rx.search(fn):
+                    if fcontent and rx.search(fcontent) and validate_rule_match_py(r, fcontent):
                         if fn not in f_matches:
                             f_matches.append(fn)
-                if not p_match and not f_matches and eval_text and rx.search(eval_text):
+                    elif rx.search(fn):
+                        if fn not in f_matches:
+                            f_matches.append(fn)
+                if not p_match and not f_matches and eval_text and rx.search(eval_text) and validate_rule_match_py(r, eval_text):
                     p_match = True
 
                 if p_match or f_matches:

@@ -2513,6 +2513,11 @@ func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, prompt
 	}
 
 	estTokens := CountAccurateTokens(promptFull)
+	if metadata != nil {
+		if ext, ok := metadata["extracted_text"].(string); ok && strings.TrimSpace(ext) != "" {
+			estTokens += CountAccurateTokens(strings.TrimSpace(ext))
+		}
+	}
 
 	preview := SafePromptPreview(promptFull, 100)
 
