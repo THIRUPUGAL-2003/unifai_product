@@ -4724,8 +4724,8 @@
 
       var timer = setTimeout(function () {
 
-        delete pending[id];
-
+        var pStore = (typeof window !== "undefined" && window.pending) || (typeof pending !== "undefined" ? pending : {});
+        if (pStore && pStore[id]) delete pStore[id];
         resolve(clientDecision || { blocked: false, passthrough: true });
 
       }, 1000);
