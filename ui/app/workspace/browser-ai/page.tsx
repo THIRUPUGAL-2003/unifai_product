@@ -147,6 +147,7 @@ import {
 	useDeleteBrowserAiTargetMutation,
 	useGetBrowserAiAgentsQuery,
 	useGetBrowserAiAgentExtensionHistoryQuery,
+	useClearBrowserAiAgentExtensionHistoryMutation,
 	useGetBrowserAiSetupInfoQuery,
 	useGetBrowserAiRebuildHistoryQuery,
 	useGetBrowserAiAgentSettingsQuery,
@@ -330,6 +331,244 @@ function AgentExtensionStatusHistory({ agentId, agentType }: { agentId: string; 
 }
 
 /** Numeric dotted-version compare ("1.1.13" vs "1.1.9"); non-numeric parts count as 0. */
+
+
+function AgentExtensionHistoryModal({
+	agent,
+	open,
+	onOpenChange,
+}: {
+	agent: BrowserAIAgent | null;
+	open: boolean;
+	onOpenChange: (open: boolean) => void;
+}) {
+	if (!agent) return null;
+	const { data, isLoading, isFetching, isError, refetch } = useGetBrowserAiAgentExtensionHistoryQuery(agent.id, {
+		pollingInterval: 5000,
+		skip: !open,
+	});
+	const [clearHistory, { isLoading: isClearing }] = useClearBrowserAiAgentExtensionHistoryMutation();
+	const [modalNow, setModalNow] = useState(() => Date.now());
+	const [showClearConfirm, setShowClearConfirm] = useState(false);
+
+	useEffect(() => {
+		if (!open) return;
+		const timer = window.setInterval(() => setModalNow(Date.now()), 1000);
+		return () => window.clearInterval(timer);
+	}, [open]);
+
+	const events = data?.events || [];
+	const online = data?.is_online === true;
+	const lastSeenMs = data?.last_seen_at ? new Date(data.last_seen_at).getTime() : 0;
+	const latest = events[0];
+	const currentStatus = online ? (data?.current_status || latest?.status || agent.extension_status || "off") : "off";
+	const currentStartMs = latest ? new Date(latest.started_at).getTime() : (agent.extension_status_started_at ? new Date(agent.extension_status_started_at).getTime() : 0);
+	const currentDuration = currentStartMs > 0
+		? formatExtensionDuration(Math.max(0, (online ? modalNow : lastSeenMs || modalNow) - currentStartMs))
+		: "—";
+
+	const handleClearHistory = async () => {
+		try {
+			await clearHistory(agent.id).unwrap();
+			setShowClearConfirm(false);
+			void refetch();
+		} catch (e) {
+			console.error("Failed to clear extension history:", e);
+		}
+	};
+
+	return (
+		<Dialog open={open} onOpenChange={onOpenChange}>
+			<DialogContent className="max-w-3xl bg-card border-border text-foreground">
+				<DialogHeader>
+					<div className="flex items-center justify-between gap-4 pr-6">
+						<div>
+							<DialogTitle className="flex items-center gap-2 text-base font-semibold">
+								<Clock className="h-4 w-4 text-sky-400" />
+								Extension Connection History &amp; Lifecycle Logs
+							</DialogTitle>
+							<DialogDescription className="mt-1 text-xs text-muted-foreground">
+								Target Device: <span className="font-semibold text-foreground">{agent.hostname || "Device"}</span> · User: <span className="text-foreground">{agent.username || "—"}</span> · IP: <span className="font-mono text-foreground">{agent.ip_address}</span>
+							</DialogDescription>
+						</div>
+
+						{/* 7-Days Auto-delete active badge */}
+						<div className="flex items-center gap-2">
+							<Badge
+								variant="outline"
+								className="border-emerald-500/40 bg-emerald-500/10 text-emerald-400 flex items-center gap-1.5 text-[11px] py-1 px-2.5 font-medium cursor-default"
+								title="Lifecycle logs older than 7 days are automatically purged from the database."
+							>
+								<span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse inline-block" />
+								Auto-delete: 7 days (Active)
+							</Badge>
+						</div>
+					</div>
+				</DialogHeader>
+
+				{/* Summary Status Bar */}
+				<div className="grid grid-cols-1 md:grid-cols-3 gap-3 rounded-lg border border-border bg-muted/20 p-3">
+					<div className="space-y-1">
+						<span className="text-[11px] text-muted-foreground">Current Extension Status</span>
+						<div className="flex items-center gap-2">
+							<span className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${extensionStatusClass(currentStatus)}`}>
+								{extensionStatusLabel(currentStatus)}
+							</span>
+							{online && currentStatus === "connected" ? (
+								<span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+							) : null}
+						</div>
+					</div>
+					<div className="space-y-1">
+						<span className="text-[11px] text-muted-foreground">{currentStatus === "connected" ? "Active (On) Duration" : "Inactive (Off) Duration"}</span>
+						<div className="text-sm font-semibold font-mono text-foreground">
+							{currentDuration}
+						</div>
+					</div>
+					<div className="space-y-1">
+						<span className="text-[11px] text-muted-foreground">Retention Policy</span>
+						<div className="text-xs text-muted-foreground flex items-center gap-1">
+							<Trash2 className="h-3 w-3 text-muted-foreground" /> Auto-purged after 7 days
+						</div>
+					</div>
+				</div>
+
+				{/* Action Toolbar */}
+				<div className="flex items-center justify-between pt-1">
+					<div className="text-xs text-muted-foreground">
+						Showing <span className="font-medium text-foreground">{events.length}</span> recorded lifecycle transition{events.length === 1 ? "" : "s"}
+					</div>
+					<div className="flex items-center gap-2">
+						<Button
+							type="button"
+							variant="outline"
+							size="sm"
+							className="h-8 text-xs gap-1.5"
+							onClick={() => void refetch()}
+							disabled={isFetching}
+						>
+							<RefreshCw className={`h-3 w-3 ${isFetching ? "animate-spin" : ""}`} /> Refresh
+						</Button>
+
+						<Button
+							type="button"
+							variant="outline"
+							size="sm"
+							className="h-8 text-xs gap-1.5 text-rose-400 border-rose-500/30 hover:bg-rose-500/10 hover:text-rose-300"
+							onClick={() => setShowClearConfirm(true)}
+							disabled={isClearing || events.length === 0}
+						>
+							<Trash2 className="h-3 w-3" /> Clear History
+						</Button>
+					</div>
+				</div>
+
+				{/* Confirm Clear Alert */}
+				{showClearConfirm && (
+					<div className="rounded-lg border border-rose-500/40 bg-rose-500/10 p-3 space-y-2">
+						<div className="text-xs font-semibold text-rose-300 flex items-center gap-1.5">
+							<AlertTriangle className="h-3.5 w-3.5" /> Permanently delete all extension history for this agent?
+						</div>
+						<div className="flex items-center gap-2 justify-end">
+							<Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setShowClearConfirm(false)} disabled={isClearing}>
+								Cancel
+							</Button>
+							<Button size="sm" variant="destructive" className="h-7 text-xs" onClick={() => void handleClearHistory()} disabled={isClearing}>
+								{isClearing ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+								Confirm Delete
+							</Button>
+						</div>
+					</div>
+				)}
+
+				{/* History Logs Table (Log Page Style) */}
+				<div className="rounded-md border border-border overflow-hidden">
+					<div className="max-h-[340px] overflow-y-auto">
+						{isLoading ? (
+							<div className="flex items-center justify-center gap-2 py-12 text-xs text-muted-foreground">
+								<Loader2 className="h-4 w-4 animate-spin text-sky-400" /> Loading extension lifecycle logs…
+							</div>
+						) : isError ? (
+							<div className="p-4 text-center text-xs text-rose-400">
+								Failed to load extension history. Check connection and click Refresh.
+							</div>
+						) : events.length === 0 ? (
+							<div className="p-8 text-center text-xs text-muted-foreground">
+								No history records yet. Lifecycle events are logged automatically when the extension connects, turns off, or disconnects.
+							</div>
+						) : (
+							<Table>
+								<TableHeader className="bg-muted/40 sticky top-0 z-10">
+									<TableRow>
+										<TableHead className="text-xs font-semibold">Status / State</TableHead>
+										<TableHead className="text-xs font-semibold">Started At (Turned On/Off)</TableHead>
+										<TableHead className="text-xs font-semibold">Ended At</TableHead>
+										<TableHead className="text-xs font-semibold">Duration</TableHead>
+										<TableHead className="text-xs font-semibold">Lifecycle Details</TableHead>
+									</TableRow>
+								</TableHeader>
+								<TableBody>
+									{events.map((event, idx) => {
+										const startedMs = new Date(event.started_at).getTime();
+										const endedMs = event.ended_at ? new Date(event.ended_at).getTime() : (!online ? (lastSeenMs || modalNow) : modalNow);
+										const duration = formatExtensionDuration(Math.max(0, endedMs - startedMs));
+										const ongoing = !event.ended_at;
+										const isConn = (event.status || "").toLowerCase() === "connected";
+										return (
+											<TableRow key={event.id || idx} className="hover:bg-muted/30 text-xs">
+												<TableCell className="align-middle">
+													<div className="flex items-center gap-1.5">
+														<span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${extensionStatusClass(event.status)}`}>
+															{extensionStatusLabel(event.status)}
+														</span>
+														{ongoing && online && isConn && (
+															<span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+														)}
+													</div>
+												</TableCell>
+												<TableCell className="align-middle font-mono text-[11px] text-foreground">
+													{formatExtensionTimestamp(event.started_at)}
+												</TableCell>
+												<TableCell className="align-middle font-mono text-[11px] text-foreground">
+													{event.ended_at ? (
+														formatExtensionTimestamp(event.ended_at)
+													) : online ? (
+														<Badge variant="outline" className="text-[10px] border-emerald-500/30 bg-emerald-500/10 text-emerald-400">Ongoing (Live)</Badge>
+													) : (
+														<span className="text-muted-foreground">Last heartbeat</span>
+													)}
+												</TableCell>
+												<TableCell className="align-middle font-mono font-medium text-foreground">
+													{duration}
+													{ongoing && online && <span className="text-emerald-400 text-[10px] ml-1">(live)</span>}
+												</TableCell>
+												<TableCell className="align-middle text-[11px] text-muted-foreground">
+													{isConn
+														? "Extension paired & actively monitoring AI traffic"
+														: event.status === "uninstalled"
+														? "Extension removed / uninstalled from browser"
+														: "Extension turned off, disabled, or browser closed"}
+												</TableCell>
+											</TableRow>
+										);
+									})}
+								</TableBody>
+							</Table>
+						)}
+					</div>
+				</div>
+
+				<DialogFooter className="flex items-center justify-between sm:justify-between text-[11px] text-muted-foreground pt-1">
+					<span>Auto-delete: Logs older than 7 days are automatically removed from database.</span>
+					<Button type="button" variant="outline" size="sm" onClick={() => onOpenChange(false)}>
+						Close
+					</Button>
+				</DialogFooter>
+			</DialogContent>
+		</Dialog>
+	);
+}
+
 function compareGuardVersions(a: string, b: string): number {
 	const pa = a.replace(/^v/i, "").split(".").map((n) => parseInt(n, 10) || 0);
 	const pb = b.replace(/^v/i, "").split(".").map((n) => parseInt(n, 10) || 0);
@@ -486,6 +725,14 @@ export default function BrowserAiPage() {
 	const [agentBulkAction, setAgentBulkAction] = useState("");
 
 	// Remote Uninstall / Turn Off Guard State
+	// Extension Connection History Modal State
+	const [historyAgentModal, setHistoryAgentModal] = useState<BrowserAIAgent | null>(null);
+	const [now, setNow] = useState(() => Date.now());
+	useEffect(() => {
+		const timer = window.setInterval(() => setNow(Date.now()), 1000);
+		return () => window.clearInterval(timer);
+	}, []);
+
 	const [remoteUninstallDialogOpen, setRemoteUninstallDialogOpen] = useState(false);
 	const [targetAgentToUninstall, setTargetAgentToUninstall] = useState<BrowserAIAgent | null>(null);
 	const [remoteUninstallKey, setRemoteUninstallKey] = useState("");
@@ -6480,55 +6727,91 @@ export default function BrowserAiPage() {
 												})()}
 											</TableCell>
 											<TableCell className="align-top whitespace-nowrap overflow-hidden">
-												{(() => {
-													const extStatus = (agent.extension_status || "installed").toLowerCase();
-													if (extStatus === "connected") {
-														return (
-															<Badge
-																variant="outline"
-																className="border-emerald-500/40 bg-emerald-500/10 text-emerald-400 flex items-center gap-1.5 w-fit font-medium text-xs py-0.5"
-																title="Browser extension is actively paired with Guard EXE on localhost:18195 (monitoring & blocking live)"
-															>
-																<span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse inline-block" />
-																Connected
-															</Badge>
-														);
-													}
-													if (extStatus === "installed" || extStatus === "install" || extStatus === "not_installed") {
-														return (
-															<Badge
-																variant="outline"
-																className="border-sky-500/40 bg-sky-500/10 text-sky-400 flex items-center gap-1.5 w-fit font-medium text-xs py-0.5"
-																title="Browser extension installed on device (waiting for browser connection)"
-															>
-																<span className="h-1.5 w-1.5 rounded-full bg-sky-400 inline-block" />
-																Installed
-															</Badge>
-														);
-													}
-													if (extStatus === "uninstalled" || extStatus === "uninstall" || extStatus === "removed") {
+												<div className="flex flex-col items-start gap-1">
+													{(() => {
+														const extStatus = (agent.extension_status || "installed").toLowerCase();
+														if (extStatus === "connected") {
+															return (
+																<Badge
+																	variant="outline"
+																	className="border-emerald-500/40 bg-emerald-500/10 text-emerald-400 flex items-center gap-1.5 w-fit font-medium text-xs py-0.5"
+																	title="Browser extension is actively paired with Guard EXE on localhost:18195 (monitoring & blocking live)"
+																>
+																	<span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse inline-block" />
+																	Connected
+																</Badge>
+															);
+														}
+														if (extStatus === "installed" || extStatus === "install" || extStatus === "not_installed") {
+															return (
+																<Badge
+																	variant="outline"
+																	className="border-sky-500/40 bg-sky-500/10 text-sky-400 flex items-center gap-1.5 w-fit font-medium text-xs py-0.5"
+																	title="Browser extension installed on device (waiting for browser connection)"
+																>
+																	<span className="h-1.5 w-1.5 rounded-full bg-sky-400 inline-block" />
+																	Installed
+																</Badge>
+															);
+														}
+														if (extStatus === "uninstalled" || extStatus === "uninstall" || extStatus === "removed") {
+															return (
+																<Badge
+																	variant="outline"
+																	className="border-rose-500/40 bg-rose-500/10 text-rose-400 flex items-center gap-1.5 w-fit font-medium text-xs py-0.5"
+																	title="Browser extension uninstalled or removed from browser"
+																>
+																	<X className="h-3 w-3 shrink-0 text-rose-400" />
+																	Uninstalled
+																</Badge>
+															);
+														}
 														return (
 															<Badge
 																variant="outline"
 																className="border-rose-500/40 bg-rose-500/10 text-rose-400 flex items-center gap-1.5 w-fit font-medium text-xs py-0.5"
-																title="Browser extension uninstalled or removed from browser"
+																title="Browser extension is turned off or disconnected"
 															>
-																<X className="h-3 w-3 shrink-0 text-rose-400" />
-																Uninstalled
+																<PowerOff className="h-3 w-3 shrink-0 text-rose-400" />
+																Off
 															</Badge>
 														);
-													}
-													return (
-														<Badge
-															variant="outline"
-															className="border-rose-500/40 bg-rose-500/10 text-rose-400 flex items-center gap-1.5 w-fit font-medium text-xs py-0.5"
-															title="Browser extension is turned off or disconnected"
-														>
-															<PowerOff className="h-3 w-3 shrink-0 text-rose-400" />
-															Off
-														</Badge>
-													);
-												})()}
+													})()}
+
+													{/* Live On/Off Timing Calculation */}
+													{(() => {
+														const extStatus = (agent.extension_status || "installed").toLowerCase();
+														const startMs = agent.extension_status_started_at
+															? new Date(agent.extension_status_started_at).getTime()
+															: (extStatus === "connected" && agent.extension_last_seen_at
+																? new Date(agent.extension_last_seen_at).getTime()
+																: (agent.last_seen_at ? new Date(agent.last_seen_at).getTime() : 0));
+														const duration = startMs > 0 ? formatExtensionDuration(Math.max(0, now - startMs)) : "";
+														if (!duration) return null;
+														if (extStatus === "connected") {
+															return (
+																<span className="text-[10px] font-mono text-emerald-400 flex items-center gap-1" title={`Extension connected since ${new Date(startMs).toLocaleTimeString()}`}>
+																	<span className="text-muted-foreground font-sans">On:</span> {duration}
+																</span>
+															);
+														}
+														return (
+															<span className="text-[10px] font-mono text-amber-400/90 flex items-center gap-1" title={`Extension inactive since ${new Date(startMs).toLocaleTimeString()}`}>
+																<span className="text-muted-foreground font-sans">Off:</span> {duration}
+															</span>
+														);
+													})()}
+
+													{/* History Modal Trigger Button */}
+													<button
+														type="button"
+														onClick={() => setHistoryAgentModal(agent)}
+														className="inline-flex items-center gap-1 text-[10px] text-sky-400 hover:text-sky-300 hover:underline pt-0.5 cursor-pointer font-medium"
+														title="View extension connection lifecycle logs and on/off history"
+													>
+														<Clock className="h-2.5 w-2.5" /> History
+													</button>
+												</div>
 											</TableCell>
 											<TableCell className="align-top whitespace-nowrap overflow-hidden">{getAgentStatusBadge(agent.status, agent.uninstall_requested, agent.last_seen_at, agent.health_status)}</TableCell>
 											<TableCell className="align-top text-xs text-muted-foreground whitespace-nowrap">
@@ -9062,6 +9345,14 @@ export default function BrowserAiPage() {
 					</AlertDialogFooter>
 				</AlertDialogContent>
 			</AlertDialog>
+
+			
+			{/* Extension Connection History & Lifecycle Logs Popup Modal */}
+			<AgentExtensionHistoryModal
+				agent={historyAgentModal}
+				open={!!historyAgentModal}
+				onOpenChange={(open) => !open && setHistoryAgentModal(null)}
+			/>
 
 			{/* Generic Confirmation Dialog for safe interactive actions */}
 			<AlertDialog
