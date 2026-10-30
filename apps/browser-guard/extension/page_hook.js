@@ -64,17 +64,23 @@
 
   }
 
+  if (typeof window !== "undefined") {
+    window.pending = window.pending || {};
+    window.pendingEvaluations = window.pendingEvaluations || {};
+    window._lastRedactedPromptText = window._lastRedactedPromptText || "";
+    window._lastHandledPromptText = window._lastHandledPromptText || "";
+    window._lastHandledPromptTime = window._lastHandledPromptTime || 0;
+    window._lastBlockedPromptText = window._lastBlockedPromptText || "";
+    window._lastBlockedPromptTime = window._lastBlockedPromptTime || 0;
+    window._lastRedactedOriginal = window._lastRedactedOriginal || "";
+    window._lastRedactedReplacement = window._lastRedactedReplacement || "";
+    window._lastRedactedTime = window._lastRedactedTime || 0;
+  }
   var passKey = false;
-
   var passClick = false;
-
   var _passUntil = 0;
-
-  var pending = {};
-
-
-
-  var pendingEvaluations = {};
+  var pending = (typeof window !== "undefined" && window.pending) || {};
+  var pendingEvaluations = (typeof window !== "undefined" && window.pendingEvaluations) || {};
 
   var stagedFiles = [];
 
@@ -812,23 +818,16 @@
     }
 
     if (ev.data.type === "decision") {
-
-      if (pending && pending[ev.data.id]) {
-
-        pending[ev.data.id](ev.data.decision || { blocked: false });
-
-        delete pending[ev.data.id];
-
+      var pStore = (typeof window !== "undefined" && window.pending) || (typeof pending !== "undefined" ? pending : {});
+      if (pStore && pStore[ev.data.id]) {
+        pStore[ev.data.id](ev.data.decision || { blocked: false });
+        delete pStore[ev.data.id];
       }
-
-      if (pendingEvaluations && pendingEvaluations[ev.data.id]) {
-
-        pendingEvaluations[ev.data.id](ev.data.decision || { blocked: false });
-
-        delete pendingEvaluations[ev.data.id];
-
+      var peStore = (typeof window !== "undefined" && window.pendingEvaluations) || (typeof pendingEvaluations !== "undefined" ? pendingEvaluations : {});
+      if (peStore && peStore[ev.data.id]) {
+        peStore[ev.data.id](ev.data.decision || { blocked: false });
+        delete peStore[ev.data.id];
       }
-
     }
 
   });
@@ -4541,13 +4540,14 @@
     }
     return new Promise(function (resolve) {
       var id = "eval_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2);
+      var store = (typeof window !== "undefined" && window.pendingEvaluations) || (typeof pendingEvaluations !== "undefined" ? pendingEvaluations : {});
       var timer = setTimeout(function () {
-        delete pendingEvaluations[id];
+        if (store && store[id]) delete store[id];
         resolve(clientDecision || { blocked: false, passthrough: true });
       }, 4000);
-      pendingEvaluations[id] = function (res) {
+      store[id] = function (res) {
         clearTimeout(timer);
-        delete pendingEvaluations[id];
+        if (store && store[id]) delete store[id];
         resolve(res || { blocked: false });
       };
       window.postMessage({
@@ -5301,15 +5301,38 @@
   
   function clearComposerIfRedacted(redactedText) {
     try {
-      var target = getDeepActiveElement() || document.activeElement;
-      if (!target || (!target.isContentEditable && target.getAttribute("contenteditable") !== "true" && target.tagName !== "TEXTAREA" && target.tagName !== "INPUT")) {
-        var deepEl = querySelectorAllDeep("div#prompt-textarea, [contenteditable='true'], textarea#prompt-textarea, textarea");
-        if (deepEl.length) target = deepEl[0];
+      var rTrim = (redactedText || "[REDACTED]").trim().toLowerCase();
+      var targets = querySelectorAllDeep(
+        "div#prompt-textarea, " +
+        "div.ProseMirror, " +
+        "rich-textarea div[contenteditable], " +
+        "[contenteditable='true'][role='textbox'], " +
+        "div[contenteditable='true'], " +
+        "cib-text-input textarea, " +
+        "copilot-text-input textarea, " +
+        "copilot-composer textarea, " +
+        "textarea#prompt-textarea, " +
+        "textarea#searchbox, " +
+        "textarea#userInput, " +
+        "textarea"
+      );
+
+      var activeEl = getDeepActiveElement() || document.activeElement;
+      if (activeEl && targets.indexOf(activeEl) === -1) {
+        targets.unshift(activeEl);
       }
-      if (!target) return;
-      var curVal = (target.value || target.innerText || target.textContent || "").trim();
-      var rTrim = (redactedText || "[REDACTED]").trim();
-      if (curVal === rTrim || curVal.indexOf(rTrim) >= 0) {
+
+      for (var ti = 0; ti < targets.length; ti++) {
+        var target = targets[ti];
+        if (!target) continue;
+
+        var curVal = (target.value || target.innerText || target.textContent || "").trim().toLowerCase();
+        var match = false;
+        if (rTrim && curVal.indexOf(rTrim) >= 0) match = true;
+        if (curVal.indexOf("[redacted]") >= 0 || curVal === "[redacted]") match = true;
+
+        if (!match) continue;
+
         if (target.tagName === "TEXTAREA" || target.tagName === "INPUT") {
           try {
             var proto = target.tagName === "TEXTAREA" ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
@@ -5320,24 +5343,51 @@
           try { if (target._valueTracker) target._valueTracker.setValue("x"); } catch (_) {}
           target.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
           target.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+          try {
+            var nodeHost = target.getRootNode && target.getRootNode().host;
+            for (var hCount = 0; nodeHost && hCount < 6; hCount++) {
+              if ("text" in nodeHost) try { nodeHost.text = ""; } catch (_) {}
+              if ("value" in nodeHost) try { nodeHost.value = ""; } catch (_) {}
+              if ("_text" in nodeHost) try { nodeHost._text = ""; } catch (_) {}
+              if ("_value" in nodeHost) try { nodeHost._value = ""; } catch (_) {}
+              if ("inputText" in nodeHost) try { nodeHost.inputText = ""; } catch (_) {}
+              nodeHost.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+              nodeHost.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+              nodeHost = nodeHost.getRootNode && nodeHost.getRootNode().host;
+            }
+          } catch (_) {}
         } else if (target.isContentEditable || target.getAttribute("contenteditable") === "true") {
+          try {
+            target.focus();
+            var sel = window.getSelection();
+            if (sel) {
+              var range = document.createRange();
+              range.selectNodeContents(target);
+              sel.removeAllRanges();
+              sel.addRange(range);
+            }
+            document.execCommand("selectAll", false, null);
+            document.execCommand("delete", false, null);
+          } catch (_) {}
+
           try {
             target.innerHTML = "<p><br></p>";
           } catch (_) {
             target.textContent = "";
           }
+
           try {
-            target.dispatchEvent(new InputEvent("input", { bubbles: true, cancelable: true, inputType: "deleteContentBackward" }));
+            target.dispatchEvent(new InputEvent("input", { bubbles: true, composed: true, cancelable: true, inputType: "deleteContentBackward" }));
           } catch (_) {
-            target.dispatchEvent(new Event("input", { bubbles: true }));
+            target.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
           }
-          target.dispatchEvent(new Event("change", { bubbles: true }));
+          target.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
         }
       }
     } catch (_) {}
   }
 
-function setComposerText(text) {
+  function setComposerText(text) {
 
     if (typeof text !== "string") return false;
 
@@ -6163,10 +6213,18 @@ function setComposerText(text) {
               changed = true;
 
             } else if (msg.content && Array.isArray(msg.content.parts)) {
-
-              msg.content.parts = [nextText];
-
-              changed = true;
+              for (var pi = 0; pi < msg.content.parts.length; pi++) {
+                if (typeof msg.content.parts[pi] === 'string') {
+                  if (origText && msg.content.parts[pi].indexOf(origText) >= 0) {
+                    msg.content.parts[pi] = msg.content.parts[pi].split(origText).join(nextText);
+                  } else if (origTrim && msg.content.parts[pi].indexOf(origTrim) >= 0) {
+                    msg.content.parts[pi] = msg.content.parts[pi].split(origTrim).join(nextTrim);
+                  } else {
+                    msg.content.parts[pi] = nextText;
+                  }
+                  changed = true;
+                }
+              }
 
             } else if (Array.isArray(msg.content)) {
 
@@ -8892,17 +8950,14 @@ function setComposerText(text) {
             }
 
           } else if (enterTarget) {
-
             enterTarget.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true, cancelable: true, keyCode: 13, which: 13 }));
-
           }
-
+          [80, 200, 450, 800, 1500].forEach(function (d) {
+            setTimeout(function () { clearComposerIfRedacted(redactedText); }, d);
+          });
         } finally {
-
           passKey = false;
-
         }
-
       }, 50);
 
       return;
@@ -9514,8 +9569,9 @@ function setComposerText(text) {
           passClick = false;
 
         }
-        setTimeout(function () { clearComposerIfRedacted(redactedText); }, 120);
-        setTimeout(function () { clearComposerIfRedacted(redactedText); }, 300);
+        [80, 200, 450, 800, 1500].forEach(function (d) {
+          setTimeout(function () { clearComposerIfRedacted(redactedText); }, d);
+        });
 
       }, 50);
 
@@ -10718,6 +10774,9 @@ function setComposerText(text) {
         _lastHandledPromptText = fetchDecision.redacted_prompt;
 
         showBubble(fetchDecision.message || "Sensitive text was redacted before sending.", fetchDecision.rule, "redact");
+        [100, 300, 600, 1200].forEach(function (d) {
+          setTimeout(function () { clearComposerIfRedacted(fetchDecision.redacted_prompt); }, d);
+        });
 
 
 
