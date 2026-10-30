@@ -10,7 +10,7 @@ import (
 )
 
 func TestRBACScopeGrants_SavedAndInheritedByMembers(t *testing.T) {
-	store := newSCIMTestStore()
+	store := newSCIMTestStore(t)
 	handler := &WorkspaceHandler{workspace: store, store: &lib.Config{ConfigStore: store}}
 
 	customerID := "cust-1"
@@ -81,7 +81,7 @@ func TestRBACScopeGrants_SavedAndInheritedByMembers(t *testing.T) {
 }
 
 func TestSessionSectionsAllow_UsesOwnAndInheritedSections(t *testing.T) {
-	store := newSCIMTestStore()
+	store := newSCIMTestStore(t)
 	_ = store.CreateTeam(nil, &tables.TableTeam{ID: "team-a", Name: "Team A"})
 	viewer := &tables.TableUser{ID: "u-view", Username: "viewer", Role: "auditor", AllowedSections: "observability/dashboard", CreatedAt: time.Now(), UpdatedAt: time.Now()}
 	_ = store.CreateUser(nil, viewer)

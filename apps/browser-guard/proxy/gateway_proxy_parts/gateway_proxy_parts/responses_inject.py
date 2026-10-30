@@ -1305,7 +1305,14 @@ def _inject_warned_json(raw_text: str, original: str, warned: str) -> str | None
         try:
             obj = json.loads(rec)
         except ValueError:
-            return None
+            if original in rec:
+                rec = rec.replace(original, warned)
+                changed_any = True
+            elif original.strip() and original.strip() in rec:
+                rec = rec.replace(original.strip(), warned.strip())
+                changed_any = True
+            out.append(rec)
+            continue
         # Specific Copilot SignalR inspection (text, rawText, hiddenText, spokenText, rawUserQuery)
         rec_changed = False
         if isinstance(obj, dict) and isinstance(obj.get("arguments"), list):
@@ -1352,8 +1359,8 @@ def inject_warned_prompt(raw_text: str, original: str, warned: str) -> str | Non
     receives `warned` instead of `original`. The result stays valid for the site's parser."""
     if not raw_text or not original or not warned or original == warned:
         return None
-    head = raw_text.lstrip()[:1]
-    if head in ("{", "["):
+    head = raw_text.lstrip(" \t\r\n\x1e")[:1]
+    if head in ("{", "[") or "\x1e" in raw_text:
         rewritten = _inject_warned_json(raw_text, original, warned)
         if rewritten is not None:
             return rewritten
@@ -1366,12 +1373,12 @@ def inject_warned_prompt(raw_text: str, original: str, warned: str) -> str | Non
     for ensure_ascii in (False, True):
         ov = json.dumps(original, ensure_ascii=ensure_ascii)[1:-1]
         wv = json.dumps(warned, ensure_ascii=ensure_ascii)[1:-1]
-        if ov != original and ov in raw_text:
-            return raw_text.replace(ov, wv, 1)
-    if head not in ("{", "[") and original in raw_text:
-        return raw_text.replace(original, warned, 1)
+        if ov in raw_text:
+            return raw_text.replace(ov, wv)
     if original in raw_text:
-        return raw_text.replace(original, json.dumps(warned, ensure_ascii=False)[1:-1], 1)
+        return raw_text.replace(original, warned)
+    if original.strip() and original.strip() in raw_text:
+        return raw_text.replace(original.strip(), warned.strip())
     return None
 
 
@@ -1464,7 +1471,11 @@ def inject_warned_into_request(flow, raw_text: str, original: str, warned: str) 
             return False
     if new is None:
         text = inject_warned_prompt(raw_text, original, warned)
+        if not text and original and original.strip() in raw_text:
+            text = raw_text.replace(original.strip(), warned.strip())
         new = text.encode("utf-8") if text is not None else None
+    if new is None and original and original.strip().encode("utf-8") in data:
+        new = data.replace(original.strip().encode("utf-8"), warned.strip().encode("utf-8"))
     if new is None:
         return False
     req.content = new

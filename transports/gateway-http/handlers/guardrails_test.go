@@ -10,7 +10,7 @@ import (
 )
 
 func TestGuardrailsHandlers_RulesAndProvidersWorkflow(t *testing.T) {
-	testStore := newSCIMTestStore()
+	testStore := newSCIMTestStore(t)
 	cfg := &lib.Config{
 		ConfigStore: testStore,
 		GuardrailsConfig: &lib.GuardrailsConfig{

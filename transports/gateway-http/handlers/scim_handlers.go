@@ -860,7 +860,9 @@ func (h *WorkspaceHandler) scimDeleteUser(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	if err := purgeUserRelations(ctx, h.store.ConfigStore, h.promptLifecycle, user); err != nil {
-		logger.Error("SCIM failed to delete user and related records id=%s: %v", id, err)
+		if logger != nil {
+			logger.Error("SCIM failed to delete user and related records id=%s: %v", id, err)
+		}
 		scimError(ctx, fasthttp.StatusInternalServerError, "failed to delete user")
 		return
 	}

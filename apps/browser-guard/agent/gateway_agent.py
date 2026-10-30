@@ -51,8 +51,10 @@ from agent_lifecycle import (
 from agent_autoupdate import check_and_update_if_needed
 from agent_logging import ensure_single_instance, get_resource_path, setup_file_logging
 from agent_pac_content import (
+    build_pac_from_targets,
     check_backend,
     fetch_proxy_pac,
+    local_pac_path,
     write_local_pac,
 )
 from agent_pac_orchestration import (

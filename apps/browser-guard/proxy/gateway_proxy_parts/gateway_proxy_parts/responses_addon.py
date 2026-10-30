@@ -1,3 +1,17 @@
+
+def _set_websocket_message_payload(msg, new_text: str) -> None:
+    if not isinstance(new_text, str):
+        return
+    try:
+        msg.content = new_text.encode("utf-8")
+    except Exception:
+        pass
+    try:
+        from mitmproxy.websocket import Opcode
+        if getattr(msg, "is_text", False) or getattr(msg, "type", None) == Opcode.TEXT:
+            msg.text = new_text
+    except Exception:
+        pass
 # BrowserAIInterceptor — mitmproxy addon (loaded after responses_inject.py via MANIFEST).
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
@@ -1557,8 +1571,10 @@ class BrowserAIInterceptor:
                             inject_websocket_reply(flow, host, (reply_text or "").strip())
                         elif action in ("Warned", "Redacted") and redacted_prompt and redacted_prompt != ws_prompt:
                             new_content = inject_warned_prompt(content, ws_prompt, redacted_prompt)
+                            if not new_content and ws_prompt and ws_prompt.strip() in content:
+                                new_content = content.replace(ws_prompt.strip(), redacted_prompt.strip())
                             if new_content:
-                                msg.text = new_content
+                                _set_websocket_message_payload(msg, new_content)
                     else:
                         decision = get_remembered_guard_decision(domain, pn) or evaluate_prompt_coalesced(
                             platform=platform,
@@ -1574,8 +1590,10 @@ class BrowserAIInterceptor:
                             inject_websocket_reply(flow, host, (reply_text or "").strip())
                         elif action in ("Warned", "Redacted") and redacted_prompt and redacted_prompt != ws_prompt:
                             new_content = inject_warned_prompt(content, ws_prompt, redacted_prompt)
+                            if not new_content and ws_prompt and ws_prompt.strip() in content:
+                                new_content = content.replace(ws_prompt.strip(), redacted_prompt.strip())
                             if new_content:
-                                msg.text = new_content
+                                _set_websocket_message_payload(msg, new_content)
             return
 
         # ── Universal WebSocket: domain-agnostic extract (same rule as HTTP) ──
@@ -1611,7 +1629,7 @@ class BrowserAIInterceptor:
                 if not new_content and ws_prompt and ws_prompt.strip() in content:
                     new_content = content.replace(ws_prompt.strip(), redacted_prompt.strip())
                 if new_content:
-                    msg.text = new_content
+                    _set_websocket_message_payload(msg, new_content)
             return
 
         if is_event_sync_noise_content(content):
@@ -1707,8 +1725,10 @@ class BrowserAIInterceptor:
                 inject_websocket_reply(flow, host, (reply_text or "").strip())
             elif action in ("Warned", "Redacted") and redacted_prompt and redacted_prompt != prompt:
                 new_content = inject_warned_prompt(content, prompt, redacted_prompt)
+                if not new_content and prompt and prompt.strip() in content:
+                    new_content = content.replace(prompt.strip(), redacted_prompt.strip())
                 if new_content:
-                    msg.text = new_content
+                    _set_websocket_message_payload(msg, new_content)
             return
 
         client_ip = get_client_ip(flow)
@@ -1736,8 +1756,10 @@ class BrowserAIInterceptor:
         elif action in ("Warned", "Redacted") and redacted_prompt and redacted_prompt != prompt:
             print(f"[Gateway Proxy] WARNED WebSocket prompt to {domain} -> Rule: {rule_triggered}")
             new_content = inject_warned_prompt(content, prompt, redacted_prompt)
+            if not new_content and prompt and prompt.strip() in content:
+                new_content = content.replace(prompt.strip(), redacted_prompt.strip())
             if new_content:
-                msg.text = new_content
+                _set_websocket_message_payload(msg, new_content)
 
 
 # Prompt checks can wait on the backend / AI Guard Bot for seconds. Run them off

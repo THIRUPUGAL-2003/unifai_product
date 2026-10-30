@@ -159,16 +159,18 @@ class _PACRequestHandler(http.server.BaseHTTPRequestHandler):
         if _is_telemetry_payload(req_prompt, req_url):
             self._json(200, {"blocked": False, "passthrough": True, "action": "Allowed", "message": "", "rule": ""})
             return
+        req_prompt = str(data.get("original_prompt") or data.get("prompt") or data.get("text") or "")
         result = check_prompt(
             str(data.get("host") or ""),
             str(data.get("url") or ""),
-            str(data.get("prompt") or data.get("text") or ""),
+            req_prompt,
             files=data.get("files") if isinstance(data.get("files"), list) else None,
             upload_images=data.get("upload_images") if isinstance(data.get("upload_images"), list) else None,
             is_blocked=bool(data.get("is_blocked")),
             rule=str(data.get("rule") or data.get("blocked_reason") or ""),
             eval_id=str(data.get("eval_id") or data.get("id") or ""),
             action=str(data.get("action") or ""),
+            original_prompt=str(data.get("original_prompt") or ""),
         )
         self._json(200, result)
 

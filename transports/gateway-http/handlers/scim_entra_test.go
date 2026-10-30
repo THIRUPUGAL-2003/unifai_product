@@ -13,6 +13,7 @@ import (
 	"github.com/gateway/gateway/framework/configstore"
 	"github.com/gateway/gateway/framework/configstore/tables"
 	"github.com/gateway/gateway/transports/gateway-http/lib"
+	"github.com/glebarez/sqlite"
 	"github.com/valyala/fasthttp"
 	"gorm.io/gorm"
 )
@@ -21,19 +22,46 @@ import (
 type scimTestWorkspaceStore struct {
 	configstore.WorkspaceStore
 	*memoryConfigStore
+	db       *gorm.DB
 	settings map[string]string
 	teams    map[string]*tables.TableTeam
 	members  map[string]map[string]bool // teamID -> set of userIDs
 }
 
-func newSCIMTestStore() *scimTestWorkspaceStore {
+func newSCIMTestStore(t *testing.T) *scimTestWorkspaceStore {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open SCIM test database: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("get SCIM test database connection: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
 	mem := newMemoryConfigStore()
 	return &scimTestWorkspaceStore{
 		memoryConfigStore: mem,
+		db:                db,
 		settings:          make(map[string]string),
 		teams:             make(map[string]*tables.TableTeam),
 		members:           make(map[string]map[string]bool),
 	}
+}
+
+func (s *scimTestWorkspaceStore) ExecuteTransaction(ctx context.Context, fn func(tx *gorm.DB) error) error {
+	if s == nil || s.db == nil {
+		return fmt.Errorf("SCIM test database is not available")
+	}
+	if fn == nil {
+		return fmt.Errorf("SCIM transaction callback is required")
+	}
+	return s.db.WithContext(ctx).Transaction(fn)
+}
+
+func (s *scimTestWorkspaceStore) DeleteModelConfigsForScope(ctx context.Context, tx *gorm.DB, scope, scopeID string) error {
+	return nil
 }
 
 func (s *scimTestWorkspaceStore) GetWorkspaceSetting(ctx context.Context, key string) (*tables.TableWorkspaceSetting, error) {
@@ -178,7 +206,7 @@ func (s *scimTestWorkspaceStore) ListRBACRoles(ctx context.Context) ([]tables.Ta
 
 // TestMicrosoftEntraSCIMFlow simulates Microsoft Entra ID connecting to Gateway SCIM 2.0.
 func TestMicrosoftEntraSCIMFlow(t *testing.T) {
-	store := newSCIMTestStore()
+	store := newSCIMTestStore(t)
 	handler := &WorkspaceHandler{
 		workspace: store,
 		store: &lib.Config{
@@ -440,7 +468,7 @@ func TestMicrosoftEntraSCIMFlow(t *testing.T) {
 
 // TestOktaSCIMFlow verifies Okta provisioning, role assignment, and user deactivation.
 func TestOktaSCIMFlow(t *testing.T) {
-	store := newSCIMTestStore()
+	store := newSCIMTestStore(t)
 	handler := &WorkspaceHandler{
 		workspace: store,
 		store: &lib.Config{
@@ -558,7 +586,7 @@ func TestOktaSCIMFlow(t *testing.T) {
 
 // TestKeycloakSCIMFlow verifies Keycloak provisioning, groups, and role default fallback.
 func TestKeycloakSCIMFlow(t *testing.T) {
-	store := newSCIMTestStore()
+	store := newSCIMTestStore(t)
 	handler := &WorkspaceHandler{
 		workspace: store,
 		store: &lib.Config{
@@ -635,7 +663,7 @@ func TestKeycloakSCIMFlow(t *testing.T) {
 // provisions a Team/Group and assigns users, the team is properly created and users
 // are accurately linked to that team inside Gateway.
 func TestTeamCreationAndUserAssignmentFlow(t *testing.T) {
-	store := newSCIMTestStore()
+	store := newSCIMTestStore(t)
 	handler := &WorkspaceHandler{
 		workspace: store,
 		store: &lib.Config{
@@ -869,7 +897,7 @@ func TestTeamCreationAndUserAssignmentFlow(t *testing.T) {
 // 5. Okta group deletion (DELETE /scim/v2/Groups/{id})
 // 6. Keycloak group creation and role assignment
 func TestOktaAdvancedProvisioningAndKeycloakFullFlow(t *testing.T) {
-	store := newSCIMTestStore()
+	store := newSCIMTestStore(t)
 	handler := &WorkspaceHandler{
 		workspace: store,
 		store: &lib.Config{
@@ -1088,7 +1116,7 @@ func TestOktaAdvancedProvisioningAndKeycloakFullFlow(t *testing.T) {
 // 3. When IdP provides userName as email without an emails array, email is automatically populated
 // 4. When email is patched via SCIM PATCH, user.Email updates correctly
 func TestSCIMEmailAndDefaultRoleConfiguration(t *testing.T) {
-	store := newSCIMTestStore()
+	store := newSCIMTestStore(t)
 	handler := &WorkspaceHandler{
 		workspace: store,
 		store: &lib.Config{
@@ -1229,7 +1257,7 @@ func TestSCIMEmailAndDefaultRoleConfiguration(t *testing.T) {
 // and Keycloak user provisioning correctly stores the human-readable Display Name
 // as user.Username and the email/UPN as user.Email, with role defaulting to "user".
 func TestSCIMDisplayNameMapping_EntraOktaKeycloak(t *testing.T) {
-	store := newSCIMTestStore()
+	store := newSCIMTestStore(t)
 	handler := &WorkspaceHandler{
 		workspace: store,
 		store: &lib.Config{
@@ -1419,7 +1447,7 @@ func TestSCIMDisplayNameMapping_EntraOktaKeycloak(t *testing.T) {
 // TestSCIMProvisioningChain_UniquenessAndDiscovery covers displayName collisions,
 // ResourceTypes discovery, and unsupported-filter error handling used by Entra/Okta/Keycloak.
 func TestSCIMProvisioningChain_UniquenessAndDiscovery(t *testing.T) {
-	store := newSCIMTestStore()
+	store := newSCIMTestStore(t)
 	handler := &WorkspaceHandler{
 		workspace: store,
 		store: &lib.Config{
@@ -1511,7 +1539,7 @@ func TestSCIMProvisioningChain_UniquenessAndDiscovery(t *testing.T) {
 }
 
 func TestOktaAndKeycloakUserCreateUpdateDelete(t *testing.T) {
-	store := newSCIMTestStore()
+	store := newSCIMTestStore(t)
 	handler := &WorkspaceHandler{workspace: store, store: &lib.Config{ConfigStore: store}}
 	token := "idp-sync-token"
 	raw, _ := json.Marshal(scimConfigPayload{Enabled: true, Provider: "okta", BearerToken: token})

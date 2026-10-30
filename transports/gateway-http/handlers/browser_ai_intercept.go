@@ -207,6 +207,7 @@ func (h *BrowserAIHandler) intercept(ctx *fasthttp.RequestCtx) {
 	var payload struct {
 		Platform         string         `json:"platform"`
 		Prompt           string         `json:"prompt"`
+		OriginalPrompt   string         `json:"original_prompt"`
 		ClientIP         string         `json:"client_ip"`
 		AgentID          string         `json:"agent_id"`
 		AgentHostname    string         `json:"agent_hostname"`
@@ -223,6 +224,20 @@ func (h *BrowserAIHandler) intercept(ctx *fasthttp.RequestCtx) {
 	if err := sonic.Unmarshal(ctx.PostBody(), &payload); err != nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Invalid JSON payload")
 		return
+	}
+
+	if strings.TrimSpace(payload.OriginalPrompt) != "" && (payload.Prompt == "[REDACTED]" || strings.HasPrefix(payload.Prompt, "[REDACTED]")) {
+		if payload.Metadata == nil {
+			payload.Metadata = make(map[string]any)
+		}
+		payload.Metadata["original_prompt"] = strings.TrimSpace(payload.OriginalPrompt)
+		payload.Prompt = strings.TrimSpace(payload.OriginalPrompt)
+	} else if payload.Metadata != nil {
+		if orig, ok := payload.Metadata["original_prompt"].(string); ok && strings.TrimSpace(orig) != "" {
+			if strings.TrimSpace(payload.Prompt) == "[REDACTED]" || strings.HasPrefix(strings.TrimSpace(payload.Prompt), "[REDACTED]") {
+				payload.Prompt = strings.TrimSpace(orig)
+			}
+		}
 	}
 
 	normPrompt := strings.ToLower(strings.TrimSpace(payload.Prompt))
@@ -1371,7 +1386,7 @@ func (h *BrowserAIHandler) interceptFile(ctx *fasthttp.RequestCtx) {
 		}
 	}
 	uploadImages := parseUploadImagesMetadata(metadata)
-	if len(uploadImages) == 0 && len(uploadBytes) >= 32 {
+	if len(uploadImages) == 0 && len(uploadBytes) > 0 {
 		lowerFn := strings.ToLower(fileName)
 		isImg := strings.HasPrefix(contentTypeHint, "image/") ||
 			strings.HasSuffix(lowerFn, ".png") ||
@@ -1413,7 +1428,7 @@ func (h *BrowserAIHandler) interceptFile(ctx *fasthttp.RequestCtx) {
 		_ = h.manager.UpdateLogAttachment(ctx, logEntry.ID, safeName, "", contentTypeHint)
 	}
 
-	if len(uploadBytes) >= 32 {
+	if len(uploadBytes) > 0 {
 		stored, ctype, storeErr := storeBrowserAIAttachment(logEntry.ID, safeName, uploadBytes, contentTypeHint)
 		if storeErr == nil && stored != "" {
 			ttl, _ := getBrowserAIAttachmentTTL(h.manager)

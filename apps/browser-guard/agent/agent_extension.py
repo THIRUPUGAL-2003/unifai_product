@@ -1087,6 +1087,35 @@ def _is_telemetry_payload(prompt: str, url: str = "") -> bool:
 
 
 
+
+def extract_text_from_image(raw_bytes: bytes) -> str:
+    """Fast local OCR using native Windows Media OCR (winocr)."""
+    if not raw_bytes or len(raw_bytes) < 16:
+        return ""
+    try:
+        from PIL import Image
+        import io
+        img = Image.open(io.BytesIO(raw_bytes))
+        import winocr, asyncio
+
+        async def _run():
+            res = await winocr.recognize_pil(img, lang="en")
+            return getattr(res, "text", "") or ""
+
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+                    return ex.submit(asyncio.run, _run()).result(timeout=4)
+            else:
+                return loop.run_until_complete(_run())
+        except RuntimeError:
+            return asyncio.run(_run())
+    except Exception as e:
+        return ""
+
+
 def extract_file_content(raw_b: bytes, file_name: str = "", content_type: str = "", raw_text: str = "") -> str:
     """Robust, standalone extraction of text from any file type for DLP policy rules.
     Extracts PDF (via pypdf or stream decompress), Word .docx, Excel .xlsx, PowerPoint .pptx,
@@ -1116,6 +1145,12 @@ def extract_file_content(raw_b: bytes, file_name: str = "", content_type: str = 
         return ""
 
     extracted_parts = []
+
+    # 1.5 Images OCR (PNG, JPG, JPEG, WEBP, BMP, GIF, SVG)
+    if fext in (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".svg") or ct.startswith("image/"):
+        img_txt = extract_text_from_image(raw_b)
+        if img_txt and len(img_txt.strip()) > 1:
+            extracted_parts.append(img_txt.strip())
 
     # 2. PDF Documents (%PDF- or .pdf)
     if raw_b.startswith(b"%PDF-") or fext == ".pdf" or "application/pdf" in ct:
@@ -1268,6 +1303,8 @@ def check_prompt(
     rule: str = "",
     eval_id: str = "",
     action: str = "",
+    original_prompt: str = "",
+    eval_only: bool = False,
 ) -> dict:
     """Evaluate prompt, files, and images against Gateway DLP policies."""
     if _is_telemetry_payload(prompt, url):
@@ -1290,8 +1327,11 @@ def check_prompt(
             }
 
     prompt = re.sub(r'[\u200B-\u200F\uFEFF\u202A-\u202E\u2060-\u206F]', '', prompt or '').replace('\u00A0', ' ').strip()
-    text = prompt
-    eval_text = prompt
+    orig_p = re.sub(r"[\u200B-\u200F\uFEFF\u202A-\u202E\u2060-\u206F]", "", original_prompt or "").replace("\u00A0", " ").strip()
+    if orig_p and (not prompt or prompt == "[REDACTED]" or prompt.startswith("[REDACTED]")):
+        prompt = orig_p
+    text = orig_p or prompt
+    eval_text = text
     raw_files_list = files if isinstance(files, list) else []
     images_list = upload_images if isinstance(upload_images, list) else []
 
@@ -1580,6 +1620,17 @@ def check_prompt(
                 block_message = f"Blocked by corporate DLP policy: {r_name}."
         if rule_reason and rule_reason.lower() != r_name.lower():
             rule = r_name
+
+    if eval_only:
+        all_violating = list(dict.fromkeys(violating_files + violating_ext_files))
+        return {
+            "blocked": bool(is_blocked),
+            "action": matched_action or ("Blocked" if is_blocked else "Allowed"),
+            "rule": rule or (matched_rule_dict.get("name") if matched_rule_dict else ""),
+            "message": block_message or ("Blocked by security policy." if is_blocked else ""),
+            "violating_files": all_violating,
+            "extracted_text": "\n".join(file_extracted_texts) if file_extracted_texts else "",
+        }
 
     if not text and not images_list and not files_list:
         return {"blocked": False, "message": "", "rule": ""}
@@ -1977,9 +2028,11 @@ def check_prompt(
         meta["action"] = "Redacted"
         meta["is_redacted"] = True
 
+    meta["original_prompt"] = (orig_p or text)[:40000]
     payload = {
         "platform": platform,
-        "prompt": text[:40000],
+        "prompt": (orig_p or text)[:40000],
+        "original_prompt": (orig_p or text)[:40000],
         "client_ip": "127.0.0.1",
         "agent_id": agent_id,
         "agent_hostname": agent_hostname,

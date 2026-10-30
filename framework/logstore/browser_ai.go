@@ -2396,6 +2396,14 @@ func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, prompt
 		return nil, "", fmt.Errorf("database connection not available")
 	}
 
+	if metadata != nil {
+		if orig, ok := metadata["original_prompt"].(string); ok && strings.TrimSpace(orig) != "" {
+			if strings.TrimSpace(promptFull) == "[REDACTED]" || strings.HasPrefix(strings.TrimSpace(promptFull), "[REDACTED]") {
+				promptFull = strings.TrimSpace(orig)
+			}
+		}
+	}
+
 	trimmedPrompt := strings.TrimSpace(promptFull)
 	lowTrimmed := strings.ToLower(trimmedPrompt)
 	isUpload := strings.HasPrefix(trimmedPrompt, "[FILE UPLOAD]") ||
@@ -2865,8 +2873,12 @@ func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, prompt
 				}
 			}
 		}
-		cleanPromptFull = SanitizeDBString(redactedText)
-		cleanPreview = SafePromptPreview(redactedText, 100)
+		if metadata == nil {
+			metadata = make(map[string]any)
+		}
+		metadata["redacted_prompt"] = redactedText
+		metaBytes, _ = json.Marshal(metadata)
+		// Keep cleanPromptFull and cleanPreview as the original prompt so administrators see what was intercepted in Prompt Logs
 	}
 	cleanPlatform := SanitizeDBString(canonicalPlatform)
 	cleanDomain := SanitizeDBString(domain)

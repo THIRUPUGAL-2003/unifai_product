@@ -7,9 +7,10 @@ import (
 	"time"
 
 	"github.com/fasthttp/router"
-	"github.com/glebarez/sqlite"
 	"github.com/gateway/gateway/framework/configstore"
 	"github.com/gateway/gateway/framework/configstore/tables"
+	"github.com/glebarez/sqlite"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -84,7 +85,7 @@ func (s *retentionTestStore) GetUserByUsername(ctx context.Context, username str
 
 func setupRetentionTestStore(t *testing.T) *retentionTestStore {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared&_loc=auto"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open("file:"+uuid.NewString()+"?mode=memory&cache=shared&_loc=auto"), &gorm.Config{})
 	if err != nil {
 		t.Skipf("sqlite unavailable: %v", err)
 	}
@@ -99,6 +100,11 @@ func setupRetentionTestStore(t *testing.T) *retentionTestStore {
 	if err != nil {
 		t.Fatalf("failed to migrate tables: %v", err)
 	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("failed to get test database connection: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	return &retentionTestStore{db: db}
 }

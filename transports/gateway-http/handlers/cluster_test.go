@@ -20,9 +20,9 @@ type clusterTestStore struct {
 	providers []tables.TableProvider
 }
 
-func newClusterTestStore() *clusterTestStore {
+func newClusterTestStore(t *testing.T) *clusterTestStore {
 	return &clusterTestStore{
-		scimTestWorkspaceStore: newSCIMTestStore(),
+		scimTestWorkspaceStore: newSCIMTestStore(t),
 		providers:              make([]tables.TableProvider, 0),
 	}
 }
@@ -36,7 +36,7 @@ func (s *clusterTestStore) GetProviderKeys(ctx context.Context, provider schemas
 }
 
 func TestClusterConfigLifecycleAndReplication(t *testing.T) {
-	testStore := newClusterTestStore()
+	testStore := newClusterTestStore(t)
 	rawKV, err := kvstore.New(kvstore.Config{
 		DefaultTTL: 10 * time.Minute,
 	})
@@ -215,7 +215,7 @@ func TestClusterConfigLifecycleAndReplication(t *testing.T) {
 }
 
 func TestLoadBalancerRoutesConfig(t *testing.T) {
-	testStore := newClusterTestStore()
+	testStore := newClusterTestStore(t)
 	testStore.providers = append(testStore.providers, tables.TableProvider{
 		Name:      "openai",
 		CreatedAt: time.Now().UTC(),
