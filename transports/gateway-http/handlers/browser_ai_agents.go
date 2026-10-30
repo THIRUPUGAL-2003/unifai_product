@@ -82,6 +82,35 @@ func (h *BrowserAIHandler) listAgents(ctx *fasthttp.RequestCtx) {
 	})
 }
 
+func (h *BrowserAIHandler) agentExtensionStatusHistory(ctx *fasthttp.RequestCtx) {
+	h.ensureDB(ctx)
+	id, ok := ctx.UserValue("id").(string)
+	if !ok || strings.TrimSpace(id) == "" {
+		SendError(ctx, fasthttp.StatusBadRequest, "Missing agent ID")
+		return
+	}
+	agent, err := h.manager.GetAgent(ctx, id)
+	if err != nil {
+		SendError(ctx, fasthttp.StatusNotFound, "Agent not found")
+		return
+	}
+	limit, _ := strconv.Atoi(string(ctx.QueryArgs().Peek("limit")))
+	if limit <= 0 || limit > 500 {
+		limit = 200
+	}
+	events, err := h.manager.ListAgentExtensionStatusHistory(ctx, id, limit)
+	if err != nil {
+		SendError(ctx, fasthttp.StatusInternalServerError, err.Error())
+		return
+	}
+	SendJSON(ctx, map[string]any{
+		"events":         events,
+		"current_status": agent.ExtensionStatus,
+		"is_online":      agent.IsOnline,
+		"last_seen_at":   agent.LastSeenAt,
+	})
+}
+
 func (h *BrowserAIHandler) agentHeartbeat(ctx *fasthttp.RequestCtx) {
 	if !h.verifyGuardSecurity(ctx) {
 		return

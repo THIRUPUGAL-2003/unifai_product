@@ -508,7 +508,7 @@ type BrowserAIAgent struct {
 	HealthDetail       string `gorm:"type:text" json:"health_detail"`
 	Status             string `gorm:"index" json:"status"` // active | uninstall_pending | uninstalled
 	UninstallRequested bool   `json:"uninstall_requested"`
-	// ExtensionStatus: connected | installed | not_installed
+	// ExtensionStatus: connected | off | installed | not_installed | uninstalled
 	ExtensionStatus     string     `gorm:"type:varchar(32);default:'not_installed'" json:"extension_status"`
 	ExtensionLastSeenAt *time.Time `json:"extension_last_seen_at,omitempty"`
 	// Per-Guard uninstall key (auto-generated). Hash for verify; Enc for admin reveal.
@@ -533,6 +533,17 @@ type BrowserAIAgent struct {
 	IsDomainJoined bool      `gorm:"default:false" json:"is_domain_joined"`
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
+}
+
+// BrowserAIAgentExtensionStatusEvent records one continuous, server-observed
+// browser extension state for an agent. The open row is the latest known state.
+type BrowserAIAgentExtensionStatusEvent struct {
+	ID        string     `gorm:"primaryKey" json:"id"`
+	AgentID   string     `gorm:"index;not null" json:"agent_id"`
+	Status    string     `gorm:"type:varchar(32);index;not null" json:"status"`
+	StartedAt time.Time  `gorm:"index;not null" json:"started_at"`
+	EndedAt   *time.Time `gorm:"index" json:"ended_at,omitempty"`
+	CreatedAt time.Time  `json:"created_at"`
 }
 
 // BrowserAIWarningEmailLog audits Guard Insights / Agents security warning emails.
@@ -910,6 +921,7 @@ func (m *BrowserAIManager) AutoMigrate(ctx context.Context) error {
 		&BrowserControlSettings{},
 		&BrowserTargetWebsite{},
 		&BrowserAIAgent{},
+		&BrowserAIAgentExtensionStatusEvent{},
 		&BrowserAIAgentSettings{},
 		&BrowserGuardFleetConfig{},
 		&BrowserAIWarningEmailLog{},
@@ -3822,6 +3834,9 @@ func (m *BrowserAIManager) UpsertAgentHeartbeat(ctx context.Context, incoming *B
 		if createErr := db.WithContext(ctx).Create(&agent).Error; createErr != nil {
 			return nil, createErr
 		}
+		if err := recordAgentExtensionStatus(ctx, db, agent.ID, agent.ExtensionStatus, now); err != nil {
+			return nil, err
+		}
 		m.purgeHostDuplicates(ctx, agent.ID, agent.Hostname, agent.MacAddress, agent.Username)
 		markAgentUninstallKeyFlag(&agent)
 		return &agent, nil
@@ -3914,6 +3929,9 @@ func (m *BrowserAIManager) UpsertAgentHeartbeat(ctx context.Context, incoming *B
 	if err := db.WithContext(ctx).Save(&existing).Error; err != nil {
 		return nil, err
 	}
+	if err := recordAgentExtensionStatus(ctx, db, existing.ID, existing.ExtensionStatus, now); err != nil {
+		return nil, err
+	}
 	if existing.Status == AgentStatusActive {
 		m.purgeHostDuplicates(ctx, existing.ID, existing.Hostname, existing.MacAddress, existing.Username)
 	}
@@ -3998,6 +4016,65 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+// recordAgentExtensionStatus stores only state transitions, not every heartbeat.
+// Timestamps are when the gateway observed the state reported by Guard.
+func recordAgentExtensionStatus(ctx context.Context, db *gorm.DB, agentID, status string, observedAt time.Time) error {
+	if db == nil {
+		return fmt.Errorf("browser AI database is not connected")
+	}
+	agentID = strings.TrimSpace(agentID)
+	status = strings.ToLower(strings.TrimSpace(status))
+	if agentID == "" || status == "" {
+		return nil
+	}
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var latest BrowserAIAgentExtensionStatusEvent
+		err := tx.Where("agent_id = ?", agentID).
+			Order("started_at DESC").Order("created_at DESC").First(&latest).Error
+		if err != nil && err != gorm.ErrRecordNotFound {
+			return err
+		}
+		if err == nil {
+			if strings.EqualFold(latest.Status, status) {
+				return nil
+			}
+			if latest.EndedAt == nil {
+				if err := tx.Model(&BrowserAIAgentExtensionStatusEvent{}).
+					Where("id = ? AND ended_at IS NULL", latest.ID).
+					Update("ended_at", observedAt).Error; err != nil {
+					return err
+				}
+			}
+		}
+		return tx.Create(&BrowserAIAgentExtensionStatusEvent{
+			ID:        uuid.New().String(),
+			AgentID:   agentID,
+			Status:    status,
+			StartedAt: observedAt,
+			CreatedAt: observedAt,
+		}).Error
+	})
+}
+
+// ListAgentExtensionStatusHistory returns the newest observed state intervals first.
+func (m *BrowserAIManager) ListAgentExtensionStatusHistory(ctx context.Context, agentID string, limit int) ([]BrowserAIAgentExtensionStatusEvent, error) {
+	db := m.GetDB()
+	if db == nil {
+		return nil, fmt.Errorf("browser AI database is not connected")
+	}
+	agentID = strings.TrimSpace(agentID)
+	if agentID == "" {
+		return nil, fmt.Errorf("agent id is required")
+	}
+	if limit <= 0 || limit > 500 {
+		limit = 200
+	}
+	events := make([]BrowserAIAgentExtensionStatusEvent, 0)
+	err := db.WithContext(ctx).Where("agent_id = ?", agentID).
+		Order("started_at DESC").Order("created_at DESC").Limit(limit).Find(&events).Error
+	return events, err
 }
 
 func (m *BrowserAIManager) ListAgents(ctx context.Context, status, search string, limit, offset int, agentType ...string) ([]BrowserAIAgent, int64, error) {

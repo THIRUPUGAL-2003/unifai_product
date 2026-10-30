@@ -151,6 +151,7 @@ func (h *BrowserAIHandler) RegisterRoutes(r *router.Router, middlewares ...schem
 	r.HEAD("/api/browser-ai/setup/Raksha_Guard_Setup.exe", lib.ChainMiddlewares(h.downloadSetupExe, middlewares...))
 
 	r.GET("/api/browser-ai/agents", lib.ChainMiddlewares(h.listAgents, middlewares...))
+	r.GET("/api/browser-ai/agents/{id}/extension-history", lib.ChainMiddlewares(h.agentExtensionStatusHistory, middlewares...))
 	r.POST("/api/browser-ai/agents/heartbeat", lib.ChainMiddlewares(h.agentHeartbeat, middlewares...))
 	r.POST("/api/browser-ai/agents/wait-command", lib.ChainMiddlewares(h.agentWaitCommand, middlewares...))
 	r.GET("/api/browser-ai/fleet-config", lib.ChainMiddlewares(h.getFleetConfig, middlewares...))
@@ -416,4 +417,3 @@ func (h *BrowserAIHandler) updateLogUsage(ctx *fasthttp.RequestCtx) {
 	}
 	SendJSON(ctx, map[string]any{"status": "success", "message": "Log usage updated successfully"})
 }
-

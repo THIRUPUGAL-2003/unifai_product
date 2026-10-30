@@ -97,6 +97,22 @@ export interface BrowserAIAgent {
 	updated_at: string;
 }
 
+export interface BrowserAIAgentExtensionStatusEvent {
+	id: string;
+	agent_id: string;
+	status: string;
+	started_at: string;
+	ended_at?: string;
+	created_at: string;
+}
+
+export interface BrowserAIAgentExtensionHistory {
+	events: BrowserAIAgentExtensionStatusEvent[];
+	current_status: string;
+	is_online: boolean;
+	last_seen_at: string;
+}
+
 /** Proxy code published by Rebuild & Publish; installed Guards hot-swap to it. */
 export interface BrowserAIProxyBundle {
 	sha256: string;
@@ -788,6 +804,10 @@ export const browserAiApi = baseApi.injectEndpoints({
 			providesTags: ["BrowserAiAgents" as any],
 		}),
 
+		getBrowserAiAgentExtensionHistory: builder.query<BrowserAIAgentExtensionHistory, string>({
+			query: (id) => `/browser-ai/agents/${encodeURIComponent(id)}/extension-history?limit=200`,
+		}),
+
 		getBrowserAiSetupInfo: builder.query<BrowserAISetupInfo, void>({
 			query: () => "/browser-ai/setup/info",
 			providesTags: ["BrowserAiAgentSettings" as any],
@@ -1011,6 +1031,7 @@ export const {
 	useUpdateBrowserAiTargetMutation,
 	useDeleteBrowserAiTargetMutation,
 	useGetBrowserAiAgentsQuery,
+	useGetBrowserAiAgentExtensionHistoryQuery,
 	useGetBrowserAiSetupInfoQuery,
 	useGetBrowserAiRebuildHistoryQuery,
 	useGetBrowserAiAgentSettingsQuery,

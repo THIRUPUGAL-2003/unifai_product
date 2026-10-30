@@ -146,6 +146,7 @@ import {
 	useUpdateBrowserAiTargetMutation,
 	useDeleteBrowserAiTargetMutation,
 	useGetBrowserAiAgentsQuery,
+	useGetBrowserAiAgentExtensionHistoryQuery,
 	useGetBrowserAiSetupInfoQuery,
 	useGetBrowserAiRebuildHistoryQuery,
 	useGetBrowserAiAgentSettingsQuery,
@@ -169,6 +170,7 @@ import {
 	BrowserControlSettings,
 	BrowserTargetWebsite,
 	BrowserAIAgent,
+	BrowserAIAgentExtensionStatusEvent,
 } from "@/lib/store/apis/browserAiApi";
 import { getErrorMessage, useGetSMTPConfigQuery } from "@/lib/store";
 import { getApiBaseUrl } from "@/lib/utils/port";
@@ -184,6 +186,148 @@ import { CorporateAIWorkspaceCard } from "./CorporateAIWorkspaceCard";
 
 const BROWSER_AI_TABS = ["overview", "targets", "rules", "logs", "search-logs", "setup", "agents", "telemetry", "settings"] as const;
 type BrowserAiTab = (typeof BROWSER_AI_TABS)[number];
+
+function formatExtensionDuration(milliseconds: number): string {
+	const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000));
+	const days = Math.floor(totalSeconds / 86400);
+	const hours = Math.floor((totalSeconds % 86400) / 3600);
+	const minutes = Math.floor((totalSeconds % 3600) / 60);
+	const seconds = totalSeconds % 60;
+	const parts = [
+		days ? `${days}d` : "",
+		hours ? `${hours}h` : "",
+		minutes ? `${minutes}m` : "",
+	].filter(Boolean);
+	if (parts.length === 0 || days === 0) parts.push(`${seconds}s`);
+	return parts.join(" ");
+}
+
+function extensionStatusLabel(status?: string): string {
+	switch ((status || "").toLowerCase()) {
+		case "connected": return "Connected";
+		case "off": return "Off / disconnected";
+		case "installed": return "Installed, not connected";
+		case "not_installed": return "Not installed";
+		case "uninstalled": return "Uninstalled";
+		default: return status || "Unknown";
+	}
+}
+
+function extensionStatusClass(status?: string): string {
+	switch ((status || "").toLowerCase()) {
+		case "connected": return "border-emerald-500/30 bg-emerald-500/10 text-emerald-300";
+		case "installed":
+		case "not_installed": return "border-sky-500/30 bg-sky-500/10 text-sky-300";
+		case "off":
+		case "uninstalled": return "border-rose-500/30 bg-rose-500/10 text-rose-300";
+		default: return "border-border bg-muted/50 text-muted-foreground";
+	}
+}
+
+function formatExtensionTimestamp(value?: string | null): string {
+	if (!value) return "—";
+	const date = new Date(value);
+	if (Number.isNaN(date.getTime())) return "—";
+	return date.toLocaleString([], { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
+function AgentExtensionStatusHistory({ agentId, agentType }: { agentId: string; agentType?: string }) {
+	const { data, isLoading, isFetching, isError, refetch } = useGetBrowserAiAgentExtensionHistoryQuery(agentId, {
+		pollingInterval: 15000,
+		skip: (agentType || "").toLowerCase() === "network",
+	});
+	const [now, setNow] = useState(() => Date.now());
+
+	useEffect(() => {
+		const timer = window.setInterval(() => setNow(Date.now()), 1000);
+		return () => window.clearInterval(timer);
+	}, []);
+
+	const events = data?.events || [];
+	const online = data?.is_online === true;
+	const lastSeenMs = data?.last_seen_at ? new Date(data.last_seen_at).getTime() : 0;
+	const latest = events[0];
+	const currentStatus = online ? (data?.current_status || latest?.status) : "unknown";
+	const currentStartMs = latest ? new Date(latest.started_at).getTime() : 0;
+	const currentDuration = currentStartMs > 0
+		? formatExtensionDuration(Math.max(0, (online ? now : lastSeenMs || now) - currentStartMs))
+		: "";
+
+	if ((agentType || "").toLowerCase() === "network") {
+		return (
+			<section className="rounded-lg border border-border bg-muted/20 p-3">
+				<div className="flex items-center gap-2 text-sm font-semibold"><Clock className="h-4 w-4 text-muted-foreground" /> Extension Status History</div>
+				<p className="mt-1 text-[11px] text-muted-foreground">Browser extension history applies to endpoint Guard agents. This network agent does not report a browser extension state.</p>
+			</section>
+		);
+	}
+
+	return (
+		<section className="rounded-lg border border-border bg-muted/20 p-3 space-y-3">
+			<div className="flex items-start justify-between gap-2">
+				<div>
+					<div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+						<Clock className="h-4 w-4 text-sky-400" /> Extension Status History
+					</div>
+					<p className="mt-1 text-[11px] text-muted-foreground">Detected on/off periods with their start time, end time, and duration.</p>
+				</div>
+				<Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-[11px]" onClick={() => void refetch()} disabled={isFetching}>
+					<RefreshCw className={`mr-1 h-3 w-3 ${isFetching ? "animate-spin" : ""}`} /> Refresh
+				</Button>
+			</div>
+
+			{online && currentStartMs > 0 ? (
+				<div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-background/70 px-2.5 py-2">
+					<span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${extensionStatusClass(currentStatus)}`}>
+						Now: {extensionStatusLabel(currentStatus)}
+					</span>
+					<span className="text-[11px] text-foreground">For {currentDuration}</span>
+				</div>
+			) : !online && data ? (
+				<div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-[11px] text-amber-200">
+					Extension state is unknown because the Guard agent is not actively reporting. Last heartbeat: {formatExtensionTimestamp(data.last_seen_at)}. The duration below ends at that last report.
+				</div>
+			) : null}
+
+			{isLoading ? (
+				<div className="flex items-center gap-2 py-4 text-[11px] text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading extension history…</div>
+			) : isError ? (
+				<div className="rounded-md border border-rose-500/30 bg-rose-500/10 p-2.5 text-[11px] text-rose-300">
+					Could not load extension history. Check your connection and select Refresh to try again.
+				</div>
+			) : events.length === 0 ? (
+				<div className="rounded-md border border-dashed border-border p-3 text-[11px] text-muted-foreground">
+					No extension history has been recorded yet. History starts when this Guard agent reports its first extension status after this feature is enabled.
+				</div>
+			) : (
+				<div className="max-h-64 space-y-2 overflow-y-auto pr-1">
+					{events.map((event: BrowserAIAgentExtensionStatusEvent) => {
+						const startedMs = new Date(event.started_at).getTime();
+						const endedMs = event.ended_at ? new Date(event.ended_at).getTime() : (!online ? (lastSeenMs || now) : now);
+						const duration = formatExtensionDuration(Math.max(0, endedMs - startedMs));
+						const ongoing = !event.ended_at;
+						return (
+							<div key={event.id} className="grid grid-cols-[minmax(120px,0.8fr)_minmax(0,1.7fr)] gap-x-3 gap-y-1 rounded-md border border-border bg-background/70 px-2.5 py-2 text-[10px]">
+								<div className="row-span-2 flex flex-col items-start gap-1">
+									<span className={`rounded-full border px-2 py-0.5 font-semibold ${extensionStatusClass(event.status)}`}>{extensionStatusLabel(event.status)}</span>
+									<span className="font-mono text-[10px] text-foreground">{duration}{ongoing && online ? " · ongoing" : ongoing && !online ? " · last reported" : ""}</span>
+								</div>
+								<span className="text-muted-foreground">Started</span>
+								<span className="text-right text-foreground">{formatExtensionTimestamp(event.started_at)}</span>
+								<span className="text-muted-foreground">Ended</span>
+								<span className="text-right text-foreground">{event.ended_at ? formatExtensionTimestamp(event.ended_at) : online ? "Ongoing" : "Last seen by Guard"}</span>
+							</div>
+						);
+					})}
+				</div>
+			)}
+
+			<p className="text-[10px] leading-relaxed text-muted-foreground">
+				Times show when the gateway detected a state change reported by Guard; a short reporting delay is possible. “Installed, not connected” means the extension is installed but is not actively checking in. When Guard is not actively reporting, the extension state is unknown.
+			</p>
+		</section>
+	);
+}
 
 /** Numeric dotted-version compare ("1.1.13" vs "1.1.9"); non-numeric parts count as 0. */
 function compareGuardVersions(a: string, b: string): number {
@@ -8340,9 +8484,9 @@ export default function BrowserAiPage() {
 								</div>
 								<div>
 									<span className="text-[10px] uppercase font-semibold text-muted-foreground block">Heartbeat Status</span>
-									<span className="inline-flex items-center gap-1.5 text-xs text-emerald-400">
-										<span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-										Active
+									<span className={`inline-flex items-center gap-1.5 text-xs ${selectedAgentDetails.is_online ? "text-emerald-400" : "text-amber-400"}`}>
+										<span className={`h-2 w-2 rounded-full ${selectedAgentDetails.is_online ? "bg-emerald-400 animate-pulse" : "bg-amber-400"}`} />
+										{selectedAgentDetails.is_online ? "Active" : "Offline"}
 									</span>
 								</div>
 								<div>
@@ -8393,6 +8537,8 @@ export default function BrowserAiPage() {
 									</span>
 								</div>
 							</div>
+
+							<AgentExtensionStatusHistory agentId={selectedAgentDetails.id} agentType={selectedAgentDetails.agent_type} />
 
 							{/* TODAY'S 24-HOUR ROLLING KEY CARD */}
 							<div className="p-4 rounded-xl border border-emerald-500/30 bg-emerald-950/20 space-y-3">
