@@ -38,7 +38,13 @@ try:
 except Exception:
     looks_like_user_prompt = lambda x: bool(x and len(x.strip()) > 0)
     _is_ai_chrome_url = lambda x: False
-    _clean_prompt_text = lambda x: x.strip() if x else ""
+    _clean_prompt_text = lambda x: x
+
+try:
+    from uploads_detect import extract_upload_file_payload
+except Exception:
+    def extract_upload_file_payload(raw: bytes, content_type: str = "", file_name: str = ""):
+        return raw, content_type, file_name.strip() if x else ""
 
 try:
     from file_policy import (
