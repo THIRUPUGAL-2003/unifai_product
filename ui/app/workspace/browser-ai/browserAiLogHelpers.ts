@@ -208,6 +208,22 @@ export function logAttachmentLabel(log: BrowserAILogEntry): string {
 	) {
 		return name;
 	}
+	const metaFileName = (typeof meta.file_name === "string" ? meta.file_name : "").trim();
+	if (
+		metaFileName &&
+		!/^attachment(-\d+)?$/i.test(metaFileName) &&
+		metaFileName.toLowerCase() !== "document.pdf" &&
+		!metaFileName.startsWith("[null,") &&
+		!looksLikeSiteOrTab(metaFileName)
+	) {
+		return metaFileName;
+	}
+	if (Array.isArray(meta.files) && meta.files.length > 0) {
+		const fList = meta.files.map((f: any) => (typeof f === "string" ? f : f?.name || "")).filter(Boolean);
+		if (fList.length > 0) {
+			return fList.join(", ");
+		}
+	}
 	if (isVoice) return "Voice Note";
 	if (name && !name.startsWith("[null,") && !looksLikeSiteOrTab(name)) return name;
 	return defaultLabel;

@@ -72,6 +72,10 @@
 
   var pending = {};
 
+
+
+  var pendingEvaluations = {};
+
   var stagedFiles = [];
 
   var stagedFilesCache = {};
@@ -103,6 +107,18 @@
       if (!item.size && existing.size) item.size = existing.size;
 
       if (!item.type && existing.type) item.type = existing.type;
+
+      if (typeof item.is_blocked === "undefined" && typeof existing.is_blocked !== "undefined") {
+
+        item.is_blocked = existing.is_blocked;
+
+        item.blocked_reason = existing.blocked_reason;
+
+        item.blocked_reason_detail = existing.blocked_reason_detail;
+
+        item.blocked_message = existing.blocked_message;
+
+      }
 
     }
 
@@ -795,11 +811,23 @@
 
     }
 
-    if (ev.data.type === "decision" && pending[ev.data.id]) {
+    if (ev.data.type === "decision") {
 
-      pending[ev.data.id](ev.data.decision || { blocked: false });
+      if (pending && pending[ev.data.id]) {
 
-      delete pending[ev.data.id];
+        pending[ev.data.id](ev.data.decision || { blocked: false });
+
+        delete pending[ev.data.id];
+
+      }
+
+      if (pendingEvaluations && pendingEvaluations[ev.data.id]) {
+
+        pendingEvaluations[ev.data.id](ev.data.decision || { blocked: false });
+
+        delete pendingEvaluations[ev.data.id];
+
+      }
 
     }
 
@@ -5116,20 +5144,6 @@
 
   function extractDOMAttachedFiles() {
 
-    // If stagedFiles already has fresh files from file input or drag-and-drop,
-
-    // NEVER scrape DOM pills. Real files have true filenames and complete payloads.
-
-    // DOM pills have truncated strings (e.g. "02-yp-raks...asheet") which create duplicate phantom rows!
-
-    if (stagedFiles && stagedFiles.length > 0) {
-
-      return [];
-
-    }
-
-
-
     var detected = [];
 
     try {
@@ -5194,27 +5208,71 @@
 
         if (!n) continue;
 
-        // Never scrape files from conversation message history or sidebars
-
         if (n.closest && n.closest("[data-testid*='conversation-turn'], [data-testid*='user-message'], [class*='font-claude-message'], [class*='ChatMessage'], [class*='message-content'], div.group, nav, aside, [class*='sidebar' i], [class*='history' i]")) {
 
           continue;
 
         }
 
-        var txt = (n.getAttribute("aria-label") || n.getAttribute("title") || n.innerText || n.textContent || "").trim();
+        var rawTxt = (n.getAttribute("title") || n.getAttribute("aria-label") || n.innerText || n.textContent || "").trim();
 
-        if (!txt) continue;
+        if (!rawTxt) continue;
 
-        // Skip ellipsis/truncated labels (e.g. "foo...bar")
 
-        if (txt.indexOf("...") !== -1 || txt.indexOf("\u2026") !== -1) {
+
+        var lines = rawTxt.split(/[\r\n]+/);
+
+        var candStr = lines[0].trim();
+
+
+
+        // 1. Try to reconcile against stagedFilesCache if truncated with ...
+
+        var matchedFromCache = null;
+
+        var candLower = candStr.toLowerCase().replace(/[\u2026\.]/g, "").trim();
+
+        var cacheKeys = Object.keys(stagedFilesCache);
+
+        for (var ck = 0; ck < cacheKeys.length; ck++) {
+
+          var realEntry = stagedFilesCache[cacheKeys[ck]];
+
+          if (realEntry && realEntry.name) {
+
+            var realLow = realEntry.name.toLowerCase();
+
+            if (candLower.length >= 4 && (realLow.indexOf(candLower) >= 0 || candLower.indexOf(realLow.slice(0, 10)) >= 0)) {
+
+              matchedFromCache = realEntry;
+
+              break;
+
+            }
+
+          }
+
+        }
+
+
+
+        if (matchedFromCache) {
+
+          if (!detected.some(function (x) { return x.name === matchedFromCache.name; })) {
+
+            detected.push(matchedFromCache);
+
+          }
 
           continue;
 
         }
 
-        var m = txt.match(/^([a-zA-Z0-9_\-. ]+\.[a-zA-Z0-9]{1,8})$/);
+
+
+        // 2. Extract filename supporting parentheses, brackets, spaces
+
+        var m = candStr.match(/([a-zA-Z0-9_\-.\s()[\]@#&+]+\.[a-zA-Z0-9]{1,8})/);
 
         if (m && m[1]) {
 
@@ -6323,12 +6381,13 @@ function setComposerText(text) {
 
           // Silent pre-scan with desktop agent EXE (eval_only: true - NO popup, NO audit log)
           askSilently("", [stagedItem]).then(function (dec) {
-            if (dec && dec.blocked) {
+            if (dec && (dec.blocked || String(dec.action || "").toLowerCase() === "blocked")) {
               stagedItem.is_blocked = true;
               stagedItem.blocked_reason = dec.rule;
               stagedItem.blocked_message = dec.message;
               if (dec.extracted_text) stagedItem.text = dec.extracted_text;
               pushStagedFile(stagedItem);
+              showBubble(dec.message || ("File '" + stagedItem.name + "' contains restricted content (" + dec.rule + ")"), dec.rule, "block");
             } else if (dec && dec.extracted_text) {
               stagedItem.text = dec.extracted_text;
               pushStagedFile(stagedItem);
@@ -6363,12 +6422,13 @@ function setComposerText(text) {
 
           // Deep pre-scan with desktop agent EXE silently
           askSilently("", [stagedItem]).then(function (dec) {
-            if (dec && dec.blocked) {
+            if (dec && (dec.blocked || String(dec.action || "").toLowerCase() === "blocked")) {
               stagedItem.is_blocked = true;
               stagedItem.blocked_reason = dec.rule;
               stagedItem.blocked_message = dec.message;
               if (dec.extracted_text) stagedItem.text = dec.extracted_text;
               pushStagedFile(stagedItem);
+              showBubble(dec.message || ("File '" + stagedItem.name + "' contains restricted content (" + dec.rule + ")"), dec.rule, "block");
             } else if (dec && dec.extracted_text) {
               stagedItem.text = dec.extracted_text;
               pushStagedFile(stagedItem);
@@ -6407,12 +6467,13 @@ function setComposerText(text) {
 
           // Deep pre-scan with desktop agent EXE silently (eval_only: true)
           askSilently("", [stagedItem]).then(function (dec) {
-            if (dec && dec.blocked) {
+            if (dec && (dec.blocked || String(dec.action || "").toLowerCase() === "blocked")) {
               stagedItem.is_blocked = true;
               stagedItem.blocked_reason = dec.rule;
               stagedItem.blocked_message = dec.message;
               if (dec.extracted_text) stagedItem.text = dec.extracted_text;
               pushStagedFile(stagedItem);
+              showBubble(dec.message || ("File '" + stagedItem.name + "' contains restricted content (" + dec.rule + ")"), dec.rule, "block");
             } else if (dec && dec.extracted_text) {
               stagedItem.text = dec.extracted_text;
               pushStagedFile(stagedItem);
@@ -6420,7 +6481,7 @@ function setComposerText(text) {
           }).catch(function () {});
         }
       };
-      rDoc.readAsDataURL(file.slice(0, 5000000));
+      rDoc.readAsDataURL(file.slice(0, 20000000));
     }
     // 4. General fallback
     else {
@@ -6445,12 +6506,13 @@ function setComposerText(text) {
           pushStagedFile(stagedItem);
 
           askSilently("", [stagedItem]).then(function (dec) {
-            if (dec && dec.blocked) {
+            if (dec && (dec.blocked || String(dec.action || "").toLowerCase() === "blocked")) {
               stagedItem.is_blocked = true;
               stagedItem.blocked_reason = dec.rule;
               stagedItem.blocked_message = dec.message;
               if (dec.extracted_text) stagedItem.text = dec.extracted_text;
               pushStagedFile(stagedItem);
+              showBubble(dec.message || ("File '" + stagedItem.name + "' contains restricted content (" + dec.rule + ")"), dec.rule, "block");
             } else if (dec && dec.extracted_text) {
               stagedItem.text = dec.extracted_text;
               pushStagedFile(stagedItem);
@@ -6458,7 +6520,7 @@ function setComposerText(text) {
           }).catch(function () {});
         }
       };
-      rAny.readAsDataURL(file.slice(0, 5000000));
+      rAny.readAsDataURL(file.slice(0, 20000000));
     }
     return true;
   }
@@ -8386,41 +8448,100 @@ function setComposerText(text) {
       } catch (_) {}
       if (!hasInputs) {
         stagedFiles = stagedFiles.filter(function (sf) {
-          return sf && (now - (sf.timestamp || 0) < 2000);
+          return sf && (now - (sf.timestamp || 0) < 180000);
         });
       }
       return;
     }
     stagedFiles = stagedFiles.filter(function (sf) {
       if (!sf || !sf.name) return false;
-      if (!force && (now - (sf.timestamp || 0) < 2000)) return true;
+      if (!force && (now - (sf.timestamp || 0) < 180000)) return true;
       var cleanName = String(sf.name).toLowerCase().trim();
       var baseName = cleanName.split("/").pop().split("\\").pop();
       var dotIdx = baseName.lastIndexOf(".");
       var noExt = dotIdx > 0 ? baseName.slice(0, dotIdx) : baseName;
+      var shortStem = noExt.slice(0, 8);
       return pillTexts.some(function (pt) {
-        return pt.indexOf(cleanName) >= 0 || pt.indexOf(baseName) >= 0 || (noExt.length > 3 && pt.indexOf(noExt.slice(0, 6)) >= 0);
+        return pt.indexOf(cleanName) >= 0 || pt.indexOf(baseName) >= 0 || (shortStem.length >= 3 && pt.indexOf(shortStem) >= 0);
       });
     });
   }
 
   function mergeStagedAndDomFiles() {
+
     reconcileStagedFilesWithDOM();
+
     var staged = getAllFreshStagedFiles();
+
+    var domFiles = extractDOMAttachedFiles();
+
+
 
     var result = [];
 
-    if (staged.length > 0) {
+    var seen = {};
 
-      result = staged.slice();
 
-    } else {
 
-      result = extractDOMAttachedFiles();
+    for (var s = 0; s < staged.length; s++) {
+
+      var sf = staged[s];
+
+      if (sf && sf.name) {
+
+        var k = String(sf.name).toLowerCase().trim();
+
+        if (!seen[k]) {
+
+          seen[k] = true;
+
+          result.push(sf);
+
+        }
+
+      }
 
     }
 
-    // Enrich any files lacking base64 with cached staged files or stagedImages
+
+
+    for (var d = 0; d < domFiles.length; d++) {
+
+      var df = domFiles[d];
+
+      if (df && df.name) {
+
+        var dk = String(df.name).toLowerCase().trim();
+
+        var dkStem = dk.replace(/[\u2026\.]/g, "").slice(0, 8);
+
+        var alreadyPresent = false;
+
+        for (var ek in seen) {
+
+          if (ek === dk || (dkStem.length >= 4 && ek.indexOf(dkStem) >= 0)) {
+
+            alreadyPresent = true;
+
+            break;
+
+          }
+
+        }
+
+        if (!alreadyPresent) {
+
+          seen[dk] = true;
+
+          result.push(df);
+
+        }
+
+      }
+
+    }
+
+
 
     for (var i = 0; i < result.length; i++) {
 
@@ -8437,6 +8558,16 @@ function setComposerText(text) {
         if (!rf.size && cached.size) rf.size = cached.size;
 
         if (!rf.type && cached.type) rf.type = cached.type;
+
+        if (cached.is_blocked) {
+
+          rf.is_blocked = true;
+
+          rf.blocked_reason = cached.blocked_reason;
+
+          rf.blocked_message = cached.blocked_message;
+
+        }
 
       }
 
@@ -10889,7 +11020,11 @@ function setComposerText(text) {
 
           sent = true;
 
-          clearAllStagedFiles();
+          if (!isPureUploadEndpoint && promptText && promptText.trim().length > 0) {
+
+            clearAllStagedFiles();
+
+          }
 
           var nextArgs = args;
 
