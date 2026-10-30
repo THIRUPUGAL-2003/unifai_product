@@ -286,7 +286,7 @@
 
       // Only keep files active for current prompt within 180s (3 minutes)
 
-      if (item && item.name && (now - (item.timestamp || 0) < 180000)) {
+      if (item && item.name && (now - (item.timestamp || 0) < 25000)) {
 
         var key = String(item.name).toLowerCase().trim();
 
@@ -8899,14 +8899,14 @@
       } catch (_) {}
       if (!hasInputs) {
         stagedFiles = stagedFiles.filter(function (sf) {
-          return sf && (now - (sf.timestamp || 0) < 180000);
+          return sf && (now - (sf.timestamp || 0) < 15000);
         });
       }
       return;
     }
+    // Strict DOM reconciliation: ONLY keep files matching visible composer attachment pills!
     stagedFiles = stagedFiles.filter(function (sf) {
       if (!sf || !sf.name) return false;
-      if (!force && (now - (sf.timestamp || 0) < 180000)) return true;
       var cleanName = String(sf.name).toLowerCase().trim();
       var baseName = cleanName.split("/").pop().split("\\").pop();
       var dotIdx = baseName.lastIndexOf(".");
@@ -11108,9 +11108,25 @@
       }
 
       // Reconcile and enrich netFiles with fresh staged files (base64 & text)
+      if (typeof reconcileStagedFilesWithDOM === "function") {
+        reconcileStagedFilesWithDOM(true);
+      }
+      var pillTexts = typeof queryDOMAttachmentPillNames === "function" ? queryDOMAttachmentPillNames() : [];
       var freshStaged = typeof getAllFreshStagedFiles === "function" ? getAllFreshStagedFiles() : [];
-      if ((!netFiles || netFiles.length === 0) && freshStaged.length > 0) {
-        netFiles = freshStaged.slice();
+      if ((!netFiles || netFiles.length === 0)) {
+        if (pillTexts.length > 0 && freshStaged.length > 0) {
+          netFiles = freshStaged.filter(function (sf) {
+            if (!sf || !sf.name) return false;
+            var cName = String(sf.name).toLowerCase().trim();
+            var bName = cName.split("/").pop().split("\\").pop();
+            return pillTexts.some(function (pt) {
+              return pt.indexOf(cName) >= 0 || pt.indexOf(bName) >= 0;
+            });
+          });
+        } else if (freshStaged.length > 0) {
+          var nowSt = Date.now();
+          netFiles = freshStaged.filter(function (sf) { return (nowSt - (sf.timestamp || 0)) < 10000; });
+        }
       } else if (netFiles && netFiles.length > 0) {
         for (var nfi = 0; nfi < netFiles.length; nfi++) {
           var nf = netFiles[nfi];

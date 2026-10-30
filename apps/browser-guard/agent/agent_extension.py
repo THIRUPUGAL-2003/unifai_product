@@ -2077,6 +2077,16 @@ def check_prompt(
 
     # Multi-file support: Post individual clean record for each attached file (no phantom joined row!)
     if files_list:
+        # Deduplicate files_list by filename
+        seen_fns = set()
+        deduped_files = []
+        for f_item in files_list:
+            item_name = (f_item.get("name") if isinstance(f_item, dict) else str(f_item)).strip()
+            if item_name and item_name.lower() not in seen_fns:
+                seen_fns.add(item_name.lower())
+                deduped_files.append(f_item)
+        files_list = deduped_files
+
         if user_caption:
             norm_cap = " ".join(user_caption.strip().split()).lower()
             if norm_cap:
@@ -2151,7 +2161,7 @@ def check_prompt(
 
             f_dedupe_key = f"ext_file|{eval_id}|{fn}" if eval_id else f"ext_file|{platform}|{fn}|{hash(user_caption)}"
 
-            if not _is_duplicate_file_post(f_dedupe_key, ttl=1.0):
+            if not _is_duplicate_file_post(f_dedupe_key, ttl=10.0):
                 if not f_bytes and fb64:
                     try:
                         import base64
