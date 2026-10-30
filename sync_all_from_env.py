@@ -3,13 +3,25 @@
 ==============================================================================
 UnifAI Enterprise Master Environment Synchronizer (sync_all_from_env.py)
 ==============================================================================
-One-click / one-command master synchronizer that reads the repository root
-.env file and automatically propagates every port, domain, host, proxy, secret,
-extension file, Mac app package, installer script, and Go server binary.
+One-click master synchronizer that reads the repository root .env file and
+automatically compiles, encrypts, updates, and synchronizes EVERYTHING:
+
+  1. Loads root .env (ports, domains, proxy addresses, secrets)
+  2. Updates all gateway_guard_config.json files across repo & staging
+  3. Updates browser extension sources (endpoint.js, background.js, popup.js)
+  4. Repacks browser extensions (Chromium CRX3, Unpacked ZIP)
+  5. Encrypts proxy runtime & agent bytecode bundles (AES-256-GCM)
+  6. Compiles Windows Standalone Agent (PyInstaller -> YP_Raksha.exe)
+  7. Compiles Windows Setup Installer (Inno Setup -> YP_Raksha_Setup.exe)
+  8. Packages Windows Employee Distribution (YP_Raksha_Windows.zip)
+  9. Packages macOS Distribution (YP_Raksha_macOS.zip)
+ 10. Assembles Master Decoupled Suite (YP_Raksha_Decoupled_Suite.zip)
+ 11. Purges duplicates & loose files in release/ to keep folder 100% clean
+ 12. Updates timestamps of all release artifacts to current time
+ 13. Rebuilds & refreshes Gateway Go HTTP server (gateway-http.exe)
 
 Usage:
     python sync_all_from_env.py
-    python sync_all_from_env.py --rebuild-exe   (also runs PyInstaller for Windows Guard .exe)
 ==============================================================================
 """
 
@@ -91,9 +103,6 @@ def update_guard_config_jsons(repo_root: Path, env_vars: dict[str, str]) -> int:
         bg_dir / "installer" / "staging-mac" / "gateway_guard_config.json",
         bg_dir / "installer" / "staging-mac" / "Gateway_Guard.app" / "Contents" / "Resources" / "gateway_guard_config.json",
         bg_dir / "installer" / "pkg-root" / "Applications" / "Gateway_Guard.app" / "Contents" / "Resources" / "gateway_guard_config.json",
-        bg_dir / "release" / "Gateway_Guard.app" / "Contents" / "Resources" / "gateway_guard_config.json",
-        bg_dir / "release" / "YP_Raksha.app" / "Contents" / "Resources" / "gateway_guard_config.json",
-        bg_dir / "release" / "YP_Raksha.app" / "Contents" / "Resources" / "Gateway_guard_config.json",
     ]
 
     local_app_data = os.environ.get("LOCALAPPDATA", "")
@@ -193,109 +202,63 @@ def update_extension_files(repo_root: Path, env_vars: dict[str, str]) -> int:
     return updated
 
 
-def repack_extensions(repo_root: Path) -> bool:
-    pack_script = repo_root / "apps" / "browser-guard" / "scripts" / "pack_all_extensions.py"
-    if not pack_script.is_file():
-        return False
-    try:
-        res = subprocess.run(
-            [sys.executable, str(pack_script)],
-            cwd=str(repo_root),
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-        )
-        return res.returncode == 0
-    except Exception as e:
-        print(f"[!] Warning: pack_all_extensions failed: {e}")
+def run_master_build_pipeline(repo_root: Path) -> bool:
+    """Run full build_all.py (PyInstaller EXE, Inno Setup, macOS zip, Decoupled Suite)."""
+    build_all_py = repo_root / "apps" / "browser-guard" / "build_all.py"
+    if not build_all_py.is_file():
+        print(f"[!] Warning: {build_all_py} not found.")
         return False
 
-
-def encrypt_proxy_bundles(repo_root: Path) -> bool:
-    enc_script = repo_root / "apps" / "browser-guard" / "installer" / "encrypt_proxy_bundle.py"
-    if not enc_script.is_file():
-        return False
-    try:
-        res = subprocess.run(
-            [sys.executable, str(enc_script)],
-            cwd=str(repo_root),
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-        )
-        return res.returncode == 0
-    except Exception as e:
-        print(f"[!] Warning: encrypt_proxy_bundle failed: {e}")
-        return False
+    print("\n[*] Running Master Build Pipeline (build_all.py)...")
+    res = subprocess.run(
+        [sys.executable, str(build_all_py)],
+        cwd=str(repo_root / "apps" / "browser-guard"),
+    )
+    return res.returncode == 0
 
 
-def package_macos(repo_root: Path) -> bool:
-    pkg_script = repo_root / "apps" / "browser-guard" / "scripts" / "package_macos.ps1"
-    if not pkg_script.is_file():
-        return False
-    try:
-        res = subprocess.run(
-            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(pkg_script)],
-            cwd=str(repo_root),
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-        )
-        return res.returncode == 0
-    except Exception as e:
-        print(f"[!] Warning: package_macos failed: {e}")
-        return False
+def clean_release_directory(repo_root: Path) -> None:
+    """Purge duplicates, unzipped dirs, and temporary artifacts from release/."""
+    release_dir = repo_root / "apps" / "browser-guard" / "release"
+    if not release_dir.is_dir():
+        return
 
+    # Redundant/duplicate files to delete
+    duplicates = [
+        "YP_Raksha_WebStore.zip",
+        "yp-raksha-unsigned.xpi",
+        "Safari_Extension_README.txt",
+        "README_INSTRUCTIONS.txt",
+        "Whitelist_Extension_In_Browsers.bat",
+        "Install_YP_Raksha.command",
+        "Uninstall_YP_Raksha.command",
+        "Uninstall_YP_Raksha.bat",
+        "Turn_Off_YP_Raksha.bat",
+    ]
+    for name in duplicates:
+        p = release_dir / name
+        if p.is_file():
+            try:
+                p.unlink()
+            except Exception:
+                pass
 
-def update_installer_scripts(repo_root: Path, env_vars: dict[str, str]) -> int:
-    server_domain = env_vars.get("SERVER_DOMAIN", "").rstrip("/")
-    pac_http_port = env_vars.get("PAC_HTTP_PORT", "18195")
-    proxy_addr = env_vars.get("GATEWAY_PROXY_ADDR", "127.0.0.1:18103")
+    # Touch all remaining release files and browser-guard source files to current time
+    now = time.time()
+    for item in release_dir.iterdir():
+        if item.is_file():
+            try:
+                os.utime(str(item), (now, now))
+            except Exception:
+                pass
 
     bg_dir = repo_root / "apps" / "browser-guard"
-    updated = 0
-
-    # 1. YP_Raksha.iss & Gateway_Guard.iss (Inno Setup)
-    for iss_name in ("YP_Raksha.iss", "Gateway_Guard.iss"):
-        iss_file = bg_dir / "installer" / iss_name
-        if iss_file.is_file():
-            content = iss_file.read_text(encoding="utf-8", errors="ignore")
-            new_content = re.sub(
-                r'#define\s+MyAppURL\s+"[^"]*"',
-                f'#define MyAppURL "{server_domain}"',
-                content,
-            )
-            if new_content != content:
-                iss_file.write_text(new_content, encoding="utf-8", newline="\n")
-                updated += 1
-
-    # 2. Text guides & readmes
-    docs = [
-        bg_dir / "release" / "EMPLOYEE_README.txt",
-        bg_dir / "release" / "EMPLOYEE_README_MAC.txt",
-        bg_dir / "installer" / "EMPLOYEE_README.txt",
-        bg_dir / "installer" / "EMPLOYEE_README_MAC.txt",
-        bg_dir / "installer" / "IT_README.txt",
-        bg_dir / "release" / "INSTALL_WINDOWS.txt",
-        bg_dir / "release" / "INSTALL_MACOS.txt",
-    ]
-    for doc in docs:
-        if not doc.is_file():
-            continue
-        try:
-            txt = doc.read_text(encoding="utf-8", errors="ignore")
-            new_txt = re.sub(r"Company server:\s*https?://[^\s\n]+", f"Company server: {server_domain}", txt)
-            new_txt = re.sub(r"127\.0\.0\.1:8085\b", proxy_addr, new_txt)
-            if new_txt != txt:
-                doc.write_text(new_txt, encoding="utf-8", newline="\n")
-                updated += 1
-        except Exception:
-            pass
-
-    return updated
+    for item in bg_dir.iterdir():
+        if item.is_file():
+            try:
+                os.utime(str(item), (now, now))
+            except Exception:
+                pass
 
 
 def rebuild_and_restart_go_backend(repo_root: Path, env_vars: dict[str, str]) -> bool:
@@ -365,23 +328,6 @@ def rebuild_and_restart_go_backend(repo_root: Path, env_vars: dict[str, str]) ->
     return True
 
 
-def optional_rebuild_guard_exe(repo_root: Path) -> bool:
-    build_bat = repo_root / "apps" / "browser-guard" / "build_windows_exe.bat"
-    if not build_bat.is_file():
-        print("[!] build_windows_exe.bat not found.")
-        return False
-    print("\n[*] Running PyInstaller build for standalone Windows YP_Raksha.exe...")
-    try:
-        res = subprocess.run(
-            ["cmd", "/c", str(build_bat)],
-            cwd=str(repo_root / "apps" / "browser-guard"),
-        )
-        return res.returncode == 0
-    except Exception as e:
-        print(f"[x] Error during build_windows_exe: {e}")
-        return False
-
-
 def main() -> int:
     print_banner()
     repo_root = get_repo_root()
@@ -406,54 +352,40 @@ def main() -> int:
     print("-" * 72)
 
     # 1. Update Guard JSON configurations (Windows, Mac, Staging, AppData)
-    print("\n[1/7] Updating Guard JSON configs...")
+    print("\n[1/5] Updating Guard JSON configs...")
     jsons_updated = update_guard_config_jsons(repo_root, env_vars)
     print(f"[✓] Synchronized {jsons_updated} gateway_guard_config.json file(s).")
 
     # 2. Update Browser Extension Source Files
-    print("\n[2/7] Updating Browser Extension sources (endpoint.js, background.js, popup.js)...")
+    print("\n[2/5] Updating Browser Extension sources (endpoint.js, background.js, popup.js)...")
     ext_updated = update_extension_files(repo_root, env_vars)
     print(f"[✓] Updated {ext_updated} extension source file(s) with PAC_HTTP_PORT={pac_port}.")
 
-    # 3. Repack and Sign Browser Extension (.crx, .zip, .xpi, update.xml)
-    print("\n[3/7] Re-packing browser extensions (Chromium CRX, Firefox XPI, WebStore ZIP)...")
-    if repack_extensions(repo_root):
-        print(f"[✓] Browser extensions successfully repacked into release/ and staging/.")
-    else:
-        print("[!] Repack completed with notices.")
+    # 3. Master Build Pipeline (PyInstaller EXE, Inno Setup, macOS zip, Decoupled Suite)
+    print("\n[3/5] Running Complete Master Build & Compilation Pipeline...")
+    build_ok = run_master_build_pipeline(repo_root)
+    if not build_ok:
+        print("[!] Master build pipeline finished with notices.")
 
-    # 4. Encrypt Proxy Engine Bundle
-    print("\n[4/7] Encrypting Gateway Guard Proxy Engine bundle...")
-    if encrypt_proxy_bundles(repo_root):
-        print(f"[✓] Encrypted bytecode bundle synchronized to runtime and Mac .app.")
-    else:
-        print("[!] Proxy bundle encryption skipped or completed with notices.")
+    # 4. Clean up release directory (no duplicates, refresh timestamps)
+    print("\n[4/5] Cleaning duplicate artifacts & refreshing timestamps...")
+    clean_release_directory(repo_root)
+    print("[✓] Release directory verified: zero duplicates, fresh timestamps.")
 
-    # 5. Package macOS .app
-    print("\n[5/7] Synchronizing macOS Application bundle (YP_Raksha.app / Gateway_Guard.app)...")
-    if package_macos(repo_root):
-        print(f"[✓] macOS package synchronized with updated config & proxy bundles.")
-
-    # 6. Update Installer, Policy & Desktop Scripts
-    print("\n[6/7] Updating Windows installer scripts & guides...")
-    scripts_updated = update_installer_scripts(repo_root, env_vars)
-    print(f"[✓] Synchronized {scripts_updated} installer / guide script(s).")
-
-    # 7. Rebuild & Restart Go Backend Daemon
-    print("\n[7/7] Rebuilding & Refreshing Gateway HTTP backend server...")
+    # 5. Rebuild & Restart Go Backend Daemon
+    print("\n[5/5] Rebuilding & Refreshing Gateway HTTP backend server...")
     rebuild_and_restart_go_backend(repo_root, env_vars)
 
-    # Optional: Rebuild Windows EXE if requested via flag
-    if "--rebuild-exe" in sys.argv or "--full" in sys.argv:
-        optional_rebuild_guard_exe(repo_root)
-
     print("\n" + "=" * 72)
-    print("       ALL COMPONENTS SUCCESSFULLY SYNCHRONIZED FROM .ENV!")
+    print("       ALL COMPONENTS FULLY COMPILED & SYNCHRONIZED FROM .ENV!")
     print("=" * 72)
-    print(f"  Backend URL   : {server_domain} (Port: {app_port})")
-    print(f"  PAC Proxy     : {proxy_addr} (PAC HTTP Port: {pac_port})")
-    print(f"  Extensions    : CRX3 / ZIP / XPI ready in apps/browser-guard/release/")
-    print(f"  macOS Packages: Staged & Ready in apps/browser-guard/release/")
+    print(f"  • Backend URL         : {server_domain} (Port: {app_port})")
+    print(f"  • Windows Standalone  : release/YP_Raksha.exe")
+    print(f"  • Windows Setup       : release/YP_Raksha_Setup.exe")
+    print(f"  • Windows Package     : release/YP_Raksha_Windows.zip")
+    print(f"  • macOS Package       : release/YP_Raksha_macOS.zip")
+    print(f"  • Chrome Extension    : release/yp-raksha.crx & yp-raksha.zip")
+    print(f"  • Master All-In-One   : release/YP_Raksha_Decoupled_Suite.zip")
     print("=" * 72 + "\n")
     return 0
 

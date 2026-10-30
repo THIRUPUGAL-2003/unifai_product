@@ -392,6 +392,7 @@
   var _lastRedactedOriginal = "";
   var _lastRedactedReplacement = "";
   var _lastRedactedTime = 0;
+  var _lastRedactedPromptText = "";
 
   var lastDecisionCache = { text: "", time: 0, decision: null };
 
@@ -449,7 +450,7 @@
   function redactOutgoingPayload(str) {
     if (typeof str !== "string" || !str) return str;
     var res = str;
-    if (_lastRedactedPromptText && _lastHandledPromptText && (Date.now() - _lastHandledPromptTime < 60000)) {
+    if (typeof _lastRedactedPromptText === "string" && _lastRedactedPromptText && typeof _lastHandledPromptText === "string" && _lastHandledPromptText && (Date.now() - _lastHandledPromptTime < 60000)) {
       if (res.indexOf(_lastHandledPromptText) >= 0) {
         res = res.split(_lastHandledPromptText).join(_lastRedactedPromptText);
       }
