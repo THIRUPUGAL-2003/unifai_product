@@ -75,6 +75,7 @@ export interface BrowserAIAgent {
 	/** Extension connection status: connected (live ping), installed (standby), not_installed */
 	extension_status?: "connected" | "installed" | "not_installed" | string;
 	extension_last_seen_at?: string;
+	extension_status_started_at?: string;
 	/** True when this Guard has an auto-generated per-device uninstall key. */
 	has_uninstall_key?: boolean;
 	uninstall_key_rotated_at?: string;
@@ -111,6 +112,7 @@ export interface BrowserAIAgentExtensionHistory {
 	current_status: string;
 	is_online: boolean;
 	last_seen_at: string;
+	auto_delete_days?: number;
 }
 
 /** Proxy code published by Rebuild & Publish; installed Guards hot-swap to it. */
@@ -806,6 +808,15 @@ export const browserAiApi = baseApi.injectEndpoints({
 
 		getBrowserAiAgentExtensionHistory: builder.query<BrowserAIAgentExtensionHistory, string>({
 			query: (id) => `/browser-ai/agents/${encodeURIComponent(id)}/extension-history?limit=200`,
+			providesTags: (result, error, id) => [{ type: "BrowserAiAgents" as any, id }],
+		}),
+
+		clearBrowserAiAgentExtensionHistory: builder.mutation<{ status: string; message: string }, string>({
+			query: (id) => ({
+				url: `/browser-ai/agents/${encodeURIComponent(id)}/extension-history`,
+				method: "DELETE",
+			}),
+			invalidatesTags: (result, error, id) => [{ type: "BrowserAiAgents" as any, id }, "BrowserAiAgents" as any],
 		}),
 
 		getBrowserAiSetupInfo: builder.query<BrowserAISetupInfo, void>({
@@ -1032,6 +1043,7 @@ export const {
 	useDeleteBrowserAiTargetMutation,
 	useGetBrowserAiAgentsQuery,
 	useGetBrowserAiAgentExtensionHistoryQuery,
+	useClearBrowserAiAgentExtensionHistoryMutation,
 	useGetBrowserAiSetupInfoQuery,
 	useGetBrowserAiRebuildHistoryQuery,
 	useGetBrowserAiAgentSettingsQuery,

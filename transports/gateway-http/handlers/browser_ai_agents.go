@@ -104,10 +104,28 @@ func (h *BrowserAIHandler) agentExtensionStatusHistory(ctx *fasthttp.RequestCtx)
 		return
 	}
 	SendJSON(ctx, map[string]any{
-		"events":         events,
-		"current_status": agent.ExtensionStatus,
-		"is_online":      agent.IsOnline,
-		"last_seen_at":   agent.LastSeenAt,
+		"events":           events,
+		"current_status":   agent.ExtensionStatus,
+		"is_online":        agent.IsOnline,
+		"last_seen_at":     agent.LastSeenAt,
+		"auto_delete_days": 7,
+	})
+}
+
+func (h *BrowserAIHandler) clearAgentExtensionStatusHistory(ctx *fasthttp.RequestCtx) {
+	h.ensureDB(ctx)
+	id, ok := ctx.UserValue("id").(string)
+	if !ok || strings.TrimSpace(id) == "" {
+		SendError(ctx, fasthttp.StatusBadRequest, "Missing agent ID")
+		return
+	}
+	if err := h.manager.ClearAgentExtensionStatusHistory(ctx, id); err != nil {
+		SendError(ctx, fasthttp.StatusInternalServerError, err.Error())
+		return
+	}
+	SendJSON(ctx, map[string]any{
+		"status":  "ok",
+		"message": "Extension connection history successfully cleared",
 	})
 }
 

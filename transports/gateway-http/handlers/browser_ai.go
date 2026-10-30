@@ -152,6 +152,7 @@ func (h *BrowserAIHandler) RegisterRoutes(r *router.Router, middlewares ...schem
 
 	r.GET("/api/browser-ai/agents", lib.ChainMiddlewares(h.listAgents, middlewares...))
 	r.GET("/api/browser-ai/agents/{id}/extension-history", lib.ChainMiddlewares(h.agentExtensionStatusHistory, middlewares...))
+	r.DELETE("/api/browser-ai/agents/{id}/extension-history", lib.ChainMiddlewares(h.clearAgentExtensionStatusHistory, middlewares...))
 	r.POST("/api/browser-ai/agents/heartbeat", lib.ChainMiddlewares(h.agentHeartbeat, middlewares...))
 	r.POST("/api/browser-ai/agents/wait-command", lib.ChainMiddlewares(h.agentWaitCommand, middlewares...))
 	r.GET("/api/browser-ai/fleet-config", lib.ChainMiddlewares(h.getFleetConfig, middlewares...))

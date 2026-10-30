@@ -509,8 +509,9 @@ type BrowserAIAgent struct {
 	Status             string `gorm:"index" json:"status"` // active | uninstall_pending | uninstalled
 	UninstallRequested bool   `json:"uninstall_requested"`
 	// ExtensionStatus: connected | off | installed | not_installed | uninstalled
-	ExtensionStatus     string     `gorm:"type:varchar(32);default:'not_installed'" json:"extension_status"`
-	ExtensionLastSeenAt *time.Time `json:"extension_last_seen_at,omitempty"`
+	ExtensionStatus          string     `gorm:"type:varchar(32);default:'not_installed'" json:"extension_status"`
+	ExtensionLastSeenAt      *time.Time `json:"extension_last_seen_at,omitempty"`
+	ExtensionStatusStartedAt *time.Time `json:"extension_status_started_at,omitempty"`
 	// Per-Guard uninstall key (auto-generated). Hash for verify; Enc for admin reveal.
 	UninstallKeyHash      string     `gorm:"type:varchar(128)" json:"-"`
 	UninstallKeyEnc       string     `gorm:"type:text" json:"-"`
@@ -740,6 +741,10 @@ func (BrowserAIAgent) TableName() string {
 
 func (BrowserAIAgentSettings) TableName() string {
 	return "browser_ai_agent_settings"
+}
+
+func (BrowserAIAgentExtensionStatusEvent) TableName() string {
+	return "browser_ai_agent_extension_status_events"
 }
 
 const BrowserControlSettingsID = "browser-controls-default"
@@ -3805,6 +3810,12 @@ func (m *BrowserAIManager) UpsertAgentHeartbeat(ctx context.Context, incoming *B
 			CreatedAt:          now,
 			UpdatedAt:          now,
 		}
+		if incoming.ExtensionStatus != "" {
+			agent.ExtensionStatus = incoming.ExtensionStatus
+		} else {
+			agent.ExtensionStatus = "installed"
+		}
+		agent.ExtensionStatusStartedAt = &now
 		if incoming.ExtensionStatus == "connected" {
 			agent.ExtensionLastSeenAt = &now
 		}
@@ -3893,11 +3904,17 @@ func (m *BrowserAIManager) UpsertAgentHeartbeat(ctx context.Context, incoming *B
 		existing.HealthDetail = hd
 	}
 	if es := strings.TrimSpace(incoming.ExtensionStatus); es != "" {
+		if !strings.EqualFold(existing.ExtensionStatus, es) || existing.ExtensionStatusStartedAt == nil {
+			existing.ExtensionStatusStartedAt = &now
+		}
 		existing.ExtensionStatus = es
 		if es == "connected" {
 			existing.ExtensionLastSeenAt = &now
 		}
 	} else if existing.ExtensionStatus == "" {
+		if existing.ExtensionStatus != "installed" || existing.ExtensionStatusStartedAt == nil {
+			existing.ExtensionStatusStartedAt = &now
+		}
 		existing.ExtensionStatus = "installed"
 	}
 	existing.LastSeenAt = now
@@ -4058,12 +4075,39 @@ func recordAgentExtensionStatus(ctx context.Context, db *gorm.DB, agentID, statu
 	})
 }
 
+// ApplyExtensionHistoryAutoDelete purges extension lifecycle events older than 7 days (default retention).
+func (m *BrowserAIManager) ApplyExtensionHistoryAutoDelete(ctx context.Context) *time.Time {
+	db := m.GetDB()
+	if db == nil {
+		return nil
+	}
+	cutoff := time.Now().Add(-7 * 24 * time.Hour)
+	_ = db.WithContext(ctx).Where("created_at < ?", cutoff).Delete(&BrowserAIAgentExtensionStatusEvent{}).Error
+	return &cutoff
+}
+
+// ClearAgentExtensionStatusHistory purges all recorded extension events for a specific agent.
+func (m *BrowserAIManager) ClearAgentExtensionStatusHistory(ctx context.Context, agentID string) error {
+	db := m.GetDB()
+	if db == nil {
+		return fmt.Errorf("browser AI database is not connected")
+	}
+	agentID = strings.TrimSpace(agentID)
+	if agentID == "" {
+		return fmt.Errorf("agent id is required")
+	}
+	return db.WithContext(ctx).Where("agent_id = ?", agentID).Delete(&BrowserAIAgentExtensionStatusEvent{}).Error
+}
+
 // ListAgentExtensionStatusHistory returns the newest observed state intervals first.
 func (m *BrowserAIManager) ListAgentExtensionStatusHistory(ctx context.Context, agentID string, limit int) ([]BrowserAIAgentExtensionStatusEvent, error) {
 	db := m.GetDB()
 	if db == nil {
 		return nil, fmt.Errorf("browser AI database is not connected")
 	}
+	// Automatically purge events older than 7 days
+	m.ApplyExtensionHistoryAutoDelete(ctx)
+
 	agentID = strings.TrimSpace(agentID)
 	if agentID == "" {
 		return nil, fmt.Errorf("agent id is required")
@@ -4074,6 +4118,31 @@ func (m *BrowserAIManager) ListAgentExtensionStatusHistory(ctx context.Context, 
 	events := make([]BrowserAIAgentExtensionStatusEvent, 0)
 	err := db.WithContext(ctx).Where("agent_id = ?", agentID).
 		Order("started_at DESC").Order("created_at DESC").Limit(limit).Find(&events).Error
+	if err == nil && len(events) == 0 {
+		// Populate initial event from current state so history is immediately visible
+		var ag BrowserAIAgent
+		if db.WithContext(ctx).Where("id = ?", agentID).First(&ag).Error == nil {
+			start := ag.LastSeenAt
+			if ag.ExtensionStatusStartedAt != nil && !ag.ExtensionStatusStartedAt.IsZero() {
+				start = *ag.ExtensionStatusStartedAt
+			} else if ag.ExtensionLastSeenAt != nil && !ag.ExtensionLastSeenAt.IsZero() {
+				start = *ag.ExtensionLastSeenAt
+			}
+			st := ag.ExtensionStatus
+			if st == "" {
+				st = "installed"
+			}
+			initEvent := BrowserAIAgentExtensionStatusEvent{
+				ID:        uuid.New().String(),
+				AgentID:   agentID,
+				Status:    st,
+				StartedAt: start,
+				CreatedAt: time.Now(),
+			}
+			_ = db.WithContext(ctx).Create(&initEvent).Error
+			events = append(events, initEvent)
+		}
+	}
 	return events, err
 }
 
@@ -4131,6 +4200,13 @@ func (m *BrowserAIManager) ListAgents(ctx context.Context, status, search string
 		}
 		if agents[i].ExtensionStatus == "" {
 			agents[i].ExtensionStatus = "not_installed"
+		}
+		if agents[i].ExtensionStatusStartedAt == nil || agents[i].ExtensionStatusStartedAt.IsZero() {
+			if agents[i].ExtensionLastSeenAt != nil && !agents[i].ExtensionLastSeenAt.IsZero() {
+				agents[i].ExtensionStatusStartedAt = agents[i].ExtensionLastSeenAt
+			} else if !agents[i].LastSeenAt.IsZero() {
+				agents[i].ExtensionStatusStartedAt = &agents[i].LastSeenAt
+			}
 		}
 	}
 	return agents, total, err
