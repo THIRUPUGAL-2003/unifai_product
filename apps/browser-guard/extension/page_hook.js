@@ -5240,7 +5240,46 @@
 
   // Set Composer text (for auto-redaction) across ChatGPT, Claude, Gemini, Copilot, Perplexity, etc.
 
-  function setComposerText(text) {
+  
+  function clearComposerIfRedacted(redactedText) {
+    try {
+      var target = getDeepActiveElement() || document.activeElement;
+      if (!target || (!target.isContentEditable && target.getAttribute("contenteditable") !== "true" && target.tagName !== "TEXTAREA" && target.tagName !== "INPUT")) {
+        var deepEl = querySelectorAllDeep("div#prompt-textarea, [contenteditable='true'], textarea#prompt-textarea, textarea");
+        if (deepEl.length) target = deepEl[0];
+      }
+      if (!target) return;
+      var curVal = (target.value || target.innerText || target.textContent || "").trim();
+      var rTrim = (redactedText || "[REDACTED]").trim();
+      if (curVal === rTrim || curVal.indexOf(rTrim) >= 0) {
+        if (target.tagName === "TEXTAREA" || target.tagName === "INPUT") {
+          try {
+            var proto = target.tagName === "TEXTAREA" ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+            var nativeSetter = Object.getOwnPropertyDescriptor(proto, "value");
+            if (nativeSetter && nativeSetter.set) nativeSetter.set.call(target, "");
+            else target.value = "";
+          } catch (_) { target.value = ""; }
+          try { if (target._valueTracker) target._valueTracker.setValue("x"); } catch (_) {}
+          target.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+          target.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+        } else if (target.isContentEditable || target.getAttribute("contenteditable") === "true") {
+          try {
+            target.innerHTML = "<p><br></p>";
+          } catch (_) {
+            target.textContent = "";
+          }
+          try {
+            target.dispatchEvent(new InputEvent("input", { bubbles: true, cancelable: true, inputType: "deleteContentBackward" }));
+          } catch (_) {
+            target.dispatchEvent(new Event("input", { bubbles: true }));
+          }
+          target.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+      }
+    } catch (_) {}
+  }
+
+function setComposerText(text) {
 
     if (typeof text !== "string") return false;
 
@@ -9344,6 +9383,8 @@
           passClick = false;
 
         }
+        setTimeout(function () { clearComposerIfRedacted(redactedText); }, 120);
+        setTimeout(function () { clearComposerIfRedacted(redactedText); }, 300);
 
       }, 50);
 
