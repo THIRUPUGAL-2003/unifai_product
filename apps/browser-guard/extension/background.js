@@ -5,8 +5,33 @@
  * not Target Websites generate no traffic and receive no policy data.
  */
 if (typeof importScripts === "function") {
-  // Chrome service worker. Firefox loads these via manifest background.scripts.
-  importScripts("endpoint.js", "guard_base.js");
+  // Chrome service worker. Safe isolated imports with fallback to prevent NetworkError crashes
+  try {
+    importScripts("endpoint.js");
+  } catch (err) {
+    console.warn("[YP-Raksha] endpoint.js import fallback:", err);
+  }
+  try {
+    importScripts("guard_base.js");
+  } catch (err) {
+    console.warn("[YP-Raksha] guard_base.js import fallback:", err);
+  }
+}
+
+// Fallback declarations if importScripts failed or was delayed
+if (typeof GATEWAY_GUARD_BASE === "undefined") {
+  var GATEWAY_GUARD_BASE = "http://127.0.0.1:18195";
+}
+if (typeof GATEWAY_SERVER_HOST === "undefined") {
+  var GATEWAY_SERVER_HOST = "localhost";
+}
+if (typeof GUARD_BASE_FALLBACK === "undefined") {
+  var GUARD_BASE_FALLBACK = "http://127.0.0.1:18195";
+}
+if (typeof resolveGuardBase === "undefined") {
+  var resolveGuardBase = function (done) {
+    done(GATEWAY_GUARD_BASE || GUARD_BASE_FALLBACK);
+  };
 }
 
 var SYNC_MIN_INTERVAL_MS = 1000; // Reduced from 2000ms → faster first-sync after laptop boot

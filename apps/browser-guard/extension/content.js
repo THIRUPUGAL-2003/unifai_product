@@ -1533,8 +1533,10 @@
     function doCheck() {
       withBase(function () {
         if (base) {
+          var hasFiles = (checkPayload.files && checkPayload.files.length > 0) || (checkPayload.upload_images && checkPayload.upload_images.length > 0);
+          var checkTimeout = hasFiles ? 15000 : 2500;
           var ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
-          var tId = ctrl ? setTimeout(function () { try { ctrl.abort(); } catch (_) {} }, 1000) : null;
+          var tId = ctrl ? setTimeout(function () { try { ctrl.abort(); } catch (_) {} }, checkTimeout) : null;
           fetch(base + "/extension/check", {
             method: "POST",
             headers: { "Content-Type": "application/json", "X-Browser-Guard-Extension": "1" },

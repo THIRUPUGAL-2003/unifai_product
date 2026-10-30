@@ -1217,7 +1217,7 @@ def get_extension_eval_record(domain: str, prompt: str = "", file_name: str = ""
                 continue
             item_time = float(item.get("time") or 0)
             is_item_blocked = item.get("is_blocked") or str(item.get("action") or "").lower() == "blocked"
-            max_age = 60.0 if is_item_blocked else 4.0
+            max_age = 60.0 if is_item_blocked else 30.0
             if now - item_time > max_age:
                 continue
 
@@ -1237,6 +1237,10 @@ def get_extension_eval_record(domain: str, prompt: str = "", file_name: str = ""
             item_p_raw = re.sub(r'[\u200B-\u200F\uFEFF\u202A-\u202E\u2060-\u206F]', '', item.get("preview") or '').replace('\u00A0', ' ')
             item_p = " ".join(item_p_raw.strip().split()).lower()[:100]
             item_files = [str(x).lower().strip() for x in (item.get("files") or [])]
+            # If the eval record was blocked due to an attached file, but current proxy request has no files (user removed file),
+            # do not match the old blocked file record!
+            if is_item_blocked and item_files and not fn_clean:
+                continue
 
             if p_clean and item_p:
                 p_core = re.sub(r'\[(?:file|extracted file):.*?\]', '', p_clean).strip()

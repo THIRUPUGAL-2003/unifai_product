@@ -195,6 +195,9 @@
     _lastAskSig = "";
 
     _lastBlockedPromptText = "";
+    _lastBlockedPromptTime = 0;
+    _lastAskTime = 0;
+    _lastAskDecision = null;
 
     if (stagedFiles.length === 0) {
 
@@ -5121,13 +5124,15 @@
 
       var id = Date.now().toString(36) + "_" + Math.random().toString(36).slice(2);
 
+      var hasFiles = (files && files.length > 0) || (images && images.length > 0);
+      var askTimeout = hasFiles ? 15000 : 2500;
       var timer = setTimeout(function () {
 
         var pStore = (typeof window !== "undefined" && window.pending) || (typeof pending !== "undefined" ? pending : {});
         if (pStore && pStore[id]) delete pStore[id];
         resolve(clientDecision || { blocked: false, passthrough: true });
 
-      }, 1000);
+      }, askTimeout);
 
 
 
@@ -5576,15 +5581,34 @@
 
       var activeContainer = null;
 
-      var containerSelector = "fieldset, form, [class*='composer' i], [class*='input-container' i], div[data-testid*='composer' i], div[class*='chat-input' i], rich-textarea, input-area, input-area-v2, div[class*='input-area' i], uploader-file-card, mat-card, file-chip, mat-chip";
+      var composerSelectors = [
+        "input-area",
+        "input-area-v2",
+        "div[class*='input-area' i]",
+        "rich-textarea",
+        "form[class*='composer' i]",
+        "div[data-testid*='composer' i]",
+        "div[class*='chat-input' i]",
+        "div[class*='input-container' i]",
+        "copilot-composer",
+        "cib-action-bar",
+        "fieldset",
+        "form"
+      ];
       if (active && active.closest) {
-        activeContainer = active.closest(containerSelector);
+        for (var cs = 0; cs < composerSelectors.length; cs++) {
+          var found = active.closest(composerSelectors[cs]);
+          if (found) { activeContainer = found; break; }
+        }
       }
       if (!activeContainer) {
-        activeContainer = document.querySelector(containerSelector);
+        for (var cs = 0; cs < composerSelectors.length; cs++) {
+          var found = document.querySelector(composerSelectors[cs]);
+          if (found) { activeContainer = found; break; }
+        }
       }
       if (!activeContainer) {
-        activeContainer = document.body;
+        return []; // NEVER scan document.body for attachments! Prevents scraping past chat turns.
       }
 
 
@@ -5618,7 +5642,7 @@
 
         if (!n) continue;
 
-        if (n.closest && n.closest("[data-testid*='conversation-turn'], [data-testid*='user-message'], [class*='font-claude-message'], [class*='ChatMessage'], [class*='message-content'], div.group, nav, aside, [class*='sidebar' i], [class*='history' i]")) {
+        if (n.closest && n.closest("user-query, model-response, [class*='conversation' i], [class*='history' i], [class*='chat-history' i], [class*='message' i], [class*='turn' i], [data-testid*='turn'], [data-testid*='user-message'], [data-testid*='conversation-turn'], [class*='font-claude-message'], [class*='ChatMessage'], [class*='message-content'], div.group, nav, aside, [class*='sidebar' i]")) {
 
           continue;
 
@@ -6457,13 +6481,21 @@
     if (blocked) {
 
       if (decision && Array.isArray(decision.violating_files) && decision.violating_files.length > 0) {
-
         for (var vi = 0; vi < decision.violating_files.length; vi++) {
-
-          removeStagedFile(decision.violating_files[vi]);
-
+          var vfName = String(decision.violating_files[vi]).toLowerCase().trim();
+          for (var s = 0; s < stagedFiles.length; s++) {
+            if (stagedFiles[s] && String(stagedFiles[s].name).toLowerCase().trim() === vfName) {
+              stagedFiles[s].is_blocked = true;
+              stagedFiles[s].blocked_reason = decision.rule;
+              stagedFiles[s].blocked_message = decision.message;
+            }
+          }
+          if (stagedFilesCache[vfName]) {
+            stagedFilesCache[vfName].is_blocked = true;
+            stagedFilesCache[vfName].blocked_reason = decision.rule;
+            stagedFilesCache[vfName].blocked_message = decision.message;
+          }
         }
-
       }
 
       showBubble(decision.message, decision.rule, "block");
@@ -8886,11 +8918,14 @@
     function queryDOMAttachmentPillNames() {
     var names = [];
     try {
-      var pillEls = querySelectorAllDeep(
+      var composerArea = document.querySelector("input-area, input-area-v2, div[class*='input-area' i], rich-textarea, form[class*='composer' i], div[data-testid*='composer' i], div[class*='chat-input' i], div[class*='input-container' i], copilot-composer, cib-action-bar, fieldset, form");
+      if (!composerArea) return names;
+      var pillEls = composerArea.querySelectorAll(
         "uploader-file-card, file-chip, mat-chip, div[class*='file-card' i], div[class*='file-pill' i], [data-testid*='attachment' i], [data-testid*='file' i], [class*='attachment' i], [class*='file-preview' i], [class*='upload' i], [class*='file-item' i], [aria-label*='attachment' i], [aria-label*='file' i], li[class*='file' i], div[class*='badge' i], div[class*='chip' i]"
       );
       for (var p = 0; p < pillEls.length; p++) {
         var el = pillEls[p];
+        if (el.closest && el.closest("user-query, model-response, [class*='conversation' i], [class*='history' i], [class*='chat-history' i], [class*='message' i], [class*='turn' i]")) continue;
         var txt = (el.textContent || "").toLowerCase().trim();
         var title = (el.getAttribute("title") || "").toLowerCase().trim();
         var aria = (el.getAttribute("aria-label") || "").toLowerCase().trim();
@@ -8921,9 +8956,10 @@
       }
       return;
     }
-    // Strict DOM reconciliation: ONLY keep files matching visible composer attachment pills!
+    // Strict DOM reconciliation: preserve files younger than 60s so fast sends succeed
     stagedFiles = stagedFiles.filter(function (sf) {
       if (!sf || !sf.name) return false;
+      if (now - (sf.timestamp || 0) < 60000) return true;
       var cleanName = String(sf.name).toLowerCase().trim();
       var baseName = cleanName.split("/").pop().split("\\").pop();
       var dotIdx = baseName.lastIndexOf(".");
@@ -9201,13 +9237,14 @@
         showBubble(multiFileCheck.message, multiFileCheck.rule, "block");
 
         if (multiFileCheck.violating_files) {
-
           for (var vfi = 0; vfi < multiFileCheck.violating_files.length; vfi++) {
-
-            removeStagedFile(multiFileCheck.violating_files[vfi]);
-
+            var vfName2 = String(multiFileCheck.violating_files[vfi]).toLowerCase().trim();
+            for (var s2 = 0; s2 < stagedFiles.length; s2++) {
+              if (stagedFiles[s2] && String(stagedFiles[s2].name).toLowerCase().trim() === vfName2) {
+                stagedFiles[s2].is_blocked = true;
+              }
+            }
           }
-
         }
 
         return;
@@ -9830,13 +9867,14 @@
         showBubble(multiFileCheck2.message, multiFileCheck2.rule, "block");
 
         if (multiFileCheck2.violating_files) {
-
           for (var vfi2 = 0; vfi2 < multiFileCheck2.violating_files.length; vfi2++) {
-
-            removeStagedFile(multiFileCheck2.violating_files[vfi2]);
-
+            var vfName3 = String(multiFileCheck2.violating_files[vfi2]).toLowerCase().trim();
+            for (var s3 = 0; s3 < stagedFiles.length; s3++) {
+              if (stagedFiles[s3] && String(stagedFiles[s3].name).toLowerCase().trim() === vfName3) {
+                stagedFiles[s3].is_blocked = true;
+              }
+            }
           }
-
         }
 
         return;
@@ -10212,15 +10250,16 @@
 
       showBubble(clientDecision.message, clientDecision.rule, "block");
 
-      var toRemove = (clientDecision.violating_files && clientDecision.violating_files.length > 0) ? clientDecision.violating_files : effectiveFiles.map(function (f) { return f.name; });
-
-      for (var f3 = 0; f3 < toRemove.length; f3++) {
-
-        removeStagedFile(toRemove[f3]);
-
+      if (clientDecision.violating_files && Array.isArray(clientDecision.violating_files)) {
+        for (var f3 = 0; f3 < clientDecision.violating_files.length; f3++) {
+          var vfName4 = String(clientDecision.violating_files[f3]).toLowerCase().trim();
+          for (var s4 = 0; s4 < stagedFiles.length; s4++) {
+            if (stagedFiles[s4] && String(stagedFiles[s4].name).toLowerCase().trim() === vfName4) {
+              stagedFiles[s4].is_blocked = true;
+            }
+          }
+        }
       }
-
-      clearAllStagedFiles();
 
       return;
 
@@ -11378,31 +11417,20 @@
 
 
 
-      // 2.5 Deduplicate against recently handled file prompt captions within 10 seconds:
-
-      if (_lastHandledFilePromptTime && (Date.now() - _lastHandledFilePromptTime < 2000)) {
-
-        if (ptClean && ptClean === _lastHandledFilePromptCaption) {
-
+      // 2.5 Deduplicate against recently handled file prompt captions within 30 seconds:
+      if (_lastHandledFilePromptTime && (Date.now() - _lastHandledFilePromptTime < 30000)) {
+        var fileCap = _lastHandledFilePromptCaption || "";
+        if (!ptClean || ptClean === fileCap || (fileCap && (fileCap.indexOf(ptClean) >= 0 || ptClean.indexOf(fileCap) >= 0))) {
+          // This prompt was already handled as a file caption — pass through directly WITHOUT standalone text log
           return origFetch.apply(this, arguments);
-
         }
-
       }
 
-
-
-      // 3. If prompt was already evaluated and ALLOWED by Send button / Enter key within last 5 seconds, pass through directly
-
-      // CRITICAL: Must NEVER pass through if the last decision was blocked!
-
-      if (_lastHandledPromptText && (Date.now() - _lastHandledPromptTime < 1500)) {
-
+      // 3. If prompt was already evaluated and ALLOWED by Send button / Enter key within last 30 seconds, pass through directly
+      if (_lastHandledPromptText && (Date.now() - _lastHandledPromptTime < 30000)) {
         if (!_lastAskDecision || !_lastAskDecision.blocked) {
-
           var cleanLast = (_lastHandledPromptText || "").trim().toLowerCase();
-
-          if (cleanLast && ptClean === cleanLast) {
+          if (cleanLast && (ptClean === cleanLast || ptClean.indexOf(cleanLast) >= 0 || cleanLast.indexOf(ptClean) >= 0)) {
 
             if (_lastAskDecision && String(_lastAskDecision.action || "").toLowerCase() === "redacted" && _lastAskDecision.redacted_prompt) {
 
@@ -11791,6 +11819,12 @@
 
     window.WebSocket.prototype.send = function (data) {
 
+      // Immediately return if socket is closing or closed
+      if (this.readyState === 2 || this.readyState === 3) {
+        return;
+      }
+
+      var sockThis = this;
       var isBinary = false;
       var strData = data;
       if (typeof ArrayBuffer !== "undefined" && data instanceof ArrayBuffer) {
@@ -11798,246 +11832,176 @@
       } else if (typeof ArrayBuffer !== "undefined" && data && ArrayBuffer.isView(data)) {
         try { strData = new TextDecoder().decode(data.buffer); isBinary = true; } catch (_) {}
       }
+
       function sendWsPayload(sock, payloadStr) {
-        if (isBinary && typeof TextEncoder !== "undefined") {
-          return origWSSend.call(sock, new TextEncoder().encode(payloadStr).buffer);
+        try {
+          if (!sock || sock.readyState === 2 || sock.readyState === 3) return;
+          if (isBinary && typeof TextEncoder !== "undefined") {
+            return origWSSend.call(sock, new TextEncoder().encode(payloadStr).buffer);
+          }
+          return origWSSend.call(sock, payloadStr);
+        } catch (err) {
+          // Socket was closing / closed
+          return;
         }
-        return origWSSend.call(sock, payloadStr);
       }
 
-    // Clean WebSocket passthrough
-
-      if (armed && typeof strData === "string" && strData.length > 3) {
-        var sep = (strData.indexOf("\u001e") >= 0 || strData.indexOf("\x1e") >= 0) ? "\u001e" : "";
-        var recs = sep ? strData.split(/[\u001e\x1e]/) : [strData];
-        var cleanStr = "";
-        for (var si = 0; si < recs.length; si++) {
-          var sc = (recs[si] || "").trim();
-          if (sc && (sc.startsWith("{") || sc.startsWith("["))) {
-            cleanStr = sc;
-            break;
+      try {
+        if (armed && typeof strData === "string" && strData.length > 3) {
+          var sep = (strData.indexOf("\u001e") >= 0 || strData.indexOf("\x1e") >= 0) ? "\u001e" : "";
+          var recs = sep ? strData.split(/[\u001e\x1e]/) : [strData];
+          var cleanStr = "";
+          for (var si = 0; si < recs.length; si++) {
+            var sc = (recs[si] || "").trim();
+            if (sc && (sc.startsWith("{") || sc.startsWith("["))) {
+              cleanStr = sc;
+              break;
+            }
           }
-        }
-        if (!cleanStr) cleanStr = strData.split("\u001e").join("").trim();
+          if (!cleanStr) cleanStr = strData.split("\u001e").join("").trim();
 
-        var promptText = "";
+          var promptText = "";
 
-        try {
-
-          var parsed = JSON.parse(cleanStr);
-
-          if (parsed) {
-
-            if (Array.isArray(parsed.arguments) && parsed.arguments[0]) {
-
-              var arg0 = parsed.arguments[0];
-
-              if (arg0.message && typeof arg0.message.text === "string") {
-
-                promptText = arg0.message.text;
-
-              } else if (arg0.message && typeof arg0.message.rawText === "string") {
-
-                promptText = arg0.message.rawText;
-
-              } else if (arg0.message && typeof arg0.message.hiddenText === "string") {
-
-                promptText = arg0.message.hiddenText;
-
-              } else if (arg0.message && typeof arg0.message.spokenText === "string") {
-
-                promptText = arg0.message.spokenText;
-
-              } else if (arg0.message && typeof arg0.message.content === "string") {
-
-                promptText = arg0.message.content;
-
-              } else if (typeof arg0.rawUserQuery === "string") {
-
-                promptText = arg0.rawUserQuery;
-
-              } else if (typeof arg0.userMessage === "string") {
-
-                promptText = arg0.userMessage;
-
-              } else if (typeof arg0.text === "string") {
-
-                promptText = arg0.text;
-
-              } else if (typeof arg0.input === "string") {
-
-                promptText = arg0.input;
-
-              } else if (typeof arg0.prompt === "string") {
-
-                promptText = arg0.prompt;
-
-              } else if (typeof arg0.query === "string") {
-
-                promptText = arg0.query;
-
+          try {
+            var parsed = JSON.parse(cleanStr);
+            if (parsed) {
+              if (Array.isArray(parsed.arguments) && parsed.arguments[0]) {
+                var arg0 = parsed.arguments[0];
+                if (arg0.message && typeof arg0.message.text === "string") {
+                  promptText = arg0.message.text;
+                } else if (arg0.message && typeof arg0.message.rawText === "string") {
+                  promptText = arg0.message.rawText;
+                } else if (arg0.message && typeof arg0.message.hiddenText === "string") {
+                  promptText = arg0.message.hiddenText;
+                } else if (arg0.message && typeof arg0.message.spokenText === "string") {
+                  promptText = arg0.message.spokenText;
+                } else if (arg0.message && typeof arg0.message.content === "string") {
+                  promptText = arg0.message.content;
+                } else if (typeof arg0.rawUserQuery === "string") {
+                  promptText = arg0.rawUserQuery;
+                } else if (typeof arg0.userMessage === "string") {
+                  promptText = arg0.userMessage;
+                } else if (typeof arg0.text === "string") {
+                  promptText = arg0.text;
+                } else if (typeof arg0.input === "string") {
+                  promptText = arg0.input;
+                } else if (typeof arg0.prompt === "string") {
+                  promptText = arg0.prompt;
+                } else if (typeof arg0.query === "string") {
+                  promptText = arg0.query;
+                }
               }
 
+              if (!promptText) {
+                if (typeof parsed.prompt === "string") promptText = parsed.prompt;
+                else if (typeof parsed.text === "string") promptText = parsed.text;
+                else if (typeof parsed.input === "string") promptText = parsed.input;
+                else if (typeof parsed.query === "string") promptText = parsed.query;
+                else if (parsed.message && typeof parsed.message.text === "string") promptText = parsed.message.text;
+                else if (parsed.message && typeof parsed.message.content === "string") promptText = parsed.message.content;
+              }
+            }
+          } catch (e) {}
+
+          promptText = stripInvisible(promptText);
+
+          // Only evaluate if real user text was extracted (NEVER evaluate raw JSON packets/timestamps)
+          if (promptText && promptText.length > 0 && !promptText.startsWith("{") && !promptText.startsWith("[")) {
+            var wsFiles = [];
+            try {
+              if (typeof getAllFreshStagedFiles === "function") {
+                wsFiles = getAllFreshStagedFiles();
+              }
+              if ((!wsFiles || wsFiles.length === 0) && typeof mergeStagedAndDomFiles === "function") {
+                wsFiles = mergeStagedAndDomFiles();
+              }
+            } catch (_) {}
+
+            var wsDecision = evaluateClientRules(promptText, wsFiles || []);
+            if (wsDecision && wsDecision.blocked) {
+              _lastBlockedPromptText = promptText;
+              _lastBlockedPromptTime = Date.now();
+              _lastHandledPromptText = "";
+              _lastAskDecision = wsDecision;
+              showBubble(wsDecision.message, wsDecision.rule, "block");
+              window.postMessage({
+                source: "gateway-guard-page",
+                nonce: guardNonce,
+                id: "ws_block_" + Date.now().toString(36),
+                prompt: promptText.slice(0, 500),
+                files: wsFiles || [],
+                host: location.hostname,
+                url: location.href,
+                is_blocked: true,
+                rule: wsDecision.rule || ""
+              }, "*");
+              return;
             }
 
-            if (!promptText) {
+            var wsAct = String((wsDecision && wsDecision.action) || "").toLowerCase();
+            if ((wsAct === "redacted" || wsAct === "redact") && wsDecision.redacted_prompt) {
+              showBubble(wsDecision.message || "Sensitive text was redacted before sending.", wsDecision.rule, "redact");
+              var wsOrigToSend = (promptText && !promptText.toUpperCase().startsWith("[REDACTED]")) ? promptText : (_lastRedactedOriginal || promptText);
+              window.postMessage({
+                source: "gateway-guard-page",
+                nonce: guardNonce,
+                id: "ws_redact_" + Date.now().toString(36),
+                prompt: wsOrigToSend,
+                original_prompt: wsOrigToSend,
+                host: location.hostname,
+                url: location.href,
+                is_blocked: false,
+                action: "Redacted",
+                rule: wsDecision.rule || ""
+              }, "*");
 
-              if (typeof parsed.prompt === "string") promptText = parsed.prompt;
+              var pFull = promptText;
+              var pTrim = (promptText || "").trim();
+              var rTrim = wsDecision.redacted_prompt.trim();
 
-              else if (typeof parsed.text === "string") promptText = parsed.text;
+              if (pFull && typeof strData === "string" && strData.indexOf(pFull) >= 0) {
+                return sendWsPayload(sockThis, strData.split(pFull).join(wsDecision.redacted_prompt));
+              }
+              if (pTrim && typeof strData === "string" && strData.indexOf(pTrim) >= 0) {
+                return sendWsPayload(sockThis, strData.split(pTrim).join(rTrim));
+              }
 
-              else if (typeof parsed.input === "string") promptText = parsed.input;
-
-              else if (typeof parsed.query === "string") promptText = parsed.query;
-
-              else if (parsed.message && typeof parsed.message.text === "string") promptText = parsed.message.text;
-
-              else if (parsed.message && typeof parsed.message.content === "string") promptText = parsed.message.content;
-
+              var rewrittenWs = rewriteBody(cleanStr, wsDecision.redacted_prompt, promptText);
+              if (!rewrittenWs && promptText && cleanStr.indexOf(promptText) >= 0) {
+                rewrittenWs = cleanStr.split(promptText).join(wsDecision.redacted_prompt);
+              }
+              if (rewrittenWs) {
+                var hasSep = strData.indexOf("\x1e") >= 0 || strData.indexOf("\u001e") >= 0 || strData.endsWith("\x1e");
+                var finalWsData = hasSep ? (rewrittenWs + "\x1e") : rewrittenWs;
+                return sendWsPayload(sockThis, finalWsData);
+              }
             }
 
-          }
-
-        } catch (e) {}
-
-
-
-        promptText = stripInvisible(promptText);
-
-        // Only evaluate if real user text was extracted (NEVER evaluate raw JSON packets/timestamps)
-
-        if (promptText && promptText.length > 0 && !promptText.startsWith("{") && !promptText.startsWith("[")) {
-
-          var wsDecision = evaluateClientRules(promptText, []);
-
-          if (wsDecision && wsDecision.blocked) {
-
-            _lastBlockedPromptText = promptText;
-
-            _lastBlockedPromptTime = Date.now();
-
-            _lastHandledPromptText = "";
-
-            _lastAskDecision = wsDecision;
-
-            showBubble(wsDecision.message, wsDecision.rule, "block");
-
+            // Coordinate with extension and desktop proxy: record allowed WebSocket prompt so proxy skips duplicate logging
             window.postMessage({
-
               source: "gateway-guard-page",
-
               nonce: guardNonce,
-
-              id: "ws_block_" + Date.now().toString(36),
-
+              id: "ws_allow_" + Date.now().toString(36),
               prompt: promptText.slice(0, 500),
-
+              files: wsFiles || [],
               host: location.hostname,
-
               url: location.href,
-
-              is_blocked: true,
-
-              rule: wsDecision.rule || ""
-
-            }, "*");
-
-            return;
-
-          }
-
-          var wsAct = String((wsDecision && wsDecision.action) || "").toLowerCase();
-
-          if ((wsAct === "redacted" || wsAct === "redact") && wsDecision.redacted_prompt) {
-
-            showBubble(wsDecision.message || "Sensitive text was redacted before sending.", wsDecision.rule, "redact");
-
-            var wsOrigToSend = (promptText && !promptText.toUpperCase().startsWith("[REDACTED]")) ? promptText : (_lastRedactedOriginal || promptText);
-            window.postMessage({
-
-              source: "gateway-guard-page",
-
-              nonce: guardNonce,
-
-              id: "ws_redact_" + Date.now().toString(36),
-
-              prompt: wsOrigToSend,
-
-              original_prompt: wsOrigToSend,
-
-              host: location.hostname,
-
-              url: location.href,
-
               is_blocked: false,
-
-              action: "Redacted",
-
-              rule: wsDecision.rule || ""
-
+              rule: (wsDecision && wsDecision.rule) || ""
             }, "*");
-
-
-
-            var pFull = promptText;
-            var pTrim = (promptText || "").trim();
-            var rTrim = wsDecision.redacted_prompt.trim();
-
-            if (pFull && typeof strData === "string" && strData.indexOf(pFull) >= 0) {
-              return sendWsPayload(this, strData.split(pFull).join(wsDecision.redacted_prompt));
-            }
-            if (pTrim && typeof strData === "string" && strData.indexOf(pTrim) >= 0) {
-              return sendWsPayload(this, strData.split(pTrim).join(rTrim));
-            }
-
-            var rewrittenWs = rewriteBody(cleanStr, wsDecision.redacted_prompt, promptText);
-
-            if (!rewrittenWs && promptText && cleanStr.indexOf(promptText) >= 0) {
-
-              rewrittenWs = cleanStr.split(promptText).join(wsDecision.redacted_prompt);
-
-            }
-
-            if (rewrittenWs) {
-
-              var hasSep = strData.indexOf("\x1e") >= 0 || strData.indexOf("\u001e") >= 0 || strData.endsWith("\x1e");
-
-              var finalWsData = hasSep ? (rewrittenWs + "\x1e") : rewrittenWs;
-
-              return sendWsPayload(this, finalWsData);
-
-            }
-
           }
-
-          // Coordinate with extension and desktop proxy: record allowed WebSocket prompt so proxy skips duplicate logging
-
-          window.postMessage({
-
-            source: "gateway-guard-page",
-
-            nonce: guardNonce,
-
-            id: "ws_allow_" + Date.now().toString(36),
-
-            prompt: promptText.slice(0, 500),
-
-            host: location.hostname,
-
-            url: location.href,
-
-            is_blocked: false,
-
-            rule: (wsDecision && wsDecision.rule) || ""
-
-          }, "*");
-
         }
-
+      } catch (wsErr) {
+        // Safe catch-all
       }
 
-      return origWSSend.call(this, data);
-
+      try {
+        if (this.readyState === 2 || this.readyState === 3) return;
+        return origWSSend.call(this, data);
+      } catch (err) {
+        // Suppress unhandled closed / closing WebSocket DOMExceptions
+        return;
+      }
     };
 
   }

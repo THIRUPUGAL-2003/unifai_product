@@ -1612,9 +1612,9 @@ def check_prompt(
             with _RECENT_FILE_CAPTIONS_LOCK:
                 now_c = time.time()
                 for cap_k, cap_ts in list(_RECENT_FILE_CAPTIONS.items()):
-                    if now_c - cap_ts > 20.0:
+                    if now_c - cap_ts > 30.0:
                         _RECENT_FILE_CAPTIONS.pop(cap_k, None)
-                    elif cap_k == clean_text or clean_text.startswith(cap_k) or cap_k.startswith(clean_text):
+                    elif cap_k == clean_text or clean_text.startswith(cap_k) or cap_k.startswith(clean_text) or (len(clean_text) >= 3 and (clean_text in cap_k or cap_k in clean_text)):
                         return {
                             "blocked": False,
                             "action": "Allowed",
@@ -1627,6 +1627,10 @@ def check_prompt(
                 if (now_ts - float(ev.get("time") or 0) < 15.0):
                     ev_preview = (ev.get("preview") or "").lower()
                     ev_files = ev.get("files") or []
+                    # If earlier eval blocked because of a file, but current send has NO files (user removed file),
+                    # NEVER reuse that file-based block! Let clean prompt re-evaluate.
+                    if ev_files and bool(ev.get("is_blocked")):
+                        continue
                     if ev_files and ev_preview and (ev_preview == clean_text[:150] or clean_text[:150].startswith(ev_preview) or ev_preview.startswith(clean_text[:150])):
                         return {
                             "blocked": bool(ev.get("is_blocked")),
@@ -2087,7 +2091,7 @@ def check_prompt(
                 deduped_files.append(f_item)
         files_list = deduped_files
 
-        if user_caption:
+        if user_caption and not is_blocked:
             norm_cap = " ".join(user_caption.strip().split()).lower()
             if norm_cap:
                 with _RECENT_FILE_CAPTIONS_LOCK:

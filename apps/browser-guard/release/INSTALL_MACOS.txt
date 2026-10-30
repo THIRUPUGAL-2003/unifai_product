@@ -1,7 +1,7 @@
 YP Raksha — macOS Install (turn ON)
 ===================================
 
-Company server: http://localhost:6000
+Company server: https://unifai.yespanchi.com
 (If IT gave you a different URL, use the config packaged in this ZIP.)
 
 Preferred: if IT gave you a YP_Raksha_Setup.pkg — double-click and follow prompts.
