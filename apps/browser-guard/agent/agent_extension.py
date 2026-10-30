@@ -823,6 +823,7 @@ def interpret_guard_decision(data: dict, text: str, rule: str = "") -> dict:
 
 _RECENT_EXTENSION_EVALS_LOCK = threading.Lock()
 _RECENT_EXTENSION_EVALS: list[dict] = []
+_LAST_UNREDACTED_PROMPTS: dict[str, str] = {}
 
 
 def _record_extension_eval(
@@ -1326,8 +1327,18 @@ def check_prompt(
                 "message": f"Access to {clean_h} is blocked by company security policy."
             }
 
+    global _LAST_UNREDACTED_PROMPTS
     prompt = re.sub(r'[\u200B-\u200F\uFEFF\u202A-\u202E\u2060-\u206F]', '', prompt or '').replace('\u00A0', ' ').strip()
     orig_p = re.sub(r"[\u200B-\u200F\uFEFF\u202A-\u202E\u2060-\u206F]", "", original_prompt or "").replace("\u00A0", " ").strip()
+    dom_key = (clean_h or platform or "default").lower()
+    if orig_p and not orig_p.upper().startswith("[REDACTED]") and len(orig_p) >= 2:
+        _LAST_UNREDACTED_PROMPTS[dom_key] = orig_p
+    elif prompt and not prompt.upper().startswith("[REDACTED]") and len(prompt) >= 2:
+        _LAST_UNREDACTED_PROMPTS[dom_key] = prompt
+    else:
+        cached_p = _LAST_UNREDACTED_PROMPTS.get(dom_key)
+        if cached_p:
+            orig_p = cached_p
     if orig_p and (not prompt or prompt == "[REDACTED]" or prompt.startswith("[REDACTED]")):
         prompt = orig_p
     text = orig_p or prompt
@@ -2028,11 +2039,16 @@ def check_prompt(
         meta["action"] = "Redacted"
         meta["is_redacted"] = True
 
-    meta["original_prompt"] = (orig_p or text)[:40000]
+    effective_prompt = (orig_p or text)
+    if effective_prompt.strip().upper().startswith("[REDACTED]"):
+        cached_p = _LAST_UNREDACTED_PROMPTS.get((clean_h or platform or "").lower())
+        if cached_p:
+            effective_prompt = cached_p
+    meta["original_prompt"] = effective_prompt[:40000]
     payload = {
         "platform": platform,
-        "prompt": (orig_p or text)[:40000],
-        "original_prompt": (orig_p or text)[:40000],
+        "prompt": effective_prompt[:40000],
+        "original_prompt": effective_prompt[:40000],
         "client_ip": "127.0.0.1",
         "agent_id": agent_id,
         "agent_hostname": agent_hostname,

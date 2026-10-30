@@ -54,6 +54,25 @@ export function logExtractedTextFromPrompt(log: BrowserAILogEntry): string {
 
 export function logExtractedText(log: BrowserAILogEntry, attachmentText = ""): string {
 	const meta = parseBrowserAiLogMetadata(log);
+	if (Array.isArray(meta.files) && meta.files.length > 0) {
+		const sections: string[] = [];
+		for (const f of meta.files) {
+			if (!f) continue;
+			if (typeof f === "string") {
+				sections.push(`📁 ${f}`);
+			} else if (typeof f === "object") {
+				const fo = f as { name?: string; is_blocked?: boolean; blocked_reason?: string; text?: string; size?: number };
+				const statusTag = fo.is_blocked ? `[BLOCKED: ${fo.blocked_reason || "Policy Violation"}]` : "[ALLOWED]";
+				const sizeStr = fo.size ? ` (${(fo.size / 1024).toFixed(1)} KB)` : "";
+				const header = `📁 ${fo.name || "File"}${sizeStr} ${statusTag}`;
+				const body = fo.text ? fo.text.trim() : "(No text extracted)";
+				sections.push(`${header}\n\n${body}`);
+			}
+		}
+		if (sections.length > 0) {
+			return sections.join("\n\n" + "=".repeat(60) + "\n\n");
+		}
+	}
 	const fromMeta = typeof meta.extracted_text === "string" ? meta.extracted_text.trim() : "";
 	const legacy = logExtractedTextFromPrompt(log);
 	// Prefer client-side PDF parse (pdfjs) over regex garbage stored in metadata.

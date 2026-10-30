@@ -40,6 +40,31 @@ except Exception:
     _is_ai_chrome_url = lambda x: False
     _clean_prompt_text = lambda x: x.strip() if x else ""
 
+try:
+    from file_policy import (
+        _looks_like_image,
+        _looks_like_docx,
+        _looks_like_xlsx,
+        _looks_like_pptx,
+        _looks_like_ole,
+        _looks_like_rtf,
+        _looks_like_html,
+        _looks_like_opendocument,
+        _extract_pdf_text_smart,
+        _extract_pdf_pypdf,
+        _extract_pdf_ocr,
+        _extract_pdf_regex,
+        _extract_docx_text,
+        _extract_xlsx_text,
+        _extract_pptx_text,
+        _extract_ole_office_text,
+        _extract_rtf_text,
+        _extract_html_text,
+        _extract_opendocument_text,
+    )
+except Exception:
+    pass
+
 
 def _run_async(coro):
     """Run an async coroutine from synchronous context (even within mitmproxy loop)."""

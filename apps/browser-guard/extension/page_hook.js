@@ -484,7 +484,7 @@
         var dr = dynamicRules[dri];
         var dAct = String((dr && dr.action) || "").toUpperCase();
         if (dAct === "REDACT" || dAct === "REDACTED") {
-          var dPat = String((dr && dr.pattern) || "").trim();
+          var dPat = String((dr && (dr.pattern || (dr.re && dr.re.source))) || "").trim();
           if (dPat) {
             try {
               var inlinePat = dPat;
@@ -624,7 +624,9 @@
 
           reason: reason,
 
-          re: rx
+          re: rx,
+
+          pattern: r.pattern
 
         });
 
@@ -6047,8 +6049,34 @@
 
 
   function rewriteBody(body, nextText, origText) {
-
-    if (typeof body !== "string" || !nextText) return null;
+    if (!body || !nextText) return null;
+    if (typeof FormData !== "undefined" && body instanceof FormData) {
+      try {
+        var changedFd = false;
+        var entries = Array.from(body.entries());
+        for (var fdi = 0; fdi < entries.length; fdi++) {
+          var k = entries[fdi][0];
+          var v = entries[fdi][1];
+          if (typeof v === "string") {
+            var redV = v;
+            if (origText && v.indexOf(origText) >= 0) {
+              redV = v.split(origText).join(nextText);
+            } else if (origText && origText.trim() && v.indexOf(origText.trim()) >= 0) {
+              redV = v.split(origText.trim()).join(nextText.trim());
+            } else {
+              redV = redactOutgoingPayload(v);
+            }
+            if (redV !== v) {
+              body.set(k, redV);
+              changedFd = true;
+            }
+          }
+        }
+        if (changedFd) return body;
+      } catch (_) {}
+      return null;
+    }
+    if (typeof body !== "string") return null;
 
     try {
 
@@ -9874,9 +9902,11 @@
   if (typeof window.Request !== "undefined") {
     var origRequest = window.Request;
     window.Request = function (input, init) {
-      if (init && typeof init.body === "string") {
-        var redReqB = redactOutgoingPayload(init.body);
-        if (redReqB !== init.body) init.body = redReqB;
+      if (init && init.body) {
+        init.body = redactAnyBody(init.body);
+      }
+      if (typeof input === "string") {
+        input = redactOutgoingPayload(input);
       }
       return new origRequest(input, init);
     };
@@ -10610,6 +10640,7 @@
 
         // Post redact log to gateway
 
+        var fetchOrigToSend = (promptText && !promptText.toUpperCase().startsWith("[REDACTED]")) ? promptText : (_lastRedactedOriginal || promptText);
         window.postMessage({
 
           source: "gateway-guard-page",
@@ -10618,9 +10649,9 @@
 
           id: "redact_fetch_" + Date.now().toString(36),
 
-          prompt: promptText,
+          prompt: fetchOrigToSend,
 
-          original_prompt: promptText,
+          original_prompt: fetchOrigToSend,
 
           files: netFiles || [],
 
@@ -10656,22 +10687,34 @@
 
         }
 
+        if (!rRewritten && typeof FormData !== "undefined" && rInit.body instanceof FormData) {
+          try {
+            var fEntries = Array.from(rInit.body.entries());
+            var fdChanged = false;
+            for (var fdi = 0; fdi < fEntries.length; fdi++) {
+              var fKey = fEntries[fdi][0];
+              var fVal = fEntries[fdi][1];
+              if (typeof fVal === "string") {
+                var fRed = fVal;
+                if (promptText && fVal.indexOf(promptText) >= 0) {
+                  fRed = fVal.split(promptText).join(fetchDecision.redacted_prompt);
+                } else if (promptText && promptText.trim() && fVal.indexOf(promptText.trim()) >= 0) {
+                  fRed = fVal.split(promptText.trim()).join(fetchDecision.redacted_prompt.trim());
+                } else {
+                  fRed = redactOutgoingPayload(fVal);
+                }
+                if (fRed !== fVal) {
+                  rInit.body.set(fKey, fRed);
+                  fdChanged = true;
+                }
+              }
+            }
+            if (fdChanged) rRewritten = rInit.body;
+          } catch (_) {}
+        }
         if (rRewritten) {
-
           rInit.body = rRewritten;
-
-          var rModified = Array.prototype.slice.call(arguments);
-
-          if (rModified.length >= 2) {
-
-            rModified[1] = rInit;
-
-            return origFetch.apply(window, rModified);
-
-          }
-
-          return origFetch.call(window, url, rInit);
-
+          return origFetch.call(window, input, rInit);
         }
 
       }
@@ -11145,7 +11188,7 @@
 
     }
 
-    return origXHRSend.apply(this, arguments);
+    return origXHRSend.call(this, body);
 
   };
 
@@ -11182,8 +11225,17 @@
     }
 
       if (armed && typeof strData === "string" && strData.length > 3) {
-
-        var cleanStr = strData.split("\u001e").join("").trim();
+        var sep = (strData.indexOf("\u001e") >= 0 || strData.indexOf("\x1e") >= 0) ? "\u001e" : "";
+        var recs = sep ? strData.split(/[\u001e\x1e]/) : [strData];
+        var cleanStr = "";
+        for (var si = 0; si < recs.length; si++) {
+          var sc = (recs[si] || "").trim();
+          if (sc && (sc.startsWith("{") || sc.startsWith("["))) {
+            cleanStr = sc;
+            break;
+          }
+        }
+        if (!cleanStr) cleanStr = strData.split("\u001e").join("").trim();
 
         var promptText = "";
 
@@ -11317,6 +11369,7 @@
 
             showBubble(wsDecision.message || "Sensitive text was redacted before sending.", wsDecision.rule, "redact");
 
+            var wsOrigToSend = (promptText && !promptText.toUpperCase().startsWith("[REDACTED]")) ? promptText : (_lastRedactedOriginal || promptText);
             window.postMessage({
 
               source: "gateway-guard-page",
@@ -11325,9 +11378,9 @@
 
               id: "ws_redact_" + Date.now().toString(36),
 
-              prompt: promptText,
+              prompt: wsOrigToSend,
 
-              original_prompt: promptText,
+              original_prompt: wsOrigToSend,
 
               host: location.hostname,
 
@@ -11400,7 +11453,7 @@
 
       }
 
-      return origWSSend.apply(this, arguments);
+      return origWSSend.call(this, data);
 
     };
 

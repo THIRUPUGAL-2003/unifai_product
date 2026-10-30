@@ -1573,6 +1573,20 @@ class BrowserAIInterceptor:
                             new_content = inject_warned_prompt(content, ws_prompt, redacted_prompt)
                             if not new_content and ws_prompt and ws_prompt.strip() in content:
                                 new_content = content.replace(ws_prompt.strip(), redacted_prompt.strip())
+                            if action == "Redacted":
+                                target_txt = new_content or content
+                                for r in get_guard_rules():
+                                    if (r.get("action") or "").upper() == "REDACT" and r.get("pattern"):
+                                        try:
+                                            import re
+                                            pat = r.get("pattern", "")
+                                            while pat.startswith("^"): pat = pat[1:]
+                                            while pat.endswith("$"): pat = pat[:-1]
+                                            if pat:
+                                                target_txt = re.sub(pat, "[REDACTED]", target_txt, flags=re.IGNORECASE)
+                                        except Exception:
+                                            pass
+                                new_content = target_txt
                             if new_content:
                                 _set_websocket_message_payload(msg, new_content)
                     else:
@@ -1628,6 +1642,20 @@ class BrowserAIInterceptor:
                 new_content = inject_warned_prompt(content, ws_prompt, redacted_prompt)
                 if not new_content and ws_prompt and ws_prompt.strip() in content:
                     new_content = content.replace(ws_prompt.strip(), redacted_prompt.strip())
+                if action == "Redacted":
+                    target_txt = new_content or content
+                    for r in get_guard_rules():
+                        if (r.get("action") or "").upper() == "REDACT" and r.get("pattern"):
+                            try:
+                                import re
+                                pat = r.get("pattern", "")
+                                while pat.startswith("^"): pat = pat[1:]
+                                while pat.endswith("$"): pat = pat[:-1]
+                                if pat:
+                                    target_txt = re.sub(pat, "[REDACTED]", target_txt, flags=re.IGNORECASE)
+                            except Exception:
+                                pass
+                    new_content = target_txt
                 if new_content:
                     _set_websocket_message_payload(msg, new_content)
             return

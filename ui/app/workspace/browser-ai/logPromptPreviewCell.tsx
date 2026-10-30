@@ -152,7 +152,9 @@ export function LogPromptPreviewCell({ log }: { log: BrowserAILogEntry }) {
 		? rawPreview
 		: ((fullPrompt && !fullPrompt.toUpperCase().startsWith("[REDACTED]"))
 			? fullPrompt
-			: (origPrompt || rawPreview || fullPrompt));
+			: ((origPrompt && !origPrompt.toUpperCase().startsWith("[REDACTED]"))
+				? origPrompt
+				: (origPrompt || rawPreview || fullPrompt)));
 	const preview = oneLinePreview(displayTxt);
 	return (
 		<div className="truncate font-mono text-xs" title={preview || displayTxt || ""}>
