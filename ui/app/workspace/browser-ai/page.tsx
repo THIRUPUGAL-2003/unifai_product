@@ -7703,19 +7703,42 @@ export default function BrowserAiPage() {
 											{copiedPrompt ? "Copied" : "Copy"}
 										</Button>
 									</div>
-									<div className="p-3.5 bg-background border border-border rounded-lg font-mono text-xs max-h-52 overflow-y-auto whitespace-pre-wrap leading-relaxed no-scrollbar">
-										{isFileUploadLog(selectedLog)
-											? logFileStatusLine(selectedLog)
-											: isClipboardLog(selectedLog)
-												? `${isClipboardCopyLog(selectedLog) ? "Clipboard Copy" : "Clipboard Paste"}${logClipboardPromptText(selectedLog) ? ` -- ${logClipboardPromptText(selectedLog)}` : ""}`
-												: isDragDropLog(selectedLog)
-													? `Drag & Drop${logDragDropPromptText(selectedLog) ? ` -- ${logDragDropPromptText(selectedLog)}` : ""}`
-													: isScreenshotLog(selectedLog)
-														? `Screen Capture Restricted${logScreenshotPromptText(selectedLog) ? ` -- ${logScreenshotPromptText(selectedLog)}` : ""}`
-														: isDownloadLog(selectedLog)
-															? `Download Blocked${logDownloadPromptText(selectedLog) ? ` -- ${logDownloadPromptText(selectedLog)}` : ""}`
-															: selectedLog.user_prompt_full}
-									</div>
+									{(() => {
+										const dMeta = parseBrowserAiLogMetadata(selectedLog);
+										const dOrig = (typeof dMeta.original_prompt === "string" && dMeta.original_prompt.trim()) || (typeof dMeta.prompt === "string" && dMeta.prompt.trim()) || "";
+										const dRed = (typeof dMeta.redacted_prompt === "string" && dMeta.redacted_prompt.trim()) || "";
+										const fullText = (selectedLog.user_prompt_full && !selectedLog.user_prompt_full.toUpperCase().startsWith("[REDACTED]"))
+											? selectedLog.user_prompt_full
+											: (dOrig || selectedLog.user_prompt_full || "");
+
+										return (
+											<div className="space-y-3">
+												<div className="p-3.5 bg-background border border-border rounded-lg font-mono text-xs max-h-52 overflow-y-auto whitespace-pre-wrap leading-relaxed no-scrollbar select-text break-words">
+													{isFileUploadLog(selectedLog)
+														? logFileStatusLine(selectedLog)
+														: isClipboardLog(selectedLog)
+															? `${isClipboardCopyLog(selectedLog) ? "Clipboard Copy" : "Clipboard Paste"}${logClipboardPromptText(selectedLog) ? ` -- ${logClipboardPromptText(selectedLog)}` : ""}`
+															: isDragDropLog(selectedLog)
+																? `Drag & Drop${logDragDropPromptText(selectedLog) ? ` -- ${logDragDropPromptText(selectedLog)}` : ""}`
+																: isScreenshotLog(selectedLog)
+																	? `Screen Capture Restricted${logScreenshotPromptText(selectedLog) ? ` -- ${logScreenshotPromptText(selectedLog)}` : ""}`
+																	: isDownloadLog(selectedLog)
+																		? `Download Blocked${logDownloadPromptText(selectedLog) ? ` -- ${logDownloadPromptText(selectedLog)}` : ""}`
+																		: fullText}
+												</div>
+												{(selectedLog.action === "Redacted" || dRed) && (
+													<div className="rounded-lg border border-purple-800/60 bg-purple-950/20 p-3 space-y-1.5">
+														<p className="text-[11px] font-semibold text-purple-400 uppercase tracking-wide">
+															Redacted Content Sent to AI Provider
+														</p>
+														<p className="font-mono text-xs text-foreground/90 whitespace-pre-wrap select-text break-words">
+															{dRed || "[REDACTED]"}
+														</p>
+													</div>
+												)}
+											</div>
+										);
+									})()}
 									{isFileUploadLog(selectedLog) && logExtractedTextFromPrompt(selectedLog) ? (
 										<p className="text-[11px] text-muted-foreground">
 											Extracted file text is available under <strong className="font-medium text-foreground">View → Extracted text</strong>.

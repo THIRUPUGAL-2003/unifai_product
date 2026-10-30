@@ -144,9 +144,15 @@ export function LogPromptPreviewCell({ log }: { log: BrowserAILogEntry }) {
 		);
 	}
 
-	const preview = oneLinePreview(log.user_prompt_preview);
+	const meta = parseBrowserAiLogMetadata(log);
+	const origPrompt = (typeof meta.original_prompt === "string" && meta.original_prompt.trim()) || (typeof meta.prompt === "string" && meta.prompt.trim()) || "";
+	const rawPreview = (log.user_prompt_preview || "").trim();
+	const displayTxt = (rawPreview && !rawPreview.toUpperCase().startsWith("[REDACTED]"))
+		? rawPreview
+		: (origPrompt || rawPreview);
+	const preview = oneLinePreview(displayTxt);
 	return (
-		<div className="truncate font-mono text-xs" title={preview || log.user_prompt_preview || ""}>
+		<div className="truncate font-mono text-xs" title={preview || displayTxt || ""}>
 			{preview || "—"}
 		</div>
 	);

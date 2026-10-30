@@ -389,10 +389,58 @@
   var _lastBlockedPromptTime = 0;
 
   var _lastBlockedPromptText = "";
+  var _lastRedactedOriginal = "";
+  var _lastRedactedReplacement = "";
+  var _lastRedactedTime = 0;
 
   var lastDecisionCache = { text: "", time: 0, decision: null };
 
 
+
+  
+  function redactOutgoingPayload(str) {
+    if (typeof str !== "string" || !str) return str;
+    var res = str;
+    if (_lastRedactedPromptText && _lastHandledPromptText && (Date.now() - _lastHandledPromptTime < 15000)) {
+      if (res.indexOf(_lastHandledPromptText) >= 0) {
+        res = res.split(_lastHandledPromptText).join(_lastRedactedPromptText);
+      }
+      var tOrig = _lastHandledPromptText.trim();
+      var tRed = _lastRedactedPromptText.trim();
+      if (tOrig && res.indexOf(tOrig) >= 0) {
+        res = res.split(tOrig).join(tRed);
+      }
+    }
+    if (_lastRedactedOriginal && _lastRedactedReplacement && (Date.now() - _lastRedactedTime < 15000)) {
+      if (res.indexOf(_lastRedactedOriginal) >= 0) {
+        res = res.split(_lastRedactedOriginal).join(_lastRedactedReplacement);
+      }
+      var tOrig2 = _lastRedactedOriginal.trim();
+      var tRed2 = _lastRedactedReplacement.trim();
+      if (tOrig2 && res.indexOf(tOrig2) >= 0) {
+        res = res.split(tOrig2).join(tRed2);
+      }
+    }
+    if (Array.isArray(dynamicRules)) {
+      for (var dri = 0; dri < dynamicRules.length; dri++) {
+        var dr = dynamicRules[dri];
+        var dAct = String((dr && dr.action) || "").toUpperCase();
+        if (dAct === "REDACT" || dAct === "REDACTED") {
+          var dPat = String((dr && dr.pattern) || "").trim();
+          if (dPat) {
+            try {
+              var inlinePat = dPat;
+              if (inlinePat.startsWith("^")) inlinePat = inlinePat.slice(1);
+              if (inlinePat.endsWith("$")) inlinePat = inlinePat.slice(0, -1);
+              var dRx = new RegExp(inlinePat, "gi");
+              res = res.replace(dRx, "[REDACTED]");
+            } catch (_) {}
+          }
+        }
+      }
+    }
+    return res;
+  }
 
   function stripInvisible(str) {
 
@@ -6312,7 +6360,7 @@
 
           // ASYNC PREDICT & SCAN WITH DESKTOP AGENT EXE:
 
-          ask("", [stagedTextItem]).then(function (dec) {
+          askSilently("", [stagedTextItem]).then(function (dec) {
 
             if (dec && dec.blocked) {
 
@@ -9894,6 +9942,19 @@
 
       if (!armed) return origFetch.apply(this, arguments);
 
+      if (init && typeof init.body === "string") {
+        var redB = redactOutgoingPayload(init.body);
+        if (redB !== init.body) {
+          init.body = redB;
+        }
+      }
+      if (typeof input === "string") {
+        var redInp = redactOutgoingPayload(input);
+        if (redInp !== input) {
+          input = redInp;
+        }
+      }
+
 
 
       var method = (init && init.method) || (input && input.method) || "GET";
@@ -11157,6 +11218,14 @@
         }
         return origWSSend.call(sock, payloadStr);
       }
+
+    if (typeof strData === "string") {
+      var redWS = redactOutgoingPayload(strData);
+      if (redWS !== strData) {
+        strData = redWS;
+        data = (isBinary && typeof TextEncoder !== "undefined") ? new TextEncoder().encode(redWS).buffer : redWS;
+      }
+    }
 
       if (armed && typeof strData === "string" && strData.length > 3) {
 

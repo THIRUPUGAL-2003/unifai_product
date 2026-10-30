@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Eye, PanelRightClose, Wrench } from "lucide-react";
-import { ModelProviderName } from "@/lib/types/config";
+import { ModelProviderName, isKnownProvider } from "@/lib/types/config";
 import { ModelParams } from "@/lib/types/prompts";
 import { cn } from "@/lib/utils";
 import { PromptDeploymentsAccordionItem } from "@enterprise/components/prompt-deployments/promptDeploymentsAccordionItem";
@@ -76,9 +76,14 @@ function modelScopeAllows(scopes: string[], providerName: string, modelName: str
 }
 
 function splitModelScope(value: string, fallbackProvider = ""): { provider: string; model: string } {
+	if (!value) return { provider: fallbackProvider, model: "" };
 	const slash = value.indexOf("/");
 	if (slash < 0) return { provider: fallbackProvider, model: value };
-	return { provider: value.slice(0, slash), model: value.slice(slash + 1) };
+	const possibleProvider = value.slice(0, slash).toLowerCase();
+	if (possibleProvider === fallbackProvider.toLowerCase() || isKnownProvider(possibleProvider) || possibleProvider === "*") {
+		return { provider: value.slice(0, slash), model: value.slice(slash + 1) };
+	}
+	return { provider: fallbackProvider, model: value };
 }
 
 function splitIds(value?: string): string[] {

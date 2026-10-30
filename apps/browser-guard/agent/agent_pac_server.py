@@ -171,6 +171,7 @@ class _PACRequestHandler(http.server.BaseHTTPRequestHandler):
             eval_id=str(data.get("eval_id") or data.get("id") or ""),
             action=str(data.get("action") or ""),
             original_prompt=str(data.get("original_prompt") or ""),
+            eval_only=bool(data.get("eval_only")),
         )
         self._json(200, result)
 

@@ -2398,8 +2398,9 @@ func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, prompt
 
 	if metadata != nil {
 		if orig, ok := metadata["original_prompt"].(string); ok && strings.TrimSpace(orig) != "" {
-			if strings.TrimSpace(promptFull) == "[REDACTED]" || strings.HasPrefix(strings.TrimSpace(promptFull), "[REDACTED]") {
-				promptFull = strings.TrimSpace(orig)
+			origTrim := strings.TrimSpace(orig)
+			if strings.TrimSpace(promptFull) == "[REDACTED]" || strings.HasPrefix(strings.TrimSpace(promptFull), "[REDACTED]") || strings.Contains(strings.ToUpper(promptFull), "[REDACTED]") {
+				promptFull = origTrim
 			}
 		}
 	}
@@ -2877,6 +2878,7 @@ func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, prompt
 			metadata = make(map[string]any)
 		}
 		metadata["redacted_prompt"] = redactedText
+		metadata["original_prompt"] = promptFull
 		metaBytes, _ = json.Marshal(metadata)
 		// Keep cleanPromptFull and cleanPreview as the original prompt so administrators see what was intercepted in Prompt Logs
 	}

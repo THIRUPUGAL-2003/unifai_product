@@ -1500,6 +1500,7 @@
       is_blocked: Boolean(msg.is_blocked),
       rule: msg.rule || "",
       blocked_reason: msg.blocked_reason || msg.rule || "",
+      eval_only: Boolean(msg.eval_only),
       browser: detectCurrentBrowser()
     };
 
