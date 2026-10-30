@@ -400,107 +400,11 @@
 
   
     function redactAnyBody(body) {
-    if (!body) return body;
-    if (typeof body === "string") {
-      return redactOutgoingPayload(body);
-    }
-    if (typeof FormData !== "undefined" && body instanceof FormData) {
-      try {
-        for (var pair of Array.from(body.entries())) {
-          var k = pair[0];
-          var v = pair[1];
-          if (typeof v === "string") {
-            var redV = redactOutgoingPayload(v);
-            if (redV !== v) body.set(k, redV);
-          }
-        }
-      } catch (_) {}
-      return body;
-    }
-    if (typeof URLSearchParams !== "undefined" && body instanceof URLSearchParams) {
-      try {
-        var paramsKeys = [];
-        body.forEach(function (_, key) { paramsKeys.push(key); });
-        for (var pki = 0; pki < paramsKeys.length; pki++) {
-          var pk = paramsKeys[pki];
-          var pv = body.get(pk);
-          if (typeof pv === "string") {
-            var redPv = redactOutgoingPayload(pv);
-            if (redPv !== pv) body.set(pk, redPv);
-          }
-        }
-      } catch (_) {}
-      return body;
-    }
-    if (typeof ArrayBuffer !== "undefined" && (body instanceof ArrayBuffer || ArrayBuffer.isView(body))) {
-      try {
-        var u8 = body instanceof ArrayBuffer ? new Uint8Array(body) : new Uint8Array(body.buffer, body.byteOffset, body.byteLength);
-        var decStr = new TextDecoder().decode(u8);
-        var redDec = redactOutgoingPayload(decStr);
-        if (redDec !== decStr) {
-          var encU8 = new TextEncoder().encode(redDec);
-          return body instanceof ArrayBuffer ? encU8.buffer : encU8;
-        }
-      } catch (_) {}
-      return body;
-    }
     return body;
   }
 
   function redactOutgoingPayload(str) {
-    if (typeof str !== "string" || !str) return str;
-    var res = str;
-    if (typeof _lastRedactedPromptText === "string" && _lastRedactedPromptText && typeof _lastHandledPromptText === "string" && _lastHandledPromptText && (Date.now() - _lastHandledPromptTime < 60000)) {
-      if (res.indexOf(_lastHandledPromptText) >= 0) {
-        res = res.split(_lastHandledPromptText).join(_lastRedactedPromptText);
-      }
-      var tOrig = _lastHandledPromptText.trim();
-      var tRed = _lastRedactedPromptText.trim();
-      if (tOrig && res.indexOf(tOrig) >= 0) {
-        res = res.split(tOrig).join(tRed);
-      }
-    }
-    if (_lastRedactedOriginal && _lastRedactedReplacement && (Date.now() - _lastRedactedTime < 60000)) {
-      if (res.indexOf(_lastRedactedOriginal) >= 0) {
-        res = res.split(_lastRedactedOriginal).join(_lastRedactedReplacement);
-      }
-      var tOrig2 = _lastRedactedOriginal.trim();
-      var tRed2 = _lastRedactedReplacement.trim();
-      if (tOrig2 && res.indexOf(tOrig2) >= 0) {
-        res = res.split(tOrig2).join(tRed2);
-      }
-      var uriOrig = encodeURIComponent(tOrig2);
-      if (uriOrig && uriOrig !== tOrig2 && res.indexOf(uriOrig) >= 0) {
-        res = res.split(uriOrig).join(encodeURIComponent(tRed2));
-      }
-      try {
-        var jsonOrig = JSON.stringify(tOrig2).slice(1, -1);
-        if (jsonOrig && jsonOrig !== tOrig2 && res.indexOf(jsonOrig) >= 0) {
-          res = res.split(jsonOrig).join(tRed2);
-        }
-      } catch (_) {}
-    }
-    if (Array.isArray(dynamicRules)) {
-      for (var dri = 0; dri < dynamicRules.length; dri++) {
-        var dr = dynamicRules[dri];
-        var dAct = String((dr && dr.action) || "").toUpperCase();
-        if (dAct === "REDACT" || dAct === "REDACTED") {
-          var dPat = String((dr && (dr.pattern || (dr.re && dr.re.source))) || "").trim();
-          if (dPat) {
-            try {
-              var inlinePat = dPat;
-              while (inlinePat.startsWith("^")) inlinePat = inlinePat.slice(1);
-              while (inlinePat.endsWith("$")) inlinePat = inlinePat.slice(0, -1);
-              if (inlinePat) {
-                var dRx = new RegExp(inlinePat, "gi");
-                res = res.replace(dRx, "[REDACTED]");
-              }
-            } catch (_) {}
-          }
-        }
-      }
-    }
-    return res;
+    return str;
   }
 
   function stripInvisible(str) {
@@ -6065,7 +5969,7 @@
             } else if (origText && origText.trim() && v.indexOf(origText.trim()) >= 0) {
               redV = v.split(origText.trim()).join(nextText.trim());
             } else {
-              redV = redactOutgoingPayload(v);
+              redV = v;
             }
             if (redV !== v) {
               body.set(k, redV);
@@ -8759,6 +8663,10 @@
       _lastRedactedReplacement = redactedText;
       _lastRedactedTime = Date.now();
       _lastHandledPromptText = text;
+          _lastRedactedPromptText = "";
+          _lastRedactedOriginal = "";
+          _lastRedactedReplacement = "";
+          _lastRedactedTime = 0;
       _lastRedactedPromptText = redactedText;
       _lastHandledPromptTime = Date.now();
       setComposerText(redactedText);
@@ -8888,6 +8796,10 @@
           _lastHandledPromptTime = Date.now();
 
           _lastHandledPromptText = text;
+          _lastRedactedPromptText = "";
+          _lastRedactedOriginal = "";
+          _lastRedactedReplacement = "";
+          _lastRedactedTime = 0;
 
           try {
 
@@ -8948,6 +8860,10 @@
     _lastHandledPromptTime = Date.now();
 
     _lastHandledPromptText = text;
+          _lastRedactedPromptText = "";
+          _lastRedactedOriginal = "";
+          _lastRedactedReplacement = "";
+          _lastRedactedTime = 0;
 
     window.postMessage({
 
@@ -9390,6 +9306,10 @@
       _lastRedactedReplacement = redactedText;
       _lastRedactedTime = Date.now();
       _lastHandledPromptText = text;
+          _lastRedactedPromptText = "";
+          _lastRedactedOriginal = "";
+          _lastRedactedReplacement = "";
+          _lastRedactedTime = 0;
       _lastRedactedPromptText = redactedText;
       _lastHandledPromptTime = Date.now();
       var redactClickId = "redact_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2);
@@ -9486,6 +9406,10 @@
           _lastHandledPromptTime = Date.now();
 
           _lastHandledPromptText = text;
+          _lastRedactedPromptText = "";
+          _lastRedactedOriginal = "";
+          _lastRedactedReplacement = "";
+          _lastRedactedTime = 0;
 
           try {
 
@@ -9530,6 +9454,10 @@
     _lastHandledPromptTime = Date.now();
 
     _lastHandledPromptText = text;
+          _lastRedactedPromptText = "";
+          _lastRedactedOriginal = "";
+          _lastRedactedReplacement = "";
+          _lastRedactedTime = 0;
 
     window.postMessage({
 
@@ -9711,6 +9639,10 @@
     _lastHandledPromptTime = Date.now();
 
     _lastHandledPromptText = text;
+          _lastRedactedPromptText = "";
+          _lastRedactedOriginal = "";
+          _lastRedactedReplacement = "";
+          _lastRedactedTime = 0;
 
     window.postMessage({
 
@@ -9900,19 +9832,7 @@
 
 
 
-  if (typeof window.Request !== "undefined") {
-    var origRequest = window.Request;
-    window.Request = function (input, init) {
-      if (init && init.body) {
-        init.body = redactAnyBody(init.body);
-      }
-      if (typeof input === "string") {
-        input = redactOutgoingPayload(input);
-      }
-      return new origRequest(input, init);
-    };
-    try { window.Request.prototype = origRequest.prototype; } catch (_) {}
-  }
+  // window.Request native passthrough
   var origFetch = window.fetch;
 
   if (typeof origFetch === "function") {
@@ -9921,17 +9841,7 @@
 
       if (!armed) return origFetch.apply(this, arguments);
 
-      if (init && init.body) {
-        init.body = redactAnyBody(init.body);
-        if (arguments.length >= 2) arguments[1] = init;
-      }
-      if (typeof input === "string") {
-        var redInp = redactOutgoingPayload(input);
-        if (redInp !== input) {
-          input = redInp;
-          arguments[0] = input;
-        }
-      }
+      // Clean fetch passthrough
 
 
 
@@ -11061,13 +10971,7 @@
   };
 
   XMLHttpRequest.prototype.send = function (body) {
-    if (typeof body === "string") {
-      var redXhr = redactOutgoingPayload(body);
-      if (redXhr !== body) {
-        body = redXhr;
-        arguments[0] = redXhr;
-      }
-    }
+    // Clean XHR passthrough
 
     if (!armed || !body) return origXHRSend.call(this, body);
 
@@ -11217,13 +11121,7 @@
         return origWSSend.call(sock, payloadStr);
       }
 
-    if (typeof strData === "string") {
-      var redWS = redactOutgoingPayload(strData);
-      if (redWS !== strData) {
-        strData = redWS;
-        data = (isBinary && typeof TextEncoder !== "undefined") ? new TextEncoder().encode(redWS).buffer : redWS;
-      }
-    }
+    // Clean WebSocket passthrough
 
       if (armed && typeof strData === "string" && strData.length > 3) {
         var sep = (strData.indexOf("\u001e") >= 0 || strData.indexOf("\x1e") >= 0) ? "\u001e" : "";
@@ -11469,11 +11367,7 @@
     var origSendBeacon = navigator.sendBeacon.bind(navigator);
 
     navigator.sendBeacon = function (url, data) {
-      if (data) {
-        data = redactAnyBody(data);
-      }
       return origSendBeacon(url, data);
-
     };
 
   }
