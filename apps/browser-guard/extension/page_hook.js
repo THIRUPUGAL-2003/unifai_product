@@ -398,10 +398,58 @@
 
 
   
+    function redactAnyBody(body) {
+    if (!body) return body;
+    if (typeof body === "string") {
+      return redactOutgoingPayload(body);
+    }
+    if (typeof FormData !== "undefined" && body instanceof FormData) {
+      try {
+        for (var pair of Array.from(body.entries())) {
+          var k = pair[0];
+          var v = pair[1];
+          if (typeof v === "string") {
+            var redV = redactOutgoingPayload(v);
+            if (redV !== v) body.set(k, redV);
+          }
+        }
+      } catch (_) {}
+      return body;
+    }
+    if (typeof URLSearchParams !== "undefined" && body instanceof URLSearchParams) {
+      try {
+        var paramsKeys = [];
+        body.forEach(function (_, key) { paramsKeys.push(key); });
+        for (var pki = 0; pki < paramsKeys.length; pki++) {
+          var pk = paramsKeys[pki];
+          var pv = body.get(pk);
+          if (typeof pv === "string") {
+            var redPv = redactOutgoingPayload(pv);
+            if (redPv !== pv) body.set(pk, redPv);
+          }
+        }
+      } catch (_) {}
+      return body;
+    }
+    if (typeof ArrayBuffer !== "undefined" && (body instanceof ArrayBuffer || ArrayBuffer.isView(body))) {
+      try {
+        var u8 = body instanceof ArrayBuffer ? new Uint8Array(body) : new Uint8Array(body.buffer, body.byteOffset, body.byteLength);
+        var decStr = new TextDecoder().decode(u8);
+        var redDec = redactOutgoingPayload(decStr);
+        if (redDec !== decStr) {
+          var encU8 = new TextEncoder().encode(redDec);
+          return body instanceof ArrayBuffer ? encU8.buffer : encU8;
+        }
+      } catch (_) {}
+      return body;
+    }
+    return body;
+  }
+
   function redactOutgoingPayload(str) {
     if (typeof str !== "string" || !str) return str;
     var res = str;
-    if (_lastRedactedPromptText && _lastHandledPromptText && (Date.now() - _lastHandledPromptTime < 15000)) {
+    if (_lastRedactedPromptText && _lastHandledPromptText && (Date.now() - _lastHandledPromptTime < 60000)) {
       if (res.indexOf(_lastHandledPromptText) >= 0) {
         res = res.split(_lastHandledPromptText).join(_lastRedactedPromptText);
       }
@@ -411,7 +459,7 @@
         res = res.split(tOrig).join(tRed);
       }
     }
-    if (_lastRedactedOriginal && _lastRedactedReplacement && (Date.now() - _lastRedactedTime < 15000)) {
+    if (_lastRedactedOriginal && _lastRedactedReplacement && (Date.now() - _lastRedactedTime < 60000)) {
       if (res.indexOf(_lastRedactedOriginal) >= 0) {
         res = res.split(_lastRedactedOriginal).join(_lastRedactedReplacement);
       }
@@ -420,6 +468,16 @@
       if (tOrig2 && res.indexOf(tOrig2) >= 0) {
         res = res.split(tOrig2).join(tRed2);
       }
+      var uriOrig = encodeURIComponent(tOrig2);
+      if (uriOrig && uriOrig !== tOrig2 && res.indexOf(uriOrig) >= 0) {
+        res = res.split(uriOrig).join(encodeURIComponent(tRed2));
+      }
+      try {
+        var jsonOrig = JSON.stringify(tOrig2).slice(1, -1);
+        if (jsonOrig && jsonOrig !== tOrig2 && res.indexOf(jsonOrig) >= 0) {
+          res = res.split(jsonOrig).join(tRed2);
+        }
+      } catch (_) {}
     }
     if (Array.isArray(dynamicRules)) {
       for (var dri = 0; dri < dynamicRules.length; dri++) {
@@ -430,10 +488,12 @@
           if (dPat) {
             try {
               var inlinePat = dPat;
-              if (inlinePat.startsWith("^")) inlinePat = inlinePat.slice(1);
-              if (inlinePat.endsWith("$")) inlinePat = inlinePat.slice(0, -1);
-              var dRx = new RegExp(inlinePat, "gi");
-              res = res.replace(dRx, "[REDACTED]");
+              while (inlinePat.startsWith("^")) inlinePat = inlinePat.slice(1);
+              while (inlinePat.endsWith("$")) inlinePat = inlinePat.slice(0, -1);
+              if (inlinePat) {
+                var dRx = new RegExp(inlinePat, "gi");
+                res = res.replace(dRx, "[REDACTED]");
+              }
             } catch (_) {}
           }
         }
@@ -4532,6 +4592,43 @@
 
   // Ask Gateway Guard Engine (Async verify with PAC server & Gateway backend)
 
+    function askSilently(prompt, files, images) {
+    if (!armed) {
+      return Promise.resolve({ blocked: false, passthrough: true });
+    }
+    var clientDecision = evaluateClientRules(prompt, files);
+    if (clientDecision && clientDecision.blocked) {
+      return Promise.resolve(clientDecision);
+    }
+    var cAct = String((clientDecision && clientDecision.action) || "").toLowerCase();
+    if (cAct === "redacted" || cAct === "redact" || cAct === "warned" || cAct === "warn") {
+      return Promise.resolve(clientDecision);
+    }
+    return new Promise(function (resolve) {
+      var id = "eval_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2);
+      var timer = setTimeout(function () {
+        delete pendingEvaluations[id];
+        resolve(clientDecision || { blocked: false, passthrough: true });
+      }, 4000);
+      pendingEvaluations[id] = function (res) {
+        clearTimeout(timer);
+        delete pendingEvaluations[id];
+        resolve(res || { blocked: false });
+      };
+      window.postMessage({
+        source: "gateway-guard-page",
+        nonce: guardNonce,
+        id: id,
+        prompt: prompt || "",
+        files: files || [],
+        upload_images: images || [],
+        host: location.hostname,
+        url: location.href,
+        eval_only: true
+      }, "*");
+    });
+  }
+
   function ask(prompt, files, images) {
 
     if (!armed) {
@@ -6217,373 +6314,181 @@
 
 
   function inspectAndStageFile(file, optName) {
-
     if (!file) return false;
-
-    if (!checkFileUploadAllowed(file)) {
-
-      return false;
-
-    }
-
-    var name = optName || file.name || "file";
-
+    var name = optName || file.name || ("file_" + Date.now());
     var size = file.size || 0;
-
-    var type = file.type || "";
+    var type = (file.type || "").toLowerCase();
 
     if (!type && name.indexOf(".") >= 0) {
-
       var ext = name.split(".").pop().toLowerCase();
-
       if (ext === "pdf") type = "application/pdf";
-
       else if (ext === "docx" || ext === "doc") type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-
       else if (ext === "xlsx" || ext === "xls") type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-
       else if (ext === "pptx" || ext === "ppt") type = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
-
-      else if (ext === "csv") type = "text/csv";
-
       else if (ext === "txt") type = "text/plain";
-
+      else if (ext === "csv") type = "text/csv";
       else if (ext === "json") type = "application/json";
-
       else if (ext === "xml") type = "application/xml";
-
       else if (ext === "png" || ext === "jpg" || ext === "jpeg" || ext === "webp" || ext === "gif" || ext === "svg") type = "image/" + ext;
-
     }
 
+    // Stage initial file metadata immediately (timestamped for reconciliation)
+    var stagedItem = { name: name, size: size, type: type, text: "", base64: "", timestamp: Date.now() };
+    pushStagedFile(stagedItem);
 
-
-    // IMMEDIATELY stage file metadata (name, type, size) so EXE always receives it even if async reader is in-flight
-
-    pushStagedFile({ name: name, size: size, type: type, text: "", base64: "", pending: true });
-
-
-
-    // Read images as Base64 for Vision check
-
+    // 1. Images: read base64, pre-evaluate OCR and Vision silently
     if (type.indexOf("image/") === 0 || /\.(png|jpg|jpeg|webp|bmp|svg)$/i.test(name)) {
-
       var rImg = new FileReader();
-
       rImg.onload = function (e) {
-
         if (e.target && e.target.result) {
-
           var b64Img = (e.target.result.split(",")[1] || "");
-
-          var sniffed = sniffMagicFileType(b64Img, "");
-
-          if (sniffed && sniffed !== "png" && sniffed !== "pdf" && !checkFileUploadAllowed(file, sniffed)) {
-
-            return;
-
-          }
-
           stagedImages.push(e.target.result);
-
           var imgMime = type || ("image/" + (name.split(".").pop() || "png").toLowerCase());
+          stagedItem.base64 = b64Img;
+          stagedItem.type = imgMime;
+          stagedItem.timestamp = Date.now();
+          pushStagedFile(stagedItem);
 
-          pushStagedFile({ name: name, size: size, type: imgMime, base64: b64Img, text: "" });
-
+          // Silent pre-scan with desktop agent EXE (eval_only: true - NO popup, NO audit log)
+          askSilently("", [stagedItem]).then(function (dec) {
+            if (dec && dec.blocked) {
+              stagedItem.is_blocked = true;
+              stagedItem.blocked_reason = dec.rule;
+              stagedItem.blocked_message = dec.message;
+              if (dec.extracted_text) stagedItem.text = dec.extracted_text;
+              pushStagedFile(stagedItem);
+            } else if (dec && dec.extracted_text) {
+              stagedItem.text = dec.extracted_text;
+              pushStagedFile(stagedItem);
+            }
+          }).catch(function () {});
         }
-
       };
-
       rImg.readAsDataURL(file);
-
     }
-
-    // 3. Read text/code/script/markup/config files
-
+    // 2. Text/Code/Scripts/CSV: read text and pre-scan silently
     else if (
-
       type.indexOf("text/") === 0 ||
-
       /\.(txt|py|pyw|pyi|pyx|js|mjs|cjs|jsx|ts|tsx|mts|cts|json|jsonc|json5|csv|tsv|log|md|markdown|yaml|yml|sql|sh|bash|zsh|fish|bat|cmd|ps1|psm1|psd1|java|kt|kts|scala|sc|groovy|c|h|cpp|cc|cxx|hpp|hh|hxx|cs|csx|fs|go|rs|rlib|php|phtml|phar|rb|rake|gemspec|swift|dart|lua|r|rmd|jl|pl|pm|t|html|htm|xml|svg|xhtml|css|scss|sass|less|vue|svelte|toml|ini|conf|config|cfg|properties|env|graphql|gql|proto|dockerfile|prisma|gradle|cmake|tf|tfvars|sol|asm|s|diff|patch|ipynb)$/i.test(name) ||
-
       /^(dockerfile|makefile|jenkinsfile|procfile|gemfile|rakefile|justfile|vagrantfile|license|licence|readme|\.env|\.gitignore|\.gitattributes|\.editorconfig|package\.json|cargo\.toml|go\.mod|requirements\.txt)$/i.test(name)
-
     ) {
-
       var rText = new FileReader();
-
       rText.onload = function (e) {
-
         if (e.target && typeof e.target.result === "string") {
-
           var fContent = e.target.result;
+          stagedItem.text = fContent;
+          stagedItem.timestamp = Date.now();
 
-          var sniffed = sniffMagicFileType("", fContent);
-
-          if (sniffed && !checkFileUploadAllowed(file, sniffed)) {
-
-            return;
-
-          }
-
-          var stagedTextItem = { name: name, size: size, type: type, text: fContent };
-
-          pushStagedFile(stagedTextItem);
-
-
-
-          // Immediate DLP scan of file contents
-
+          // Pre-evaluate DLP rules client-side SILENTLY
           var fileDecision = evaluateClientRules(null, [{ name: name, text: fContent }]);
-
           if (fileDecision && fileDecision.blocked) {
-
-            stagedTextItem.is_blocked = true;
-
-            stagedTextItem.blocked_reason = fileDecision.rule_name || fileDecision.rule;
-
-            stagedTextItem.blocked_reason_detail = fileDecision.rule_reason || "";
-
-            stagedTextItem.blocked_message = fileDecision.message;
-
-            pushStagedFile(stagedTextItem);
-
-            showBubble(fileDecision.message, fileDecision.rule_name || fileDecision.rule, "block");
-
-            removeFilePillFromDom(name);
-
-            return;
-
+            stagedItem.is_blocked = true;
+            stagedItem.blocked_reason = fileDecision.rule_name || fileDecision.rule;
+            stagedItem.blocked_reason_detail = fileDecision.rule_reason || "";
+            stagedItem.blocked_message = fileDecision.message;
           }
+          pushStagedFile(stagedItem);
 
-
-
-          // ASYNC PREDICT & SCAN WITH DESKTOP AGENT EXE:
-
-          askSilently("", [stagedTextItem]).then(function (dec) {
-
+          // Deep pre-scan with desktop agent EXE silently
+          askSilently("", [stagedItem]).then(function (dec) {
             if (dec && dec.blocked) {
-
-              stagedTextItem.is_blocked = true;
-
-              stagedTextItem.blocked_reason = dec.rule;
-
-              stagedTextItem.blocked_message = dec.message;
-
-              pushStagedFile(stagedTextItem);
-
-              showBubble(dec.message || "File upload blocked by DLP policy.", dec.rule || "File Security Rule", "block");
-
-              removeStagedFile(name);
-
-            } else if (dec && (dec.action === "Warned" || dec.action === "warn")) {
-
-              showBubble(dec.message || "File triggered a DLP warning.", dec.rule || "Security Warning", "warn");
-
+              stagedItem.is_blocked = true;
+              stagedItem.blocked_reason = dec.rule;
+              stagedItem.blocked_message = dec.message;
+              if (dec.extracted_text) stagedItem.text = dec.extracted_text;
+              pushStagedFile(stagedItem);
+            } else if (dec && dec.extracted_text) {
+              stagedItem.text = dec.extracted_text;
+              pushStagedFile(stagedItem);
             }
-
           }).catch(function () {});
-
         }
-
       };
-
-      rText.readAsText(file.slice(0, 500000)); // Scan first 500KB of text fast
-
+      rText.readAsText(file.slice(0, 500000));
     }
-
-    // 4. Binary Documents (PDF, Word, Excel, PowerPoint, ODF, RTF, ZIP, Archives)
-
+    // 3. Binary Documents (PDF, DOCX, XLSX, PPTX, etc.)
     else if (
-
       /\.(pdf|docx|doc|xlsx|xls|pptx|ppt|odt|ods|odp|rtf|zip|tar|gz|7z)$/i.test(name) ||
-
       type.indexOf("application/pdf") >= 0 ||
-
       type.indexOf("application/zip") >= 0 ||
-
       type.indexOf("officedocument") >= 0
-
     ) {
-
       var rDoc = new FileReader();
-
       rDoc.onload = function (e) {
-
         if (e.target && typeof e.target.result === "string") {
-
           var b64 = e.target.result.split(",")[1] || "";
-
-          var sniffed = sniffMagicFileType(b64, "");
-
-          if (sniffed && !checkFileUploadAllowed(file, sniffed)) {
-
-            return;
-
-          }
-
           var extractedStr = extractStringsFromBase64(b64);
-
-          var stagedDocItem = { name: name, size: size, type: type, base64: b64, text: extractedStr };
-
-          pushStagedFile(stagedDocItem);
-
-
-
-          // Immediate DLP scan of binary documents
+          stagedItem.base64 = b64;
+          stagedItem.text = extractedStr;
+          stagedItem.timestamp = Date.now();
 
           if (extractedStr) {
-
             var fileDecision = evaluateClientRules(null, [{ name: name, text: extractedStr }]);
-
             if (fileDecision && fileDecision.blocked) {
-
-              stagedDocItem.is_blocked = true;
-
-              stagedDocItem.blocked_reason = fileDecision.rule_name || fileDecision.rule;
-
-              stagedDocItem.blocked_reason_detail = fileDecision.rule_reason || "";
-
-              stagedDocItem.blocked_message = fileDecision.message;
-
-              pushStagedFile(stagedDocItem);
-
-              showBubble(fileDecision.message, fileDecision.rule_name || fileDecision.rule, "block");
-
-              removeFilePillFromDom(name);
-
-              return;
-
+              stagedItem.is_blocked = true;
+              stagedItem.blocked_reason = fileDecision.rule_name || fileDecision.rule;
+              stagedItem.blocked_reason_detail = fileDecision.rule_reason || "";
+              stagedItem.blocked_message = fileDecision.message;
             }
-
           }
+          pushStagedFile(stagedItem);
 
-
-
-          // ASYNC PREDICT & SCAN WITH DESKTOP AGENT EXE:
-
-          ask("", [stagedDocItem]).then(function (dec) {
-
+          // Deep pre-scan with desktop agent EXE silently (eval_only: true)
+          askSilently("", [stagedItem]).then(function (dec) {
             if (dec && dec.blocked) {
-
-              stagedDocItem.is_blocked = true;
-
-              stagedDocItem.blocked_reason = dec.rule;
-
-              stagedDocItem.blocked_message = dec.message;
-
-              pushStagedFile(stagedDocItem);
-
-              showBubble(dec.message || "File upload blocked by DLP policy.", dec.rule || "File Security Rule", "block");
-
-              removeStagedFile(name);
-
-            } else if (dec && (dec.action === "Warned" || dec.action === "warn")) {
-
-              showBubble(dec.message || "File triggered a DLP warning.", dec.rule || "Security Warning", "warn");
-
+              stagedItem.is_blocked = true;
+              stagedItem.blocked_reason = dec.rule;
+              stagedItem.blocked_message = dec.message;
+              if (dec.extracted_text) stagedItem.text = dec.extracted_text;
+              pushStagedFile(stagedItem);
+            } else if (dec && dec.extracted_text) {
+              stagedItem.text = dec.extracted_text;
+              pushStagedFile(stagedItem);
             }
-
           }).catch(function () {});
-
         }
-
       };
-
-      rDoc.readAsDataURL(file.slice(0, 5000000)); // Read first 1.5MB fast for deep client inspection
-
-    } else {
-
-      // 5. General fallback: read first 1.5MB as Base64 so desktop proxy/agent extracts & scans it
-
-      var rAny = new FileReader();
-
-      rAny.onload = function (e) {
-
-        if (e.target && typeof e.target.result === "string") {
-
-          var b64 = e.target.result.split(",")[1] || "";
-
-          var sniffed = sniffMagicFileType(b64, "");
-
-          if (sniffed && !checkFileUploadAllowed(file, sniffed)) {
-
-            return;
-
-          }
-
-          var extractedStr = extractStringsFromBase64(b64);
-
-          var stagedAnyItem = { name: name, size: size, type: type, base64: b64, text: extractedStr };
-
-          pushStagedFile(stagedAnyItem);
-
-
-
-          if (extractedStr) {
-
-            var fileDecision = evaluateClientRules(null, [{ name: name, text: extractedStr }]);
-
-            if (fileDecision && fileDecision.blocked) {
-
-              stagedAnyItem.is_blocked = true;
-
-              stagedAnyItem.blocked_reason = fileDecision.rule_name || fileDecision.rule;
-
-              stagedAnyItem.blocked_reason_detail = fileDecision.rule_reason || "";
-
-              stagedAnyItem.blocked_message = fileDecision.message;
-
-              pushStagedFile(stagedAnyItem);
-
-              showBubble(fileDecision.message, fileDecision.rule_name || fileDecision.rule, "block");
-
-              removeFilePillFromDom(name);
-
-              return;
-
-            }
-
-          }
-
-
-
-          // ASYNC PREDICT & SCAN WITH DESKTOP AGENT EXE:
-
-          ask("", [stagedAnyItem]).then(function (dec) {
-
-            if (dec && dec.blocked) {
-
-              stagedAnyItem.is_blocked = true;
-
-              stagedAnyItem.blocked_reason = dec.rule;
-
-              stagedAnyItem.blocked_message = dec.message;
-
-              pushStagedFile(stagedAnyItem);
-
-              showBubble(dec.message || "File upload blocked by DLP policy.", dec.rule || "File Security Rule", "block");
-
-              removeStagedFile(name);
-
-            } else if (dec && (dec.action === "Warned" || dec.action === "warn")) {
-
-              showBubble(dec.message || "File triggered a DLP warning.", dec.rule || "Security Warning", "warn");
-
-            }
-
-          }).catch(function () {});
-
-        }
-
-      };
-
-      rAny.readAsDataURL(file.slice(0, 5000000));
-
+      rDoc.readAsDataURL(file.slice(0, 5000000));
     }
+    // 4. General fallback
+    else {
+      var rAny = new FileReader();
+      rAny.onload = function (e) {
+        if (e.target && typeof e.target.result === "string") {
+          var b64Any = e.target.result.split(",")[1] || "";
+          var extractedStrAny = extractStringsFromBase64(b64Any);
+          stagedItem.base64 = b64Any;
+          stagedItem.text = extractedStrAny;
+          stagedItem.timestamp = Date.now();
 
+          if (extractedStrAny) {
+            var fileDecision = evaluateClientRules(null, [{ name: name, text: extractedStrAny }]);
+            if (fileDecision && fileDecision.blocked) {
+              stagedItem.is_blocked = true;
+              stagedItem.blocked_reason = fileDecision.rule_name || fileDecision.rule;
+              stagedItem.blocked_reason_detail = fileDecision.rule_reason || "";
+              stagedItem.blocked_message = fileDecision.message;
+            }
+          }
+          pushStagedFile(stagedItem);
+
+          askSilently("", [stagedItem]).then(function (dec) {
+            if (dec && dec.blocked) {
+              stagedItem.is_blocked = true;
+              stagedItem.blocked_reason = dec.rule;
+              stagedItem.blocked_message = dec.message;
+              if (dec.extracted_text) stagedItem.text = dec.extracted_text;
+              pushStagedFile(stagedItem);
+            } else if (dec && dec.extracted_text) {
+              stagedItem.text = dec.extracted_text;
+              pushStagedFile(stagedItem);
+            }
+          }).catch(function () {});
+        }
+      };
+      rAny.readAsDataURL(file.slice(0, 5000000));
+    }
     return true;
-
   }
 
 
@@ -8476,8 +8381,59 @@
 
 
 
-  function mergeStagedAndDomFiles() {
+    function queryDOMAttachmentPillNames() {
+    var names = [];
+    try {
+      var pillEls = querySelectorAllDeep(
+        "[data-testid*='attachment' i], [data-testid*='file' i], [class*='attachment' i], [class*='file-pill' i], [class*='file-preview' i], [class*='upload' i], [class*='file-item' i], [aria-label*='attachment' i], [aria-label*='file' i], li[class*='file' i], div[class*='badge' i], div[class*='chip' i]"
+      );
+      for (var p = 0; p < pillEls.length; p++) {
+        var el = pillEls[p];
+        var txt = (el.textContent || "").toLowerCase().trim();
+        var title = (el.getAttribute("title") || "").toLowerCase().trim();
+        var aria = (el.getAttribute("aria-label") || "").toLowerCase().trim();
+        if (txt && txt.length < 250) names.push(txt);
+        if (title && title.length < 250) names.push(title);
+        if (aria && aria.length < 250) names.push(aria);
+      }
+    } catch (_) {}
+    return names;
+  }
 
+  function reconcileStagedFilesWithDOM(force) {
+    if (!stagedFiles || stagedFiles.length === 0) return;
+    var pillTexts = queryDOMAttachmentPillNames();
+    var now = Date.now();
+    if (pillTexts.length === 0) {
+      var hasInputs = false;
+      try {
+        var finputs = document.querySelectorAll("input[type='file']");
+        for (var i = 0; i < finputs.length; i++) {
+          if (finputs[i].files && finputs[i].files.length > 0) hasInputs = true;
+        }
+      } catch (_) {}
+      if (!hasInputs) {
+        stagedFiles = stagedFiles.filter(function (sf) {
+          return sf && (now - (sf.timestamp || 0) < 2000);
+        });
+      }
+      return;
+    }
+    stagedFiles = stagedFiles.filter(function (sf) {
+      if (!sf || !sf.name) return false;
+      if (!force && (now - (sf.timestamp || 0) < 2000)) return true;
+      var cleanName = String(sf.name).toLowerCase().trim();
+      var baseName = cleanName.split("/").pop().split("\\").pop();
+      var dotIdx = baseName.lastIndexOf(".");
+      var noExt = dotIdx > 0 ? baseName.slice(0, dotIdx) : baseName;
+      return pillTexts.some(function (pt) {
+        return pt.indexOf(cleanName) >= 0 || pt.indexOf(baseName) >= 0 || (noExt.length > 3 && pt.indexOf(noExt.slice(0, 6)) >= 0);
+      });
+    });
+  }
+
+  function mergeStagedAndDomFiles() {
+    reconcileStagedFilesWithDOM();
     var staged = getAllFreshStagedFiles();
 
     var result = [];
@@ -8630,6 +8586,7 @@
 
     if (isTelemetryOrNoisePayload(text)) return;
 
+    reconcileStagedFilesWithDOM();
     var effectiveFiles = mergeStagedAndDomFiles();
 
     if (!text && effectiveFiles.length === 0 && stagedImages.length === 0) return;
@@ -8765,49 +8722,34 @@
 
 
     var clientAction = String((clientDecision && clientDecision.action) || "").toLowerCase();
-
     if (clientAction === "redacted" || clientAction === "redact") {
-
       e.preventDefault();
-
       e.stopImmediatePropagation();
-
       var redactedText = clientDecision.redacted_prompt || text;
-
+      _lastRedactedOriginal = text;
+      _lastRedactedReplacement = redactedText;
+      _lastRedactedTime = Date.now();
+      _lastHandledPromptText = text;
+      _lastRedactedPromptText = redactedText;
+      _lastHandledPromptTime = Date.now();
       setComposerText(redactedText);
-
       showBubble(clientDecision.message || "Sensitive text was redacted before sending.", clientDecision.rule, "redact");
 
-
-
       var redactLogId = "redact_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2);
-
       window.postMessage({
-
         source: "gateway-guard-page",
-
         nonce: guardNonce,
-
         id: redactLogId,
-
-        prompt: redactedText,
-
+        prompt: text,
         original_prompt: text,
-
+        redacted_prompt: redactedText,
         files: effectiveFiles || [],
-
         upload_images: stagedImages || [],
-
         host: location.hostname,
-
         url: location.href,
-
         is_blocked: false,
-
         action: "Redacted",
-
         rule: clientDecision.rule || ""
-
       }, "*");
 
 
@@ -9264,6 +9206,7 @@
 
     }
 
+    reconcileStagedFilesWithDOM();
     var effectiveFiles = mergeStagedAndDomFiles();
 
     if (!text && effectiveFiles.length === 0 && stagedImages.length === 0) return;
@@ -9414,34 +9357,27 @@
 
 
 
+      _lastRedactedOriginal = text;
+      _lastRedactedReplacement = redactedText;
+      _lastRedactedTime = Date.now();
+      _lastHandledPromptText = text;
+      _lastRedactedPromptText = redactedText;
+      _lastHandledPromptTime = Date.now();
       var redactClickId = "redact_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2);
-
       window.postMessage({
-
         source: "gateway-guard-page",
-
         nonce: guardNonce,
-
         id: redactClickId,
-
-        prompt: redactedText,
-
+        prompt: text,
         original_prompt: text,
-
+        redacted_prompt: redactedText,
         files: effectiveFiles || [],
-
         upload_images: stagedImages || [],
-
         host: location.hostname,
-
         url: location.href,
-
         is_blocked: false,
-
         action: "Redacted",
-
         rule: clientDecision.rule || ""
-
       }, "*");
 
 
@@ -9636,6 +9572,7 @@
 
     if (isTelemetryOrNoisePayload(text, formAction)) return;
 
+    reconcileStagedFilesWithDOM();
     var effectiveFiles = mergeStagedAndDomFiles();
 
     if (!text && effectiveFiles.length === 0 && stagedImages.length === 0) return;
@@ -9934,6 +9871,17 @@
 
 
 
+  if (typeof window.Request !== "undefined") {
+    var origRequest = window.Request;
+    window.Request = function (input, init) {
+      if (init && typeof init.body === "string") {
+        var redReqB = redactOutgoingPayload(init.body);
+        if (redReqB !== init.body) init.body = redReqB;
+      }
+      return new origRequest(input, init);
+    };
+    try { window.Request.prototype = origRequest.prototype; } catch (_) {}
+  }
   var origFetch = window.fetch;
 
   if (typeof origFetch === "function") {
@@ -9942,16 +9890,15 @@
 
       if (!armed) return origFetch.apply(this, arguments);
 
-      if (init && typeof init.body === "string") {
-        var redB = redactOutgoingPayload(init.body);
-        if (redB !== init.body) {
-          init.body = redB;
-        }
+      if (init && init.body) {
+        init.body = redactAnyBody(init.body);
+        if (arguments.length >= 2) arguments[1] = init;
       }
       if (typeof input === "string") {
         var redInp = redactOutgoingPayload(input);
         if (redInp !== input) {
           input = redInp;
+          arguments[0] = input;
         }
       }
 
@@ -10671,7 +10618,7 @@
 
           id: "redact_fetch_" + Date.now().toString(36),
 
-          prompt: fetchDecision.redacted_prompt,
+          prompt: promptText,
 
           original_prompt: promptText,
 
@@ -11070,8 +11017,15 @@
   };
 
   XMLHttpRequest.prototype.send = function (body) {
+    if (typeof body === "string") {
+      var redXhr = redactOutgoingPayload(body);
+      if (redXhr !== body) {
+        body = redXhr;
+        arguments[0] = redXhr;
+      }
+    }
 
-    if (!armed || !body) return origXHRSend.apply(this, arguments);
+    if (!armed || !body) return origXHRSend.call(this, body);
 
 
 
@@ -11371,7 +11325,7 @@
 
               id: "ws_redact_" + Date.now().toString(36),
 
-              prompt: wsDecision.redacted_prompt,
+              prompt: promptText,
 
               original_prompt: promptText,
 
@@ -11461,7 +11415,9 @@
     var origSendBeacon = navigator.sendBeacon.bind(navigator);
 
     navigator.sendBeacon = function (url, data) {
-
+      if (data) {
+        data = redactAnyBody(data);
+      }
       return origSendBeacon(url, data);
 
     };

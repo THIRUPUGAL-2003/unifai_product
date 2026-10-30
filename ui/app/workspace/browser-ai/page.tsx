@@ -7545,7 +7545,7 @@ export default function BrowserAiPage() {
 													</span>
 												</div>
 												<p className="text-[11px] text-foreground/90 line-clamp-2 break-words">
-													{log.user_prompt_preview || log.user_prompt_full || "—"}
+													{((log.user_prompt_full && !log.user_prompt_full.toUpperCase().startsWith("[REDACTED]")) ? log.user_prompt_full : ((log.user_prompt_preview && !log.user_prompt_preview.toUpperCase().startsWith("[REDACTED]")) ? log.user_prompt_preview : (log.user_prompt_full || log.user_prompt_preview || "—")))}
 												</p>
 												{log.rule_triggered ? (
 													<p className="text-[10px] text-muted-foreground truncate">Rule: {log.rule_triggered}</p>
