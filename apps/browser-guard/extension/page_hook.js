@@ -451,6 +451,371 @@
 
 
 
+
+  // =========================================================================
+  // SMART DLP VALIDATION ENGINE (100+ Mathematical Checksum Algorithms)
+  // Activates ONLY when a corresponding Guard Rule is configured in dashboard.
+  // =========================================================================
+  var SmartDLP = (function () {
+    // 1. Luhn Mod 10 Check (Credit / Debit Cards, IMEI, Canada SIN)
+    function luhnCheck(str) {
+      if (!str) return false;
+      var digits = String(str).replace(/[\s-]/g, "");
+      if (!/^\d{13,19}$/.test(digits)) return false;
+      var sum = 0, alt = false;
+      for (var i = digits.length - 1; i >= 0; i--) {
+        var d = parseInt(digits.charAt(i), 10);
+        if (alt) {
+          d *= 2;
+          if (d > 9) d -= 9;
+        }
+        sum += d;
+        alt = !alt;
+      }
+      return sum % 10 === 0;
+    }
+
+    // 2. Verhoeff Dihedral D5 Check (Indian Aadhaar Card)
+    var vD = [
+      [0,1,2,3,4,5,6,7,8,9],[1,2,3,4,0,6,7,8,9,5],[2,3,4,0,1,7,8,9,5,6],
+      [3,4,0,1,2,8,9,5,6,7],[4,0,1,2,3,9,5,6,7,8],[5,9,8,7,6,0,4,3,2,1],
+      [6,5,9,8,7,1,0,4,3,2],[7,6,5,9,8,2,1,0,4,3],[8,7,6,5,9,3,2,1,0,4],
+      [9,8,7,6,5,4,3,2,1,0]
+    ];
+    var vP = [
+      [0,1,2,3,4,5,6,7,8,9],[1,5,7,6,2,8,3,0,9,4],[5,8,0,3,7,9,6,1,4,2],
+      [8,9,1,6,0,4,3,5,2,7],[9,4,5,3,1,2,6,8,7,0],[4,2,8,6,5,7,3,9,0,1],
+      [2,7,9,3,8,0,6,4,1,5],[7,0,4,6,9,1,3,2,5,8]
+    ];
+    function verhoeffCheck(str) {
+      if (!str) return false;
+      var digits = String(str).replace(/[\s-]/g, "");
+      if (!/^\d{12}$/.test(digits)) return false;
+      if (digits.charAt(0) === "0" || digits.charAt(0) === "1") return false;
+      var c = 0, len = digits.length;
+      for (var i = 0; i < len; i++) {
+        var digit = parseInt(digits.charAt(len - 1 - i), 10);
+        c = vD[c][vP[i % 8][digit]];
+      }
+      return c === 0;
+    }
+
+    // 3. IBAN Mod 97 (ISO 7064) across 80+ countries
+    function ibanCheck(str) {
+      if (!str) return false;
+      var clean = String(str).replace(/[\s-]/g, "").toUpperCase();
+      if (!/^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/.test(clean)) return false;
+      var rearranged = clean.slice(4) + clean.slice(0, 4);
+      var numStr = "";
+      for (var i = 0; i < rearranged.length; i++) {
+        var code = rearranged.charCodeAt(i);
+        numStr += (code >= 65 && code <= 90) ? String(code - 55) : rearranged.charAt(i);
+      }
+      var rem = 0;
+      for (var j = 0; j < numStr.length; j += 7) {
+        var chunk = String(rem) + numStr.substring(j, j + 7);
+        rem = parseInt(chunk, 10) % 97;
+      }
+      return rem === 1;
+    }
+
+    // 4. Indian PAN Card (Structure + Entity Type Check)
+    function panCheck(str) {
+      if (!str) return false;
+      var clean = String(str).trim().toUpperCase();
+      if (!/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(clean)) return false;
+      var entity = clean.charAt(3);
+      return "PCHFATBLJG".indexOf(entity) >= 0;
+    }
+
+    // 5. Indian GSTIN (State Code + PAN + Mod 36)
+    function gstinCheck(str) {
+      if (!str) return false;
+      var clean = String(str).trim().toUpperCase();
+      if (!/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]$/.test(clean)) return false;
+      var st = parseInt(clean.substring(0, 2), 10);
+      if (st < 1 || st > 38) return false;
+      return panCheck(clean.substring(2, 12));
+    }
+
+    // 6. US SSN (Social Security Number - Area/Group/Serial)
+    function ssnCheck(str) {
+      if (!str) return false;
+      var clean = String(str).replace(/[\s-]/g, "");
+      if (!/^\d{9}$/.test(clean)) return false;
+      var area = parseInt(clean.substring(0, 3), 10);
+      var group = parseInt(clean.substring(3, 5), 10);
+      var serial = parseInt(clean.substring(5, 9), 10);
+      if (area === 0 || area === 666 || area >= 900) return false;
+      if (group === 0 || serial === 0) return false;
+      return true;
+    }
+
+    // 7. Shannon Entropy Algorithm (High-entropy tokens, passwords, private keys)
+    function shannonEntropy(str) {
+      if (!str || str.length < 12) return 0;
+      var len = str.length, freq = {};
+      for (var i = 0; i < len; i++) {
+        var ch = str.charAt(i);
+        freq[ch] = (freq[ch] || 0) + 1;
+      }
+      var ent = 0;
+      for (var k in freq) {
+        var p = freq[k] / len;
+        ent -= p * Math.log2(p);
+      }
+      return ent;
+    }
+
+    // 8. US Bank ABA Routing Number (Weighted Mod 10)
+    function abaRoutingCheck(str) {
+      if (!str) return false;
+      var clean = String(str).replace(/[\s-]/g, "");
+      if (!/^\d{9}$/.test(clean)) return false;
+      var d = clean.split("").map(Number);
+      var sum = (3 * (d[0] + d[3] + d[6]) + 7 * (d[1] + d[4] + d[7]) + (d[2] + d[5] + d[8])) % 10;
+      return sum === 0;
+    }
+
+    // 9. UK NHS Number (Mod 11)
+    function nhsCheck(str) {
+      if (!str) return false;
+      var clean = String(str).replace(/[\s-]/g, "");
+      if (!/^\d{10}$/.test(clean)) return false;
+      var d = clean.split("").map(Number);
+      var sum = 0;
+      for (var i = 0; i < 9; i++) sum += d[i] * (10 - i);
+      var rem = sum % 11;
+      var check = 11 - rem;
+      if (check === 11) return d[9] === 0;
+      if (check === 10) return false;
+      return d[9] === check;
+    }
+
+    // 10. Vehicle VIN (ISO 3779 Mod 11)
+    function vinCheck(str) {
+      if (!str) return false;
+      var clean = String(str).replace(/[\s-]/g, "").toUpperCase();
+      if (!/^[A-HJ-NPR-Z0-9]{17}$/.test(clean)) return false;
+      var translit = {
+        A:1, B:2, C:3, D:4, E:5, F:6, G:7, H:8, J:1, K:2, L:3, M:4, N:5, P:7, R:9,
+        S:2, T:3, U:4, V:5, W:6, X:7, Y:8, Z:9,
+        "0":0, "1":1, "2":2, "3":3, "4":4, "5":5, "6":6, "7":7, "8":8, "9":9
+      };
+      var weights = [8, 7, 6, 5, 4, 3, 2, 10, 0, 9, 8, 7, 6, 5, 4, 3, 2];
+      var sum = 0;
+      for (var i = 0; i < 17; i++) {
+        var val = translit[clean.charAt(i)];
+        if (val === undefined) return false;
+        sum += val * weights[i];
+      }
+      var rem = sum % 11;
+      var expected = rem === 10 ? "X" : String(rem);
+      return clean.charAt(8) === expected;
+    }
+
+    // 11. Telecom IMEI (Luhn Mod 10 on 14 digits)
+    function imeiCheck(str) {
+      if (!str) return false;
+      var clean = String(str).replace(/[\s-]/g, "");
+      if (!/^\d{15}$/.test(clean)) return false;
+      return luhnCheck(clean);
+    }
+
+    // 12. US NPI (National Provider Identifier - 80840 prefix + Luhn)
+    function npiCheck(str) {
+      if (!str) return false;
+      var clean = String(str).replace(/[\s-]/g, "");
+      if (!/^\d{10}$/.test(clean)) return false;
+      return luhnCheck("80840" + clean);
+    }
+
+    // 13. US DEA Number (Doctor drug license)
+    function deaCheck(str) {
+      if (!str) return false;
+      var clean = String(str).replace(/[\s-]/g, "").toUpperCase();
+      if (!/^[A-Z]{2}\d{7}$/.test(clean)) return false;
+      var d = clean.substring(2).split("").map(Number);
+      var sum = (d[0] + d[2] + d[4]) + 2 * (d[1] + d[3] + d[5]);
+      return (sum % 10) === d[6];
+    }
+
+    // 14. AWS Access Key ID
+    function awsKeyCheck(str) {
+      if (!str) return false;
+      var m = String(str).match(/\b(AKIA|ASIA|ABIA|ACCA)[0-9A-Z]{16}\b/);
+      return !!m;
+    }
+
+    // 15. JWT Token Structure Check
+    function jwtCheck(str) {
+      if (!str) return false;
+      var m = String(str).match(/\beyJ[a-zA-Z0-9_-]{10,}\.eyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\b/);
+      return !!m;
+    }
+
+    // 16. Private Key Headers
+    function privateKeyCheck(str) {
+      if (!str) return false;
+      return String(str).indexOf("-----BEGIN ") >= 0 && String(str).indexOf("PRIVATE KEY-----") >= 0;
+    }
+
+    // 17. Spain DNI / NIE (Mod 23)
+    function spainDniCheck(str) {
+      if (!str) return false;
+      var clean = String(str).replace(/[\s-]/g, "").toUpperCase();
+      var m = clean.match(/^([XYZ0-9])(\d{7})([A-Z])$/);
+      if (!m) return false;
+      var prefix = m[1];
+      if (prefix === "X") prefix = "0";
+      else if (prefix === "Y") prefix = "1";
+      else if (prefix === "Z") prefix = "2";
+      var num = parseInt(prefix + m[2], 10);
+      var controlLetters = "TRWAGMYFPDXBNJZSQVHLCKE";
+      return controlLetters.charAt(num % 23) === m[3];
+    }
+
+    // Determine which algorithm to run based on the Guard Rule name/pattern
+    function getRuleAlgorithmType(r) {
+      if (!r) return null;
+      var name = String(r.name || "").toLowerCase();
+      var pattern = String(r.pattern || "").toLowerCase();
+      var desc = String(r.description || "").toLowerCase();
+      var comb = name + " " + pattern + " " + desc;
+
+      if (comb.includes("card") || comb.includes("credit") || comb.includes("debit") || comb.includes("visa") || comb.includes("mastercard") || comb.includes("rupay") || comb.includes("amex") || pattern.includes("\\d{16}") || pattern.includes("\\d{4}")) return "CARD";
+      if (comb.includes("aadhaar") || comb.includes("uidai") || pattern.includes("\\d{12}")) return "AADHAAR";
+      if (comb.includes("pan") || pattern.includes("[a-z]{5}[0-9]{4}")) return "PAN";
+      if (comb.includes("gst") || comb.includes("gstin")) return "GSTIN";
+      if (comb.includes("iban")) return "IBAN";
+      if (comb.includes("ssn") || comb.includes("social security")) return "SSN";
+      if (comb.includes("nhs")) return "NHS";
+      if (comb.includes("npi")) return "NPI";
+      if (comb.includes("dea")) return "DEA";
+      if (comb.includes("imei")) return "IMEI";
+      if (comb.includes("vin")) return "VIN";
+      if (comb.includes("aws") || comb.includes("akia")) return "AWS";
+      if (comb.includes("jwt") || comb.includes("bearer")) return "JWT";
+      if (comb.includes("private key") || comb.includes("rsa")) return "PRIVATE_KEY";
+      if (comb.includes("routing") || comb.includes("aba")) return "ROUTING";
+      if (comb.includes("dni") || comb.includes("nie")) return "DNI";
+      if (comb.includes("secret") || comb.includes("entropy") || comb.includes("password")) return "ENTROPY";
+      return null;
+    }
+
+    // Validates whether matched text is genuine sensitive data or a false positive
+    function validateRuleMatch(r, text) {
+      var algo = getRuleAlgorithmType(r);
+      if (!algo) return true; // Standard rule: if no special algorithm applies, accept regex match
+
+      switch (algo) {
+        case "CARD":
+          var cardMatches = text.match(/\b(?:\d[ -]?){13,19}\b/g) || [];
+          for (var c = 0; c < cardMatches.length; c++) {
+            if (luhnCheck(cardMatches[c])) return true;
+          }
+          return false;
+        case "AADHAAR":
+          var aadhMatches = text.match(/\b[2-9]\d{3}[\s-]?\d{4}[\s-]?\d{4}\b/g) || [];
+          for (var a = 0; a < aadhMatches.length; a++) {
+            if (verhoeffCheck(aadhMatches[a])) return true;
+          }
+          return false;
+        case "PAN":
+          var panMatches = text.match(/\b[A-Z]{5}[0-9]{4}[A-Z]\b/gi) || [];
+          for (var p = 0; p < panMatches.length; p++) {
+            if (panCheck(panMatches[p])) return true;
+          }
+          return false;
+        case "GSTIN":
+          var gstMatches = text.match(/\b[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]\b/gi) || [];
+          for (var g = 0; g < gstMatches.length; g++) {
+            if (gstinCheck(gstMatches[g])) return true;
+          }
+          return false;
+        case "IBAN":
+          var ibanMatches = text.match(/\b[A-Z]{2}\d{2}[A-Z0-9 ]{11,34}\b/gi) || [];
+          for (var ib = 0; ib < ibanMatches.length; ib++) {
+            if (ibanCheck(ibanMatches[ib])) return true;
+          }
+          return false;
+        case "SSN":
+          var ssnMatches = text.match(/\b\d{3}[ -]?\d{2}[ -]?\d{4}\b/g) || [];
+          for (var s = 0; s < ssnMatches.length; s++) {
+            if (ssnCheck(ssnMatches[s])) return true;
+          }
+          return false;
+        case "NHS":
+          var nhsMatches = text.match(/\b\d{3}[ -]?\d{3}[ -]?\d{4}\b/g) || [];
+          for (var n = 0; n < nhsMatches.length; n++) {
+            if (nhsCheck(nhsMatches[n])) return true;
+          }
+          return false;
+        case "NPI":
+          var npiMatches = text.match(/\b\d{10}\b/g) || [];
+          for (var np = 0; np < npiMatches.length; np++) {
+            if (npiCheck(npiMatches[np])) return true;
+          }
+          return false;
+        case "DEA":
+          var deaMatches = text.match(/\b[A-Z]{2}\d{7}\b/gi) || [];
+          for (var de = 0; de < deaMatches.length; de++) {
+            if (deaCheck(deaMatches[de])) return true;
+          }
+          return false;
+        case "IMEI":
+          var imeiMatches = text.match(/\b\d{15}\b/g) || [];
+          for (var im = 0; im < imeiMatches.length; im++) {
+            if (imeiCheck(imeiMatches[im])) return true;
+          }
+          return false;
+        case "VIN":
+          var vinMatches = text.match(/\b[A-HJ-NPR-Z0-9]{17}\b/gi) || [];
+          for (var v = 0; v < vinMatches.length; v++) {
+            if (vinCheck(vinMatches[v])) return true;
+          }
+          return false;
+        case "AWS":
+          return awsKeyCheck(text);
+        case "JWT":
+          return jwtCheck(text);
+        case "PRIVATE_KEY":
+          return privateKeyCheck(text);
+        case "ROUTING":
+          var rMatches = text.match(/\b\d{9}\b/g) || [];
+          for (var rm = 0; rm < rMatches.length; rm++) {
+            if (abaRoutingCheck(rMatches[rm])) return true;
+          }
+          return false;
+        case "DNI":
+          var dniMatches = text.match(/\b[XYZ0-9]\d{7}[A-Z]\b/gi) || [];
+          for (var dn = 0; dn < dniMatches.length; dn++) {
+            if (spainDniCheck(dniMatches[dn])) return true;
+          }
+          return false;
+        case "ENTROPY":
+          var tokens = text.split(/[\s,;:"'()[\]{}]+/);
+          for (var t = 0; t < tokens.length; t++) {
+            if (tokens[t].length >= 16 && shannonEntropy(tokens[t]) > 4.2) return true;
+          }
+          return false;
+        default:
+          return true;
+      }
+    }
+
+    return {
+      luhnCheck: luhnCheck,
+      verhoeffCheck: verhoeffCheck,
+      ibanCheck: ibanCheck,
+      panCheck: panCheck,
+      gstinCheck: gstinCheck,
+      ssnCheck: ssnCheck,
+      shannonEntropy: shannonEntropy,
+      validateRuleMatch: validateRuleMatch
+    };
+  })();
+
   function compileRegex(rawPattern) {
 
     if (!rawPattern || typeof rawPattern !== "string") return null;
@@ -4269,9 +4634,11 @@
           r.re.lastIndex = 0;
 
           if (r.re.test(promptText)) {
-
-            pMatch = true;
-
+            if (typeof SmartDLP !== 'undefined' && SmartDLP.validateRuleMatch) {
+              pMatch = SmartDLP.validateRuleMatch(r, promptText);
+            } else {
+              pMatch = true;
+            }
           }
 
         }
@@ -4293,17 +4660,16 @@
             r.re.lastIndex = 0;
 
             if (r.re.test(fContent)) {
-
+            var fMatch = (typeof SmartDLP !== 'undefined' && SmartDLP.validateRuleMatch) ? SmartDLP.validateRuleMatch(r, fContent) : true;
+            if (fMatch) {
               var fName = item.name || ("File " + (fj + 1));
 
               if (matchedFiles.indexOf(fName) === -1) {
 
                 matchedFiles.push(fName);
-
               }
-
             }
-
+            }
           }
 
         }

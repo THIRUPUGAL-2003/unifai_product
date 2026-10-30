@@ -813,12 +813,14 @@ func rulePatternMatches(rule logstore.BrowserGuardRule, text string) bool {
 		return false
 	}
 	if re.MatchString(text) {
-		return true
+		return validateRuleMatchGo(rule, text)
 	}
 	if strings.Contains(text, " -- ") {
 		parts := strings.SplitN(text, " -- ", 2)
 		if len(parts) > 1 && strings.TrimSpace(parts[1]) != "" {
-			return re.MatchString(strings.TrimSpace(parts[1]))
+			if re.MatchString(strings.TrimSpace(parts[1])) {
+				return validateRuleMatchGo(rule, strings.TrimSpace(parts[1]))
+			}
 		}
 	}
 	return false
