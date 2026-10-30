@@ -626,7 +626,7 @@ type BrowserGuardRule struct {
 // BrowserControlSettings is a single-row policy for browser AI interaction controls.
 type BrowserControlSettings struct {
 	ID            string `gorm:"primaryKey" json:"id"`
-	Enabled       bool   `json:"enabled"`                         // master switch for upload control
+	Enabled       bool   `gorm:"default:true" json:"enabled"`     // master switch for upload control
 	BlockUpload   bool   `json:"block_upload"`                    // block file uploads to AI sites
 	UploadWarning string `gorm:"type:text" json:"upload_warning"` // shown when this upload policy blocks; empty = no message
 	// AttachmentRetention: temporary file binary storage retention ("10m" | "1h" | "2h" | "1d" | "7d")

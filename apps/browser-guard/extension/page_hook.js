@@ -975,6 +975,15 @@
     if (ev.data.type === "sync_rules") {
 
       lastCheckedKey = "";
+      lastCheckedAt = 0;
+      lastDecisionCache = { text: "", time: 0, decision: null };
+      _lastHandledPromptText = "";
+      _lastBlockedPromptText = "";
+      _lastHandledFilePromptCaption = "";
+      _lastHandledFilePromptTime = 0;
+      _lastBlockedPromptTime = 0;
+      _lastHandledPromptTime = 0;
+      _lastAskDecision = null;
 
       setTimeout(function () {
 
@@ -1260,6 +1269,14 @@
   var govCorporateTargetWebsites = "";
 
   var govCorporateBlockMessage = "";
+
+  function getEffectiveCorporateTargets() {
+    var raw = String(govCorporateTargetWebsites || "").trim();
+    if (!raw || raw.toLowerCase() === "none") {
+      return govTargetWebsites || "all";
+    }
+    return raw;
+  }
 
 
 
@@ -2619,7 +2636,7 @@
 
     if (_corpLogoutInitiated) return;
 
-    if (!govEnforceCorporateDomains || !isControlActiveForSite(govCorporateTargetWebsites || govTargetWebsites)) {
+    if (!govEnforceCorporateDomains || !isControlActiveForSite(getEffectiveCorporateTargets())) {
 
       sessionBlocked = false;
 
@@ -3215,7 +3232,7 @@
 
     // Fast client-side check if corporate domain enforcement is active
 
-    if (!govEnforceCorporateDomains || !govCorporateEmailDomains || !isControlActiveForSite(govCorporateTargetWebsites || govTargetWebsites)) {
+    if (!govEnforceCorporateDomains || !govCorporateEmailDomains || !isControlActiveForSite(getEffectiveCorporateTargets())) {
 
       handleSessionAuthDecision({ decision: "allow" });
 
@@ -4355,7 +4372,7 @@
 
     try {
 
-      if (!govEnforceCorporateDomains || !govCorporateEmailDomains || !isControlActiveForSite(govCorporateTargetWebsites || govTargetWebsites)) {
+      if (!govEnforceCorporateDomains || !govCorporateEmailDomains || !isControlActiveForSite(getEffectiveCorporateTargets())) {
 
         return;
 
@@ -11333,11 +11350,11 @@
 
       // 2. Check if prompt was recently blocked by button click, Enter key, or earlier fetch
 
-      if (_lastBlockedPromptText && (Date.now() - _lastBlockedPromptTime < 10000)) {
+      if (_lastBlockedPromptText && (Date.now() - _lastBlockedPromptTime < 2000)) {
 
         var cleanBlock = (_lastBlockedPromptText || "").trim().toLowerCase();
 
-        if (cleanBlock && (ptClean === cleanBlock || ptClean.indexOf(cleanBlock) >= 0 || cleanBlock.indexOf(ptClean) >= 0)) {
+        if (cleanBlock && ptClean === cleanBlock) {
 
           var bDec = (_lastAskDecision && _lastAskDecision.blocked) ? _lastAskDecision : {
 
@@ -11363,9 +11380,9 @@
 
       // 2.5 Deduplicate against recently handled file prompt captions within 10 seconds:
 
-      if (_lastHandledFilePromptTime && (Date.now() - _lastHandledFilePromptTime < 10000)) {
+      if (_lastHandledFilePromptTime && (Date.now() - _lastHandledFilePromptTime < 2000)) {
 
-        if (!ptClean || ptClean === _lastHandledFilePromptCaption || (_lastHandledFilePromptCaption && (_lastHandledFilePromptCaption.indexOf(ptClean) >= 0 || ptClean.indexOf(_lastHandledFilePromptCaption) >= 0))) {
+        if (ptClean && ptClean === _lastHandledFilePromptCaption) {
 
           return origFetch.apply(this, arguments);
 
@@ -11379,13 +11396,13 @@
 
       // CRITICAL: Must NEVER pass through if the last decision was blocked!
 
-      if (_lastHandledPromptText && (Date.now() - _lastHandledPromptTime < 5000)) {
+      if (_lastHandledPromptText && (Date.now() - _lastHandledPromptTime < 1500)) {
 
         if (!_lastAskDecision || !_lastAskDecision.blocked) {
 
           var cleanLast = (_lastHandledPromptText || "").trim().toLowerCase();
 
-          if (cleanLast && (ptClean === cleanLast || ptClean.indexOf(cleanLast) >= 0 || cleanLast.indexOf(ptClean) >= 0)) {
+          if (cleanLast && ptClean === cleanLast) {
 
             if (_lastAskDecision && String(_lastAskDecision.action || "").toLowerCase() === "redacted" && _lastAskDecision.redacted_prompt) {
 

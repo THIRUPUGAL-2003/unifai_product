@@ -747,7 +747,13 @@
     if (!corporatePolicy.enabled) return false;
     if (isServerHost(location.hostname)) return false;
     var raw = String(corporatePolicy.targetSites || "").trim();
-    if (!raw || raw.toLowerCase() === "none") return false;
+    if (!raw || raw.toLowerCase() === "none") {
+      var monitoredSites = corporatePolicy.monitoredSites || monitoredSitesForPolicy;
+      if (Array.isArray(monitoredSites) && monitoredSites.length > 0) {
+        return hostMatches(location.hostname, monitoredSites);
+      }
+      return false;
+    }
     if (raw.toUpperCase() === "ALL" || raw === "*") {
       var monitoredSites = corporatePolicy.monitoredSites || monitoredSitesForPolicy;
       if (Array.isArray(monitoredSites) && monitoredSites.length > 0) {
@@ -1354,7 +1360,11 @@
         sendAuthResult({ decision: "allow", reason_code: "POLICY_NOT_ENFORCED" });
         return;
       }
-      if (corporatePolicy.targetSites && !hostInConfiguredSites(location.hostname, corporatePolicy.targetSites)) {
+      var targetSites = corporatePolicy.targetSites;
+      if (!targetSites || targetSites.toLowerCase() === "none") {
+        targetSites = "ALL";
+      }
+      if (targetSites && !hostInConfiguredSites(location.hostname, targetSites)) {
         sendAuthResult({ decision: "allow", reason_code: "TARGET_NOT_RESTRICTED" });
         return;
       }
