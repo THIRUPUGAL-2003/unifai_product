@@ -501,6 +501,12 @@ _rules_lock = threading.Lock()
 _rules_cache: tuple[float, list[dict]] = (0.0, [])
 _governance_cache: dict = {
     "block_upload": False,
+    "block_file_extension": False,
+    "file_extension_mode": "block_listed",
+    "restricted_file_extensions": "",
+    "allowed_file_extensions": "",
+    "file_extension_block_message": "",
+    "file_extension_target_websites": "none",
     "upload_warning": "",
     "upload_target_websites": "",
     "file_extension_mode": "block_listed",
@@ -1488,6 +1494,23 @@ def extract_file_content(raw_b: bytes, file_name: str = "", content_type: str = 
     return result or raw_text
 
 
+def _is_control_active_for_site(host: str, configured_sites: str) -> bool:
+    raw = (configured_sites or "").strip()
+    if not raw or raw.lower() == "none":
+        return False
+    if raw.upper() in ("ALL", "*"):
+        return True
+    if not host:
+        return False
+    h = _normalize_host_domain(host.lower())
+    for item in re.split(r'[,;\s]+', raw.lower()):
+        cand = item.strip().lstrip('.').lstrip('*.')
+        if not cand:
+            continue
+        if h == cand or h.endswith('.' + cand):
+            return True
+    return False
+
 def check_prompt(
     host: str,
     url: str,
@@ -1681,50 +1704,55 @@ def check_prompt(
                 file_names.append(fn)
 
     # Anti-spoofing real file type check against restricted or allowed extensions
+    block_ext_enabled = bool(_governance_cache.get("block_file_extension"))
+    file_ext_target = str(_governance_cache.get("file_extension_target_websites") or "")
     restricted_str = str(_governance_cache.get("restricted_file_extensions") or "")
     allowed_str = str(_governance_cache.get("allowed_file_extensions") or "")
     mode = str(_governance_cache.get("file_extension_mode") or "block_listed")
 
     violating_ext_files = []
     violating_ext_types = []
-    for cf in files_list:
-        cf_name = (cf.get("name") if isinstance(cf, dict) else str(cf)).strip()
-        cf_ext = os.path.splitext(cf_name)[1].lower()
-        cf_norm = cf_ext.lstrip('.').lower()
-        cf_raw = b""
-        cf_text = ""
-        cf_type = ""
-        if isinstance(cf, dict):
-            cf_type = str(cf.get("type") or "application/octet-stream").strip()
-            cf_b64 = str(cf.get("base64") or "").strip()
-            cf_text = str(cf.get("text") or "").strip()
-            if cf_b64:
-                try:
-                    import base64
-                    cf_raw = base64.b64decode(cf_b64)
-                except Exception:
-                    pass
-            if not cf_raw and cf_text:
-                try:
-                    cf_raw = cf_text.encode("utf-8", errors="ignore")
-                except Exception:
-                    pass
-        cf_real = detect_real_file_type(cf_raw, cf_text, cf_name, cf_type)
-        if mode == "allow_listed" and allowed_str:
-            allowed_list = [x.strip().lstrip('.').lower() for x in re.split(r'[,;\s]+', allowed_str) if x.strip()]
-            is_allowed = (cf_real and cf_real in allowed_list) or (cf_norm and cf_norm in allowed_list)
-            if not is_allowed:
-                if cf_name and cf_name not in violating_ext_files:
-                    violating_ext_files.append(cf_name)
-        elif mode != "allow_listed" and restricted_str:
-            restricted_list = [x.strip().lstrip('.').lower() for x in re.split(r'[,;\s]+', restricted_str) if x.strip()]
-            m_ext = cf_real if (cf_real and cf_real in restricted_list) else (cf_norm if (cf_norm and cf_norm in restricted_list) else "")
-            if m_ext:
-                if cf_name and cf_name not in violating_ext_files:
-                    violating_ext_files.append(cf_name)
-                ext_tag = f".{m_ext}"
-                if ext_tag not in violating_ext_types:
-                    violating_ext_types.append(ext_tag)
+    if block_ext_enabled and _is_control_active_for_site(host, file_ext_target):
+        for cf in files_list:
+            cf_name = (cf.get("name") if isinstance(cf, dict) else str(cf)).strip()
+            cf_ext = os.path.splitext(cf_name)[1].lower()
+            cf_norm = cf_ext.lstrip('.').lower()
+            cf_raw = b""
+            cf_text = ""
+            cf_type = ""
+            if isinstance(cf, dict):
+                cf_type = str(cf.get("type") or "application/octet-stream").strip()
+                cf_b64 = str(cf.get("base64") or "").strip()
+                cf_text = str(cf.get("text") or "").strip()
+                if cf_b64:
+                    try:
+                        import base64
+                        cf_raw = base64.b64decode(cf_b64)
+                    except Exception:
+                        pass
+                if not cf_raw and cf_text:
+                    try:
+                        cf_raw = cf_text.encode("utf-8", errors="ignore")
+                    except Exception:
+                        pass
+            cf_real = detect_real_file_type(cf_raw, cf_text, cf_name, cf_type)
+            if mode == "allow_listed" and allowed_str.strip():
+                allowed_list = [x.strip().lstrip('.').lower() for x in re.split(r'[,;\s]+', allowed_str) if x.strip()]
+                if allowed_list:
+                    is_allowed = (cf_real and cf_real in allowed_list) or (cf_norm and cf_norm in allowed_list)
+                    if not is_allowed:
+                        if cf_name and cf_name not in violating_ext_files:
+                            violating_ext_files.append(cf_name)
+            elif mode != "allow_listed" and restricted_str.strip():
+                restricted_list = [x.strip().lstrip('.').lower() for x in re.split(r'[,;\s]+', restricted_str) if x.strip()]
+                if restricted_list:
+                    m_ext = cf_real if (cf_real and cf_real in restricted_list) else (cf_norm if (cf_norm and cf_norm in restricted_list) else "")
+                    if m_ext:
+                        if cf_name and cf_name not in violating_ext_files:
+                            violating_ext_files.append(cf_name)
+                        ext_tag = f".{m_ext}"
+                        if ext_tag not in violating_ext_types:
+                            violating_ext_types.append(ext_tag)
 
     if violating_ext_files:
         f_str = ", ".join(f"'{fn}'" for fn in violating_ext_files)

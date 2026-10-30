@@ -1024,7 +1024,11 @@
 
       } else if (Array.isArray(ev.data.restricted_extensions)) {
 
-        govRestrictedExtensions = ev.data.restricted_extensions.map(function (x) { return String(x).toLowerCase().replace(/^\./, "").trim(); });
+        govRestrictedExtensions = ev.data.restricted_extensions.map(function (x) { return String(x).toLowerCase().replace(/^\./, "").trim(); }).filter(Boolean);
+
+      } else {
+
+        govRestrictedExtensions = [];
 
       }
 
@@ -1771,7 +1775,7 @@
 
     // Check 2: File extension and true file type restrictions (anti-spoofing)
 
-    var fileExtTarget = govFileExtensionTargetWebsites || govUploadTargetWebsites;
+    var fileExtTarget = govFileExtensionTargetWebsites;
 
     if (govBlockFileExtension && isControlActiveForSite(fileExtTarget)) {
 
@@ -1785,9 +1789,13 @@
 
 
 
+      var hasRestricted = Array.isArray(govRestrictedExtensions) && govRestrictedExtensions.length > 0;
+
       if (govFileExtensionMode === "allow_listed") {
 
-        var isAllowed = hasAllowed && govAllowedExtensions.some(function (a) {
+        if (!hasAllowed) return true;
+
+        var isAllowed = govAllowedExtensions.some(function (a) {
 
           var ext = String(a).replace(/^\./, "").toLowerCase().trim();
 
@@ -1811,7 +1819,9 @@
 
       } else {
 
-        var blockedExtension = govRestrictedExtensions && govRestrictedExtensions.find(function (b) {
+        if (!hasRestricted) return true;
+
+        var blockedExtension = govRestrictedExtensions.find(function (b) {
 
           var ext = String(b).replace(/^\./, "").toLowerCase().trim();
 
@@ -1895,7 +1905,7 @@
 
     // 2. File extension block
 
-    var fileExtTarget = govFileExtensionTargetWebsites || govUploadTargetWebsites;
+    var fileExtTarget = govFileExtensionTargetWebsites;
 
     if (govBlockFileExtension && isControlActiveForSite(fileExtTarget)) {
 
@@ -1925,9 +1935,13 @@
 
 
 
+        var hasRestricted = Array.isArray(govRestrictedExtensions) && govRestrictedExtensions.length > 0;
+
         if (govFileExtensionMode === "allow_listed") {
 
-          var isAllowed = hasAllowed && govAllowedExtensions.some(function (a) {
+          if (!hasAllowed) continue;
+
+          var isAllowed = govAllowedExtensions.some(function (a) {
 
             var ext = String(a).replace(/^\./, "").toLowerCase().trim();
 
@@ -1947,7 +1961,9 @@
 
         } else {
 
-          var blockedExtension = govRestrictedExtensions && govRestrictedExtensions.find(function (b) {
+          if (!hasRestricted) continue;
+
+          var blockedExtension = govRestrictedExtensions.find(function (b) {
 
             var ext = String(b).replace(/^\./, "").toLowerCase().trim();
 

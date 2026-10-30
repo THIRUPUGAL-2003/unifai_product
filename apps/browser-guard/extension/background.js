@@ -66,6 +66,10 @@ function policyFromRules(data) {
   };
   if (Array.isArray(data.restricted_extensions)) {
     policy.cached_exts = data.restricted_extensions;
+  } else if (typeof data.restricted_file_extensions === "string") {
+    policy.cached_exts = data.restricted_file_extensions.toLowerCase().split(/[,\s;]+/).map(function (x) { return x.replace(/^\./, "").trim(); }).filter(Boolean);
+  } else {
+    policy.cached_exts = [];
   }
   if (data.uninstall_key_configured !== undefined) {
     policy.uninstall_key_configured = Boolean(data.uninstall_key_configured);
