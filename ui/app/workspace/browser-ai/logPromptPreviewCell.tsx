@@ -17,6 +17,7 @@ import {
 	isFileUploadLog,
 	logAttachmentLabel,
 	logUserCaption,
+	parseBrowserAiLogMetadata,
 } from "./browserAiLogHelpers";
 
 export function LogPromptPreviewCell({ log }: { log: BrowserAILogEntry }) {
