@@ -128,18 +128,7 @@ func (m *BrowserAIManager) assertLicenseBinding(ctx context.Context, payload *En
 	if rev <= 0 {
 		rev = 1
 	}
-	row, err := m.installRow(ctx)
-	if err != nil {
-		return err
-	}
-	if row.AcceptedLicenseID != "" {
-		if row.AcceptedLicenseID == payload.LicenseID && rev < row.AcceptedRevision {
-			return fmt.Errorf("LICENSE_REVOKED: this key was replaced by revision %d", row.AcceptedRevision)
-		}
-		if row.AcceptedLicenseID != payload.LicenseID && rev <= row.AcceptedRevision {
-			return fmt.Errorf("LICENSE_REVOKED: a newer key is already active for this database")
-		}
-	}
+	// Any valid cryptographically signed key from vendor is accepted; no revision blockage.
 	return nil
 }
 
@@ -155,29 +144,16 @@ func (m *BrowserAIManager) rememberAcceptedLicense(ctx context.Context, payload 
 	if db == nil {
 		memoryInstallMu.Lock()
 		defer memoryInstallMu.Unlock()
-		if memoryInstall.licenseID == payload.LicenseID && rev < memoryInstall.revision {
-			return fmt.Errorf("LICENSE_REVOKED: this key was replaced by revision %d", memoryInstall.revision)
-		}
 		memoryInstall.licenseID = payload.LicenseID
-		if rev > memoryInstall.revision {
-			memoryInstall.revision = rev
-		}
+		memoryInstall.revision = rev
 		return nil
 	}
 	var row BrowserAIInstallRecord
 	if err := db.WithContext(ctx).Where("id = ?", BrowserAIInstallRowID).First(&row).Error; err != nil {
 		return err
 	}
-	if row.AcceptedLicenseID == payload.LicenseID && rev < row.AcceptedRevision {
-		return fmt.Errorf("LICENSE_REVOKED: this key was replaced by revision %d", row.AcceptedRevision)
-	}
-	if row.AcceptedLicenseID != payload.LicenseID && row.AcceptedLicenseID != "" && rev <= row.AcceptedRevision {
-		return fmt.Errorf("LICENSE_REVOKED: a newer key is already active for this database")
-	}
 	row.AcceptedLicenseID = payload.LicenseID
-	if rev > row.AcceptedRevision {
-		row.AcceptedRevision = rev
-	}
+	row.AcceptedRevision = rev
 	row.UpdatedAt = time.Now().UTC()
 	return db.WithContext(ctx).Save(&row).Error
 }
