@@ -318,10 +318,23 @@ func VerifyLicenseEnvelope(raw []byte) (*EnterpriseLicensePayload, *EnterpriseLi
 	return &payload, &env, nil
 }
 
+// CountEnrolledLaptopSeats returns the total enrolled endpoint laptops holding an active seat reservation
+// (excluding shared network proxies, paused laptops, and uninstalled laptops).
+func (m *BrowserAIManager) CountEnrolledLaptopSeats(ctx context.Context) int {
+	db := m.GetDB()
+	if db == nil {
+		return 0
+	}
+	var count int64
+	_ = db.WithContext(ctx).Model(&BrowserAIAgent{}).
+		Where("LOWER(status) = ? AND (agent_type IS NULL OR LOWER(agent_type) != ?)", AgentStatusActive, "network").
+		Count(&count).Error
+	return int(count)
+}
+
 // GetActiveLicense returns the current license status and seats usage.
 func (m *BrowserAIManager) GetActiveLicense(ctx context.Context) (*LicenseStatusInfo, error) {
-	activeCount, _, _, _, _ := m.CountAgentsStatus(ctx, "", "")
-	allocatedSeats := int(activeCount)
+	allocatedSeats := m.CountEnrolledLaptopSeats(ctx)
 
 	db := m.GetDB()
 	var record BrowserAILicenseRecord
@@ -561,9 +574,10 @@ func (m *BrowserAIManager) CheckSeatQuotaEnforcement(ctx context.Context, agentI
 		}
 	}
 
-	if lic.ActiveSeats >= lic.MaxSeats {
-		return fmt.Errorf("SEAT_LIMIT_REACHED: Enterprise on-premise license capacity reached (%d/%d active laptops in use). To activate this laptop, turn off or uninstall an unused laptop, or contact YesPanchi to upgrade seats.",
-			lic.ActiveSeats, lic.MaxSeats)
+	enrolledSeats := m.CountEnrolledLaptopSeats(ctx)
+	if enrolledSeats >= lic.MaxSeats {
+		return fmt.Errorf("SEAT_LIMIT_REACHED: Enterprise on-premise license capacity reached (%d/%d active laptops registered). To activate this laptop, turn off or uninstall an unused laptop, or contact YesPanchi to upgrade seats.",
+			enrolledSeats, lic.MaxSeats)
 	}
 
 	return nil
