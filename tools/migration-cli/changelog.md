@@ -1,1 +1,0 @@
-- feat: initial release of the Gateway migration CLI
