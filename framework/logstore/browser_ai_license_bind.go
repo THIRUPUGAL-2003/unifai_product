@@ -197,6 +197,9 @@ func (m *BrowserAIManager) finishLicenseStatus(ctx context.Context, info *Licens
 	}
 	if payload != nil {
 		info.MaxProductUsers = payload.MaxProductUsers
+		if info.MaxProductUsers <= 0 && payload.MaxSeats > 0 {
+			info.MaxProductUsers = payload.MaxSeats
+		}
 	}
 	if payload != nil && info.IsActive {
 		if err := m.assertLicenseBinding(ctx, payload); err != nil {

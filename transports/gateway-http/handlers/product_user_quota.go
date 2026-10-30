@@ -42,6 +42,9 @@ func loadProductUserUsage(ctx context.Context, store configstore.ConfigStore, by
 		}
 		if lic != nil && lic.IsActive {
 			maxUsers = lic.MaxProductUsers
+			if maxUsers <= 0 && lic.MaxSeats > 0 {
+				maxUsers = lic.MaxSeats
+			}
 		}
 	}
 	users, err := store.GetUsers(ctx)
